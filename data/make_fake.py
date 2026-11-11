@@ -106,13 +106,13 @@ def make_images():
 
 def make_tables():
     with open(OUT / "weather.csv", "w", newline="") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator="\n")
         w.writerow(["sol", "local_hour", "temp_c", "pressure_pa", "dust_tau"])
         for h in range(24):
             temp = -70 + 62 * math.sin(math.pi * (h - 1) / 24) ** 2
             w.writerow([40, h, round(temp, 1), round(740 + 15 * math.sin(h / 24 * 2 * math.pi), 1), 0.5])
     with open(OUT / "radiation.csv", "w", newline="") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator="\n")
         w.writerow(["sol", "local_hour", "dose_rate_usv_h"])
         for h in range(24):
             w.writerow([40, h, 90 if h in (15, 16) else 27])  # fake solar storm at 15:00
