@@ -16,8 +16,10 @@ const pinIcon = (label, rover) =>
   })
 
 // `astronaut` is null, or { x, y, storm, trail } while the HUD simulation runs.
-export default function SiteMap({ data, layerState, selectedStop, onSelectStop, astronaut }) {
+// `layoutKey` changes whenever the page layout changes the map's size (for example the HUD opens).
+export default function SiteMap({ data, layerState, selectedStop, onSelectStop, astronaut, layoutKey }) {
   const elRef = useRef(null)
+  const refit = useRef(() => {})
   const mapRef = useRef(null)
   const overlays = useRef({})
   const markers = useRef({})
@@ -65,14 +67,23 @@ export default function SiteMap({ data, layerState, selectedStop, onSelectStop, 
     }
 
     // The map's box changes size when the HUD opens or the window changes: refit it.
-    const resize = new ResizeObserver(() => {
-      map.invalidateSize()
-      map.fitBounds(bounds)
-    })
+    // No animation and one refit after the resizing settles: an animated refit that
+    // overlaps the next resize leaves the markers and the route out of step with the image.
+    let timer = 0
+    refit.current = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        map.invalidateSize({ animate: false })
+        map.fitBounds(bounds, { animate: false })
+      }, 60)
+    }
+    const resize = new ResizeObserver(() => refit.current())
     resize.observe(elRef.current)
 
     mapRef.current = map
     return () => {
+      clearTimeout(timer)
+      refit.current = () => {}
       resize.disconnect()
       map.remove()
       mapRef.current = null
@@ -93,6 +104,10 @@ export default function SiteMap({ data, layerState, selectedStop, onSelectStop, 
       if (!state.on && map.hasLayer(overlay)) overlay.remove()
     }
   }, [layerState, data])
+
+  useEffect(() => {
+    refit.current()
+  }, [layoutKey])
 
   // Highlight the selected stop.
   useEffect(() => {

@@ -192,6 +192,7 @@ export default function App() {
             selectedStop={selectedStop}
             onSelectStop={setSelectedStop}
             astronaut={view === 'hud' ? astronaut : null}
+            layoutKey={`${view}-${large}`}
           />
         </div>
         {view === 'hud' && <HudView data={data} onPosition={setAstronaut} large={large} onLarge={setLarge} />}

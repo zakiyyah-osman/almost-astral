@@ -80,6 +80,10 @@
 }
 .hud-bar div.low { background: var(--hud-bad); }
 
+.hud-weather { display: flex; gap: 8px; margin: 10px 0 0; }
+.hud-weather div { flex: 1; display: grid; gap: 1px; padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); }
+.hud-weather b { font-size: 0.95em; font-weight: 600; }
+
 .hud-alerts { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 4px; }
 .hud-alerts li { padding: 5px 8px; border-radius: 5px; font-size: 0.8em; border-left: 4px solid; background: rgba(255, 255, 255, 0.05); }
 .hud-alerts .green { border-color: var(--hud-ok); }

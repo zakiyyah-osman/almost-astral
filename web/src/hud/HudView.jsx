@@ -15,11 +15,14 @@ import {
   doseRate,
   doseTotal,
   localClock,
-  parseRadiation,
+  DUST_WARN_TAU,
+  parseTable,
   radiationModel,
   stateAt,
   stopList,
   trailUntil,
+  weatherModel,
+  START_LOCAL_HOUR,
 } from './sim.js'
 
 const SIM_MIN_PER_SECOND = 6 // speed 1x: six EVA minutes per real second
@@ -106,14 +109,19 @@ export default function HudView({ data, onPosition, large, onLarge }) {
   const { plan, waypoints, route } = data
   const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
 
+  // Radiation and weather tables are optional: the HUD still works without them.
   const [rad, setRad] = useState(null)
+  const [wx, setWx] = useState(null)
   useEffect(() => {
-    const file = data.tables?.radiation
-    if (!file) return
-    fetch(`./${file}`)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
-      .then((text) => setRad(radiationModel(parseRadiation(text))))
-      .catch(() => setRad(null))
+    const load = (file, make, set) => {
+      if (!file) return set(null)
+      fetch(`./${file}`)
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
+        .then((text) => set(make(parseTable(text))))
+        .catch(() => set(null))
+    }
+    load(data.tables?.radiation, radiationModel, setRad)
+    load(data.tables?.weather, weatherModel, setWx)
   }, [data.tables])
 
   const [t, setT] = useState(0)
@@ -199,6 +207,7 @@ export default function HudView({ data, onPosition, large, onLarge }) {
   const dose = rad ? doseTotal(rad, t, storm) : null
   const limit = plan.budgets?.radiation_limit_usv
   const stormNow = !!storm && phase !== 'done'
+  const cond = wx ? wx.at(START_LOCAL_HOUR + t / 60) : null
 
   // Stop status: sampled once its time has passed, unless a storm cut the outing short.
   const cutoff = storm ? storm.t : t
@@ -217,6 +226,7 @@ export default function HudView({ data, onPosition, large, onLarge }) {
     if (t + s.shelterMin > eva) alerts.push({ level: 'red', text: 'Not enough time left to walk back.' })
     else if (t + s.shelterMin > eva * 0.85) alerts.push({ level: 'amber', text: 'Turn back soon: time limit close.' })
   }
+  if (cond?.dust > DUST_WARN_TAU) alerts.push({ level: 'amber', text: 'Heavy dust: poor visibility and less solar power.' })
   if (oxygen < 20) alerts.push({ level: 'red', text: 'Oxygen low.' })
   if (battery < 20) alerts.push({ level: 'amber', text: 'Battery low.' })
   if (!alerts.length) alerts.push({ level: 'green', text: 'All systems normal.' })
@@ -273,6 +283,27 @@ export default function HudView({ data, onPosition, large, onLarge }) {
           value={limit ? `${Math.round(dose)} / ${limit} µSv` : `${Math.round(dose)} µSv`}
           low={rate > rad.baseline * 2}
         />
+      )}
+
+      {cond && (
+        <div className="hud-weather" aria-label="Conditions">
+          <div>
+            <span className="hud-small">Temp</span>
+            <b>{Math.round(cond.temp)} °C</b>
+          </div>
+          {cond.pressure != null && (
+            <div>
+              <span className="hud-small">Pressure</span>
+              <b>{Math.round(cond.pressure)} Pa</b>
+            </div>
+          )}
+          {cond.dust != null && (
+            <div>
+              <span className="hud-small">Dust τ</span>
+              <b>{cond.dust.toFixed(1)}</b>
+            </div>
+          )}
+        </div>
       )}
 
       {t === 0 && !playing && (

@@ -84,8 +84,9 @@ button, select, input { font: inherit; }
 .views button:hover { color: var(--text); }
 .views button.active { background: var(--accent); color: #1a0e09; }
 
-.stage { position: relative; min-width: 0; min-height: 0; }
-.stage.with-hud { display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 380px); }
+/* A grid even without the HUD, so the map's box always gets the full height. */
+.stage { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: 0; }
+.stage.with-hud { grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 380px); }
 .map-wrap { position: relative; min-width: 0; min-height: 0; }
 .map { position: absolute; inset: 0; }
 .map.leaflet-container { background: #0e0a08; font: inherit; }
