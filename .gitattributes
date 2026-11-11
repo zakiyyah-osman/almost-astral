@@ -1,0 +1,10 @@
+# Same line endings for everyone, whatever their operating system
+* text=auto eol=lf
+
+# Never touch these: they are not text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.tif binary
+*.tiff binary
+*.pdf binary

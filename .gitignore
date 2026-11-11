@@ -14,6 +14,7 @@ data/raw/*
 # Secrets
 .env
 .env.*
+!.env.example
 
 # Editor and OS
 .vscode/

@@ -24,6 +24,7 @@ Work only in the folder the user owns, and ask the user before editing another p
 
 - Never change `CONTRACT.md` or an existing file format in `data/out/` without telling the user first. Other people's code reads those files. Adding a field is fine; renaming or removing one is not.
 - Use the fake data (`python data/make_fake.py`) instead of waiting for real data. Keep the fake data working.
+- After changing anything in `data/out/`, run `python data/validate.py`. Before submission it must pass with `--strict` (no fake data left).
 - Never commit raw datasets. They go in `data/raw/`, which Git ignores.
 - Every layer needs a `source` naming the mission and instrument. Do not invent data, and say so when a value is an estimate or an assumption.
 - All coordinates are metres on the local site grid. In Leaflet `CRS.Simple`, a point is `L.latLng(y, x)`: y comes first.
@@ -48,6 +49,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python data/make_fake.py     # rebuilds the fake data in data/out/
+python data/validate.py      # checks data/out/ against CONTRACT.md
 ```
 
 ## Layout

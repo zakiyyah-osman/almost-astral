@@ -39,7 +39,12 @@ python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python data/make_fake.py         # regenerates the fake data in data/out/
+python data/validate.py          # checks data/out/ against CONTRACT.md
 ```
+
+Run `validate.py` every time you change a file in `data/out/`. It lists anything that breaks the contract. Before we submit, run `python data/validate.py --strict`: it also fails if any layer still uses fake data.
+
+If you use the NASA solar-storm API (DONKI), copy `.env.example` to `.env` and put your key in it. `.env` is ignored by Git, so it never gets uploaded.
 
 ## Working together with Git
 
@@ -52,6 +57,10 @@ You do not need to know much Git. The VS Code **Source Control** tab (the branch
 5. **Push your branch** and open a pull request into `main` once something works. Someone else clicks **Merge**.
 6. **Never change `CONTRACT.md` without telling the whole team.** Everyone's code depends on it.
 7. **Never commit raw datasets.** They are huge. Put them in `data/raw/`, which Git ignores.
+
+## AI tools and licence
+
+How we used AI tools is written up in [docs/ai-use.md](docs/ai-use.md). The code is released under the [MIT licence](LICENSE). NASA data keeps its own terms: credit every dataset below.
 
 ## Data sources
 
