@@ -1,0 +1,54 @@
+:root {
+  --bg: #fbf7f4;
+  --panel: #ffffff;
+  --text: #2b2522;
+  --muted: #6b5f58;
+  --accent: #b5482a;
+  --border: #e2d3c8;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171312;
+    --panel: #211b19;
+    --text: #f1e8e2;
+    --muted: #a8998f;
+    --accent: #e0714f;
+    --border: #3a302c;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+
+.app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+.status { padding: 24px; }
+
+.sidebar { background: var(--panel); border-right: 1px solid var(--border); padding: 20px; overflow-y: auto; }
+.sidebar h1 { margin: 0; font-size: 1.4rem; color: var(--accent); }
+.sidebar h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 24px 0 8px; }
+.muted { color: var(--muted); font-size: 0.85rem; margin: 4px 0; }
+
+.views { display: flex; gap: 8px; margin-top: 16px; }
+.views button { flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
+.views button.active { border-color: var(--accent); color: var(--accent); }
+
+.layer { padding: 6px 0; }
+.layer label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.layer label input { margin-top: 3px; accent-color: var(--accent); }
+.layer small { display: block; color: var(--muted); font-size: 0.72rem; }
+.layer input[type='range'] { width: 100%; margin-top: 4px; accent-color: var(--accent); }
+
+main { position: relative; }
+.map { position: absolute; inset: 0; background: #1b1512; }
+
+.hud { position: absolute; right: 16px; bottom: 16px; z-index: 1000; background: rgba(0, 0, 0, 0.75); color: #fff; padding: 12px 16px; border-radius: 8px; max-width: 280px; }
+.hud-title { margin: 0 0 6px; font-weight: 600; }
+
+@media (max-width: 720px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--border); max-height: 40vh; padding: 16px; }
+}

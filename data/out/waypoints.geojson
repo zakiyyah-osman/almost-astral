@@ -1,0 +1,73 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "rover",
+        "name": "Rover",
+        "kind": "rover",
+        "why": "Start and safe haven.",
+        "photo": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1000,
+          900
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "stop1",
+        "name": "Clay outcrop",
+        "kind": "stop",
+        "why": "Clay minerals can preserve traces of ancient water.",
+        "photo": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          500,
+          1500
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "stop2",
+        "name": "Crater rim ridges",
+        "kind": "stop",
+        "why": "Ridges left by groundwater flowing through rock cracks.",
+        "photo": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1400,
+          1760
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "stop3",
+        "name": "Carbonate patch",
+        "kind": "stop",
+        "why": "Carbonates form in water and can trap signs of past life.",
+        "photo": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1600,
+          500
+        ]
+      }
+    }
+  ]
+}

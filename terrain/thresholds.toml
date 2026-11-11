@@ -1,0 +1,15 @@
+# Hazard thresholds. Change them here; do not hard-code them in the scripts.
+# Starting values only: check them against real data and the literature.
+
+[slope_deg]
+yellow = 10   # careful above this slope
+red = 20      # do not enter above this slope
+
+[roughness]
+yellow = 0.5  # TODO: choose the unit once roughness is computed
+red = 1.0
+
+[thermal_inertia]
+# Low thermal inertia means loose sand or dust. TODO: choose values for the real data.
+yellow_below = 150
+red_below = 100

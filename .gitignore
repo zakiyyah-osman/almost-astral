@@ -1,0 +1,22 @@
+# Node
+node_modules/
+dist/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Raw datasets are too big for Git (keep the folder itself)
+data/raw/*
+!data/raw/.gitkeep
+
+# Secrets
+.env
+.env.*
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

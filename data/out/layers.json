@@ -1,0 +1,73 @@
+{
+  "site": {
+    "name": "Fake site (replace with the real one)",
+    "grid": {
+      "width": 400,
+      "height": 400,
+      "cell_m": 5.0
+    },
+    "extent_m": [
+      2000.0,
+      2000.0
+    ]
+  },
+  "layers": [
+    {
+      "id": "relief",
+      "title": "Shaded relief",
+      "file": "relief.png",
+      "source": "FAKE (real: HiRISE terrain model, MRO)",
+      "default": true,
+      "opacity": 1.0
+    },
+    {
+      "id": "slope",
+      "title": "Slope",
+      "file": "slope.png",
+      "source": "FAKE (real: derived from HiRISE terrain model)",
+      "default": false,
+      "opacity": 0.6
+    },
+    {
+      "id": "thermal",
+      "title": "Thermal inertia",
+      "file": "thermal.png",
+      "source": "FAKE (real: THEMIS, Mars Odyssey)",
+      "default": false,
+      "opacity": 0.6
+    },
+    {
+      "id": "minerals",
+      "title": "Minerals",
+      "file": "minerals.png",
+      "source": "FAKE (real: CRISM, MRO)",
+      "default": false,
+      "opacity": 0.8
+    },
+    {
+      "id": "hazard",
+      "title": "Hazards",
+      "file": "hazard.png",
+      "source": "FAKE (real: slope, rocks and thermal inertia)",
+      "default": true,
+      "opacity": 0.7
+    },
+    {
+      "id": "shelter_time",
+      "title": "Minutes back to rover",
+      "file": "shelter_time.png",
+      "source": "FAKE (real: routing model)",
+      "default": false,
+      "opacity": 0.7
+    }
+  ],
+  "vectors": {
+    "route": "route.geojson",
+    "waypoints": "waypoints.geojson"
+  },
+  "tables": {
+    "weather": "weather.csv",
+    "radiation": "radiation.csv"
+  },
+  "plan": "plan.json"
+}

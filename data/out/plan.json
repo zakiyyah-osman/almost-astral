@@ -1,0 +1,40 @@
+{
+  "fake": true,
+  "crew": 2,
+  "legs": [
+    {
+      "from": "rover",
+      "to": "stop1",
+      "distance_m": 781,
+      "walk_min": 19
+    },
+    {
+      "from": "stop1",
+      "to": "stop2",
+      "distance_m": 937,
+      "walk_min": 22
+    },
+    {
+      "from": "stop2",
+      "to": "stop3",
+      "distance_m": 1276,
+      "walk_min": 31
+    },
+    {
+      "from": "stop3",
+      "to": "rover",
+      "distance_m": 721,
+      "walk_min": 17
+    }
+  ],
+  "totals": {
+    "walk_min": 89,
+    "stop_min": 75,
+    "total_min": 164
+  },
+  "budgets": {
+    "eva_max_min": 360,
+    "radiation_limit_usv": 1000
+  },
+  "radiation_dose_usv": 74
+}
