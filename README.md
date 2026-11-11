@@ -50,11 +50,13 @@ If you use the NASA solar-storm API (DONKI), copy `.env.example` to `.env` and p
 
 You do not need to know much Git. The VS Code **Source Control** tab (the branch icon on the left) does all of this with buttons.
 
-1. **Make your own branch once**, named after your folder (for example `p3-routing`).
+Everyone has **their own branch, named after them**: `zakiyyah`, `nahla`, `tushaar`, `loick` and `yaj`. `main` is the shared version that must always work.
+
+1. **Switch to your branch** after cloning: `git switch yourname` (or click the branch name at the bottom-left of VS Code and pick yours).
 2. **Work only in your folder.** If you need a change in someone else's folder, ask them.
-3. **Commit often** with a short message that says what you did.
-4. **Before you push, pull** (Source Control, then **Pull**) so you have everyone's latest work.
-5. **Push your branch** and open a pull request into `main` once something works. Someone else clicks **Merge**.
+3. **Commit often** with a short message that says what you did, and **push to your branch** whenever you like.
+4. **Every morning, bring in everyone's latest work:** `git pull origin main` while on your branch.
+5. **Every evening, or whenever something works, merge into `main`.** First check that `npm run build` and `python data/validate.py` pass. Then open a pull request from your branch into `main` on GitHub and click **Merge**. You can merge your own.
 6. **Never change `CONTRACT.md` without telling the whole team.** Everyone's code depends on it.
 7. **Never commit raw datasets.** They are huge. Put them in `data/raw/`, which Git ignores.
 
