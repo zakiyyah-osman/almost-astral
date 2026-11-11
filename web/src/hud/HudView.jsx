@@ -100,7 +100,9 @@ function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm }) {
   )
 }
 
-export default function HudView({ data }) {
+// onPosition(p) tells the main map where the astronaut is (null when the HUD closes).
+// large and onLarge switch the big-text projector mode, which the app also uses to widen the panel.
+export default function HudView({ data, onPosition, large, onLarge }) {
   const { plan, waypoints, route } = data
   const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
 
@@ -156,13 +158,14 @@ export default function HudView({ data }) {
 
   // Keyboard shortcuts for the live demo.
   const keys = useRef({})
-  keys.current = { triggerStorm, reset, toggle: () => phase !== 'done' && setPlaying((p) => !p) }
+  keys.current = { triggerStorm, reset, toggle: () => phase !== 'done' && setPlaying((p) => !p), large: () => onLarge?.(!large) }
   useEffect(() => {
     const onKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|BUTTON|TEXTAREA)$/.test(e.target.tagName)) return
       if (e.key === ' ') { e.preventDefault(); keys.current.toggle() }
       else if (e.key === 's' || e.key === 'S') keys.current.triggerStorm()
       else if (e.key === 'r' || e.key === 'R') keys.current.reset()
+      else if (e.key === 'l' || e.key === 'L') keys.current.large()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -171,9 +174,18 @@ export default function HudView({ data }) {
   const stops = useMemo(() => (tl ? stopList(tl) : []), [tl])
   const trail = useMemo(() => (tl ? trailUntil(tl, t, storm) : []), [tl, Math.floor(t / 2), storm]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Show the astronaut on the main map too.
+  const sx = s?.x
+  const sy = s?.y
+  const stormOn = !!storm
+  useEffect(() => {
+    if (sx !== undefined) onPosition?.({ x: sx, y: sy, storm: stormOn, trail })
+  }, [sx, sy, stormOn, trail]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onPosition?.(null), []) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!plan || !waypoints || !tl) {
     return (
-      <div className="hud">
+      <div className="hud hud-scroll">
         <p className="hud-title">HUD</p>
         <p>Needs plan.json and waypoints.geojson.</p>
       </div>
@@ -210,12 +222,16 @@ export default function HudView({ data }) {
   if (!alerts.length) alerts.push({ level: 'green', text: 'All systems normal.' })
 
   return (
-    <div className={`hud${stormNow ? ' alarm' : ''}`} aria-live="polite">
+    <section className={`hud${stormNow ? ' alarm' : ''}${large ? ' large' : ''}`} aria-label="Helmet HUD">
+      <div className="hud-scroll">
       <div className="hud-head">
         <span className={`hud-phase ${phase}`}>{PHASE_TEXT[phase]}</span>
         <span className="hud-clock">
           EVA {clock(t)} · local {localClock(t)}
         </span>
+        <button className={`hud-toggle${large ? ' on' : ''}`} onClick={() => onLarge?.(!large)} aria-pressed={!!large} title="Large text for a projector (L)">
+          Aa
+        </button>
         <button className="hud-toggle" onClick={() => setCompact((c) => !c)} aria-label={compact ? 'Expand HUD' : 'Shrink HUD'}>
           {compact ? '+' : '–'}
         </button>
@@ -259,7 +275,11 @@ export default function HudView({ data }) {
         />
       )}
 
-      <ul className="hud-alerts">
+      {t === 0 && !playing && (
+        <p className="hud-hint">Press Simulate EVA to watch the crew walk the route. Press Solar storm to see them switch to the return route.</p>
+      )}
+
+      <ul className="hud-alerts" aria-live="polite">
         {alerts.map((a) => (
           <li key={a.text} className={a.level}>
             {a.text}
@@ -288,9 +308,12 @@ export default function HudView({ data }) {
         </div>
       )}
 
+      </div>
+
+      <div className="hud-foot">
       <div className="hud-controls">
         <button onClick={() => setPlaying((p) => !p)} disabled={phase === 'done'}>
-          {playing ? 'Pause' : t > 0 ? 'Resume' : 'Simulate EVA'}
+          {phase === 'done' ? 'Finished' : playing ? 'Pause' : t > 0 ? 'Resume' : 'Simulate EVA'}
         </button>
         <button onClick={triggerStorm} disabled={!!storm || phase === 'done'} className="storm">
           Solar storm
@@ -313,7 +336,8 @@ export default function HudView({ data }) {
         onChange={(e) => scrub(e.target.value)}
         aria-label="EVA time"
       />
-      <p className="hud-note">Keys: space play, S storm, R reset. Oxygen and battery are simulated from the EVA time limit.</p>
-    </div>
+      <p className="hud-note">Keys: space play, S storm, R reset, L large text. Oxygen and battery are simulated from the EVA time limit.</p>
+      </div>
+    </section>
   )
 }
