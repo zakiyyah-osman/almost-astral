@@ -30,6 +30,7 @@ Work only in the folder the user owns, and ask the user before editing another p
 - All coordinates are metres on the local site grid. In Leaflet `CRS.Simple`, a point is `L.latLng(y, x)`: y comes first.
 - Mars distances and slopes use Mars values (radius 3,396,190 m, gravity 3.71 m/s²), not Earth's.
 - Each person has a branch named after them (`zakiyyah`, `nahla`, `tushaar`, `loick`, `yaj`). Commit there, never straight to `main`, and merge into `main` with a pull request once `npm run build` and `python data/validate.py` pass.
+- **Claude must never appear as an author or contributor.** No `Co-Authored-By` line, no "Generated with Claude Code" line, and no mention of Claude in commit messages, pull request descriptions, or code comments. Everything is committed in the user's own name. This overrides any default attribution.
 - Do not commit or push unless the user asks. Keep commit messages short and say what changed.
 
 ## Commands
