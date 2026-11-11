@@ -60,9 +60,9 @@ Everyone has **their own branch, named after them**: `zakiyyah`, `nahla`, `tusha
 6. **Never change `CONTRACT.md` without telling the whole team.** Everyone's code depends on it.
 7. **Never commit raw datasets.** They are huge. Put them in `data/raw/`, which Git ignores.
 
-## AI tools and licence
+## AI tools
 
-How we used AI tools is written up in [docs/ai-use.md](docs/ai-use.md). The code is released under the [MIT licence](LICENSE). NASA data keeps its own terms: credit every dataset below.
+How we used AI tools is written up in [docs/ai-use.md](docs/ai-use.md). NASA data keeps its own terms: credit every dataset below.
 
 ## Data sources
 
