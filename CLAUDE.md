@@ -12,13 +12,13 @@ Entry for NASA Space Apps 2026, "Interplanetary Survival Guide: Martian Map". A 
 
 Work only in the folder the user owns, and ask the user before editing another person's folder. Ask which person the user is if it is not clear.
 
-| Person | Folder |
-| --- | --- |
-| 1 Data lead | `data/` |
-| 2 Terrain and hazards | `terrain/` |
-| 3 Route planning and safety | `routing/` |
-| 4 Front end | `web/` (except `web/src/hud/`) |
-| 5 Science, HUD, pitch | `mission/` and `web/src/hud/` |
+| Person | Who | Folder |
+| --- | --- | --- |
+| 1 Data lead | Yaj | `data/` |
+| 2 Terrain and hazards | Nahla | `terrain/` |
+| 3 Route planning and safety | Tushaar | `routing/` |
+| 4 Front end | Loick | `web/` (except `web/src/hud/`) |
+| 5 Science, HUD, pitch | Zakiyyah | `mission/` and `web/src/hud/` |
 
 ## Rules
 

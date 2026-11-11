@@ -8,13 +8,13 @@ An interactive map of one walkable area on Mars. It layers several kinds of NASA
 
 Everyone works in their own folder, so nobody edits the same file at the same time. Folders talk to each other only through the files in `data/out/` (see [CONTRACT.md](CONTRACT.md)).
 
-| Person | Role | Folder | Hands over (in `data/out/`) |
-| --- | --- | --- | --- |
-| 1 | Data lead | `data/` | `layers.json`, layer images, `weather.csv`, `radiation.csv` |
-| 2 | Terrain and hazards | `terrain/` | `hazard.tif`, `hazard.png`, slope and relief images |
-| 3 | Route planning and safety | `routing/` | `route.geojson`, `shelter_time.png`, `plan.json` |
-| 4 | Front end | `web/` | the deployed app |
-| 5 | Science, HUD, pitch | `mission/` and `web/src/hud/` | `waypoints.geojson`, the HUD view, the demo and slides |
+| Person | Who (branch) | Role | Folder | Hands over (in `data/out/`) |
+| --- | --- | --- | --- | --- |
+| 1 | Yaj (`yaj`) | Data lead | `data/` | `layers.json`, layer images, `weather.csv`, `radiation.csv` |
+| 2 | Nahla (`nahla`) | Terrain and hazards | `terrain/` | `hazard.tif`, `hazard.png`, slope and relief images |
+| 3 | Tushaar (`tushaar`) | Route planning and safety | `routing/` | `route.geojson`, `shelter_time.png`, `plan.json` |
+| 4 | Loick (`loick`) | Front end | `web/` | the deployed app |
+| 5 | Zakiyyah (`zakiyyah`) | Science, HUD, pitch | `mission/` and `web/src/hud/` | `waypoints.geojson`, the HUD view, the demo and slides |
 
 The full task list and schedule are in [docs/work-split.md](docs/work-split.md).
 

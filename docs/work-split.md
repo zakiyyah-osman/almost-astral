@@ -2,7 +2,7 @@
 
 Each person owns one part from start to finish: work before Saturday, work on Saturday, and clear files they hand to others. The workloads are roughly equal, about 12 to 15 hours each before Saturday.
 
-## Person 1: Data lead (`data/`)
+## Person 1: Yaj, Data lead (`data/`)
 
 **Before Saturday**
 - Write and maintain `layers.json`, the data format everyone else reads.
@@ -15,7 +15,7 @@ Each person owns one part from start to finish: work before Saturday, work on Sa
 
 **Hands over:** a ready `data/out/` folder by Wednesday evening. Fake data is fine at first.
 
-## Person 2: Terrain and hazards (`terrain/`)
+## Person 2: Nahla, Terrain and hazards (`terrain/`)
 
 **Before Saturday**
 - Compute slope and roughness from the terrain model.
@@ -28,7 +28,7 @@ Each person owns one part from start to finish: work before Saturday, work on Sa
 
 **Hands over:** `hazard.tif` and the PNG layers to Persons 3 and 4.
 
-## Person 3: Route planning and safety (`routing/`)
+## Person 3: Tushaar, Route planning and safety (`routing/`)
 
 **Before Saturday**
 - Walking-speed model for a suited astronaut (Tobler's hiking function with a suit penalty).
@@ -41,7 +41,7 @@ Each person owns one part from start to finish: work before Saturday, work on Sa
 
 **Hands over:** `route.geojson`, `shelter_time.png` and `plan.json` to Persons 4 and 5.
 
-## Person 4: Front end, planning and tablet views (`web/`)
+## Person 4: Loick, Front end, planning and tablet views (`web/`)
 
 **Before Saturday**
 - React and Leaflet app with `CRS.Simple`, which treats the site as a flat grid in metres.
@@ -55,7 +55,7 @@ Each person owns one part from start to finish: work before Saturday, work on Sa
 
 **Hands over:** a working app, deployed by Thursday evening (on fake data if needed).
 
-## Person 5: Science, helmet HUD and pitch (`mission/`, `web/src/hud/`)
+## Person 5: Zakiyyah, Science, helmet HUD and pitch (`mission/`, `web/src/hud/`)
 
 **Before Saturday**
 - One-page mission brief: science goals, crew setup, limits.
