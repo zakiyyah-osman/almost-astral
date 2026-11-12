@@ -4,7 +4,7 @@ Built from the wording of the challenge text, not from our task list. Each row s
 
 The challenge uses "may", "might" and "if possible" for most things, so only the first table is strictly asked for. Anything with no task is a gap.
 
-Last updated: 11 Nov 2026 (before the official data arrives).
+Last updated: 12 Nov 2026 (before the official data arrives).
 
 ## Core: what the challenge asks for
 
@@ -22,13 +22,13 @@ Last updated: 11 Nov 2026 (before the official data arrives).
 | 5 | At least three kinds of data (optical, thermal, spectral, topographic, radiation and so on) | Layers (Yaj) | Relief, thermal, minerals exist but are fake |
 | 6 | Safety information such as radiation or space weather | Radiation table (Yaj), dose and storm alert (Zakiyyah) | Alert and dose built, numbers fake |
 | 7 | A route that avoids large rock formations and other obstacles | Hazard map (Nahla), route planner (Tushaar) | Fake straight route, code still stubs |
-| 8 | Mobility in a spacesuit with equipment | Walking speed (Tushaar), brief (Zakiyyah) | **Gap**: not shown anywhere yet |
+| 8 | Mobility in a spacesuit with equipment | Walking speed (Tushaar), brief and HUD pace (Zakiyyah) | HUD shows pace from the plan. **Gap**: a sourced suit and kit slowdown, in Tushaar's model |
 
 ## Optional: "you may"
 
 | Idea in the challenge | Status |
 | --- | --- |
-| Format: HUD, tablet or habitat display | HUD built |
+| Format: HUD, tablet or habitat display | HUD built, with a full-screen visor view |
 | Point-of-view photos so the crew knows what to expect | Not started |
 | Rovers or crew working in pairs | Rover and two crew in the plan |
 | Choose a time frame, or none | **Not decided** (the fake data uses sol 40) |

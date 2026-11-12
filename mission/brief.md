@@ -31,6 +31,7 @@ All **(assumption)** until the team agrees them. They sit in `plan.json` under `
 | Slope | set in `terrain/thresholds.toml` | Nahla owns this |
 | Distance from the rover | the whole site, 2 km square | worst case about 1.5 km from shelter |
 | Gravity used in maths | 3.71 m/s² | Mars value |
+| Walking pace | from `plan.json` (leg distance over walking time) | Shown live in the HUD. **(assumption)** Whether suit and kit slow the pace is Tushaar's model: agree a sourced figure and add it to `plan.json` as `mobility.note` |
 
 Oxygen and battery are not in the data. The HUD simulates them from the 360 min limit.
 

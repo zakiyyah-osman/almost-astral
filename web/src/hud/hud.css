@@ -29,7 +29,7 @@
   50% { box-shadow: inset 4px 0 0 var(--hud-bad), inset 0 0 40px rgba(255, 107, 87, 0.22); }
 }
 
-.hud-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.hud-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
 .hud-phase { font-weight: 700; letter-spacing: 0.06em; font-size: 0.8em; color: var(--hud-ok); }
 .hud-phase.return { color: var(--hud-bad); }
 .hud-phase.done { color: #9aa7a4; }
@@ -79,6 +79,10 @@
   mask: repeating-linear-gradient(90deg, #000 0 8px, transparent 8px 10px);
 }
 .hud-bar div.low { background: var(--hud-bad); }
+
+.hud-pace { margin: -2px 0 10px; font-size: 0.8em; color: var(--hud-dim); }
+.hud-pace b { color: #d7f5ee; font-weight: 600; }
+.hud-toggle.wide { padding: 0 8px; }
 
 .hud-weather { display: flex; gap: 8px; margin: 10px 0 0; }
 .hud-weather div { flex: 1; display: grid; gap: 1px; padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); }

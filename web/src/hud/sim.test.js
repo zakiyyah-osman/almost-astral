@@ -58,6 +58,21 @@ test('while sampling, "next" is the following stop', () => {
   assert.ok(s.nextDist > 0)
 })
 
+test('pace is the leg distance over its walking time, and zero when stopped', () => {
+  const tl = buildTimeline(plan, waypoints, route)
+  const leg = plan.legs[0]
+  near(stateAt(tl, 5, null).pace, leg.distance_m / leg.walk_min, 1)
+  const dwell = stopList(tl)[0]
+  assert.equal(stateAt(tl, (dwell.t0 + dwell.t1) / 2, null).pace, 0)
+  assert.equal(stateAt(tl, tl.totalMin, null).pace, 0)
+})
+
+test('pace after a storm is the average walking speed', () => {
+  const tl = buildTimeline(plan, waypoints, route)
+  const storm = { t: 10, d: stateAt(tl, 10, null).d }
+  near(stateAt(tl, 12, storm).pace, tl.speed, 1e-9)
+})
+
 // ---- solar storm ----
 
 test('storm early on: turn back and reach the rover', () => {

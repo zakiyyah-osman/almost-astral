@@ -105,7 +105,8 @@ function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm }) {
 
 // onPosition(p) tells the main map where the astronaut is (null when the HUD closes).
 // large and onLarge switch the big-text projector mode, which the app also uses to widen the panel.
-export default function HudView({ data, onPosition, large, onLarge }) {
+// visor and onVisor switch the full-screen visor view (the app hides its sidebar and floats the HUD over the map).
+export default function HudView({ data, onPosition, large, onLarge, visor, onVisor }) {
   const { plan, waypoints, route } = data
   const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
 
@@ -166,7 +167,7 @@ export default function HudView({ data, onPosition, large, onLarge }) {
 
   // Keyboard shortcuts for the live demo.
   const keys = useRef({})
-  keys.current = { triggerStorm, reset, toggle: () => phase !== 'done' && setPlaying((p) => !p), large: () => onLarge?.(!large) }
+  keys.current = { triggerStorm, reset, toggle: () => phase !== 'done' && setPlaying((p) => !p), large: () => onLarge?.(!large), visor: () => onVisor?.(!visor), exitVisor: () => onVisor?.(false) }
   useEffect(() => {
     const onKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|BUTTON|TEXTAREA)$/.test(e.target.tagName)) return
@@ -174,6 +175,8 @@ export default function HudView({ data, onPosition, large, onLarge }) {
       else if (e.key === 's' || e.key === 'S') keys.current.triggerStorm()
       else if (e.key === 'r' || e.key === 'R') keys.current.reset()
       else if (e.key === 'l' || e.key === 'L') keys.current.large()
+      else if (e.key === 'v' || e.key === 'V') keys.current.visor()
+      else if (e.key === 'Escape') keys.current.exitVisor()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -239,6 +242,9 @@ export default function HudView({ data, onPosition, large, onLarge }) {
         <span className="hud-clock">
           EVA {clock(t)} · local {localClock(t)}
         </span>
+        <button className={`hud-toggle wide${visor ? ' on' : ''}`} onClick={() => onVisor?.(!visor)} aria-pressed={!!visor} title="Full-screen visor view (V, Esc to leave)">
+          {visor ? 'Exit visor' : 'Visor'}
+        </button>
         <button className={`hud-toggle${large ? ' on' : ''}`} onClick={() => onLarge?.(!large)} aria-pressed={!!large} title="Large text for a projector (L)">
           Aa
         </button>
@@ -266,6 +272,17 @@ export default function HudView({ data, onPosition, large, onLarge }) {
           <div className="hud-big">{Math.ceil(s.shelterMin)} min</div>
         </div>
       </div>
+
+      <p className="hud-pace">
+        {s.pace > 0 ? (
+          <>
+            Pace <b>{Math.round(s.pace)} m/min</b> · {((s.pace * 60) / 1000).toFixed(1)} km/h
+          </>
+        ) : (
+          'Pace: stopped'
+        )}
+        {plan.mobility?.note && <span> · {plan.mobility.note}</span>}
+      </p>
 
       {here_wp && (
         <div className="hud-card">
@@ -367,7 +384,7 @@ export default function HudView({ data, onPosition, large, onLarge }) {
         onChange={(e) => scrub(e.target.value)}
         aria-label="EVA time"
       />
-      <p className="hud-note">Keys: space play, S storm, R reset, L large text. Oxygen and battery are simulated from the EVA time limit.</p>
+      <p className="hud-note">Keys: space play, S storm, R reset, L large text, V visor. Oxygen and battery are simulated from the EVA time limit.</p>
       </div>
     </section>
   )

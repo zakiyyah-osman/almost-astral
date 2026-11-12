@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { buildTimeline, clock } from '../hud/sim.js'
 
 // The site is a flat grid in metres, so we use Leaflet's CRS.Simple.
 // A point at x metres east and y metres north is L.latLng(y, x): y comes first.
@@ -46,20 +47,34 @@ export default function SiteMap({ data, layerState, selectedStop, onSelectStop, 
     })
 
     if (data.route) {
+      // A dark casing under the dashed white line keeps the route readable on light terrain.
       L.geoJSON(data.route, {
         coordsToLatLng: toLatLng,
-        style: { color: '#ffffff', weight: 3, opacity: 0.9, dashArray: '6 6' },
+        interactive: false,
+        style: { color: '#1a0e09', weight: 7, opacity: 0.7 },
+      }).addTo(map)
+      L.geoJSON(data.route, {
+        coordsToLatLng: toLatLng,
+        interactive: false,
+        style: { color: '#ffffff', weight: 3, opacity: 0.95, dashArray: '6 6' },
       }).addTo(map)
     }
     if (data.waypoints) {
+      // When each stop is reached, from the plan: shown on the map as T+hh:mm.
+      const tl = buildTimeline(data.plan, data.waypoints, data.route)
+      const arrival = {}
+      for (const s of tl?.segments ?? []) if (s.type === 'walk') arrival[s.to] = s.t1
       let n = 0
       for (const f of data.waypoints.features) {
         const rover = f.properties.kind === 'rover'
+        const label = rover
+          ? `${f.properties.name} · start`
+          : `${f.properties.name}${arrival[f.properties.id] != null ? ` · T+${clock(arrival[f.properties.id])}` : ''}`
         const marker = L.marker(toLatLng(f.geometry.coordinates), {
           icon: pinIcon(rover ? 'R' : ++n, rover),
           keyboard: false,
         })
-          .bindTooltip(f.properties.name)
+          .bindTooltip(label, { permanent: true, direction: 'right', offset: [14, 0], className: 'stop-label' })
           .on('click', () => onSelect.current?.(f.properties.id))
           .addTo(map)
         markers.current[f.properties.id] = marker

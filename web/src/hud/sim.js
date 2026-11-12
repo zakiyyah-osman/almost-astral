@@ -138,6 +138,7 @@ export function stateAt(tl, t, storm) {
       nextName: tl.roverName,
       nextDist: left,
       shelterMin: left / tl.speed,
+      pace: left <= 0 ? 0 : tl.speed,
     }
   }
 
@@ -157,6 +158,8 @@ export function stateAt(tl, t, storm) {
     nextName: target.toName,
     nextDist: seg.type === 'stop' ? target.d1 - target.d0 : Math.max(seg.d1 - d, 0),
     shelterMin: Math.min(d, tl.routeLen - d) / tl.speed,
+    // Metres per minute on the ground right now: the leg's distance over its walking time (0 when stopped).
+    pace: seg.type === 'walk' && !done ? (seg.d1 - seg.d0) / (seg.t1 - seg.t0 || 1) : 0,
   }
 }
 
