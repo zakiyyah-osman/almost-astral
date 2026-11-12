@@ -1,0 +1,67 @@
+{
+  "_help": "Settings for the real-data build (python data/build_real.py). Paths are relative to data/. Set a path to null to skip that source; its fake file then stays in data/out/.",
+
+  "name": "Mount Sharp boxwork region, Gale crater (placeholder: confirm with Zakiyyah)",
+  "center_lat": -4.78,
+  "center_lon_east": 137.38,
+  "_center_note": "PLACEHOLDER. Replace with the real site centre once the site is chosen. Longitude is degrees east, 0 to 360.",
+
+  "grid": { "width": 400, "height": 400, "cell_m": 5 },
+  "mars_radius_m": 3396190,
+
+  "hirise": {
+    "dtm": null,
+    "image": null,
+    "_example_dtm": "raw/hirise/MSL_Gale_DEM_Mosaic_1m_v3.tif",
+    "_example_image": "raw/hirise/MSL_Gale_Orthophoto_Mosaic_25cm_v3.tif",
+    "label": "HiRISE (MRO), MSL Gale merged mosaic"
+  },
+
+  "themis": {
+    "file": null,
+    "_example": "raw/themis/THEMIS_TI_Mosaic_Quant_30S120E_100mpp.tif",
+    "kind": "thermal_inertia",
+    "_kind_help": "thermal_inertia = quantitative TI in SI units (best); night_ir = night-time brightness only (qualitative, still shows sand vs rock)",
+    "label": "THEMIS (Mars Odyssey), thermal inertia mosaic"
+  },
+
+  "crism": {
+    "minerals": [],
+    "_example_minerals": [
+      { "label": "Sulfates", "file": "raw/crism/FRT0000xxxx_su.img", "band_name": "SINDEX2", "threshold": 0.02, "color": [70, 170, 230] },
+      { "label": "Hydrated minerals", "file": "raw/crism/FRT0000xxxx_su.img", "band_name": "BD1900_2", "threshold": 0.01, "color": [150, 90, 200] },
+      { "label": "Clays (Fe/Mg)", "file": "raw/crism/FRT0000xxxx_su.img", "band_name": "D2300", "threshold": 0.01, "color": [60, 190, 150] }
+    ],
+    "_threshold_note": "Thresholds are starting values to tune by eye, not published cut-offs. Use band (a number from 1) if band_name does not match.",
+    "label": "CRISM (MRO), MTRDR summary parameters"
+  },
+
+  "rems": {
+    "file": null,
+    "_example": "raw/rems/rems_sols.csv",
+    "sols": [4600, 4600],
+    "columns": { "sol": "SOL", "ltst": "LTST", "temp": "AMB_TEMP", "pressure": "PRESSURE" },
+    "temp_units": "K",
+    "dust_tau_estimate": 0.6,
+    "_dust_note": "REMS does not measure dust opacity (tau). This single value is an estimate for the season; replace it with a Mastcam tau value if you find one.",
+    "label": "REMS (Curiosity)"
+  },
+
+  "rad": {
+    "file": null,
+    "_example": "raw/rad/rad_dose.csv",
+    "sols": [4600, 4600],
+    "columns": { "sol": "sol", "ltst": "ltst", "dose": "dose_rate" },
+    "dose_units": "ugy_per_day",
+    "_units_help": "ugy_per_day, ugy_per_h or usv_per_h",
+    "quality_factor": 3.05,
+    "_qf_note": "Converts absorbed dose (Gy) to dose equivalent (Sv). 3.05 = 0.64 mSv/day / 0.21 mGy/day, the surface averages Hassler et al. (2014, Science) reported from RAD. An approximation.",
+    "label": "RAD (Curiosity)"
+  },
+
+  "donki": {
+    "start": "2025-06-01",
+    "end": "2025-12-31",
+    "label": "NASA DONKI (CCMC space weather database)"
+  }
+}

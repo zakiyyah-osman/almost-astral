@@ -1,6 +1,6 @@
 {
   "site": {
-    "name": "Fake site (replace with the real one)",
+    "name": "Mount Sharp boxwork region, Gale crater (placeholder: confirm with Zakiyyah)",
     "grid": {
       "width": 400,
       "height": 400,
@@ -9,7 +9,9 @@
     "extent_m": [
       2000.0,
       2000.0
-    ]
+    ],
+    "center_lat": -4.78,
+    "center_lon_east": 137.38
   },
   "layers": [
     {
@@ -67,7 +69,11 @@
   },
   "tables": {
     "weather": "weather.csv",
-    "radiation": "radiation.csv"
+    "radiation": "radiation.csv",
+    "space_weather": "space_weather.csv"
   },
-  "plan": "plan.json"
+  "plan": "plan.json",
+  "sources_notes": {
+    "space_weather.csv": "NASA DONKI (CCMC space weather database), 2025-06-01 to 2025-12-31. mars_impact comes from DONKI's own model runs and instrument lists."
+  }
 }
