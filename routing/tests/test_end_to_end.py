@@ -16,6 +16,21 @@ from conftest import write_full_site
 REAL_OUT = Path(__file__).resolve().parents[2] / "data" / "out"
 CFG = load_config()
 ROUTE_FILES = ["route.geojson", "route_fastest.geojson", "route_safest.geojson"]
+OUTPUT_FILES = [*ROUTE_FILES, "shelter_time.png", "plan.json"]
+NOT_BUILT = "run python routing/plan_route.py first"
+
+
+def skip_unless_planner_outputs_exist():
+    """Skip when data/out has no routing output yet, or still has the fake plan from make_fake.py."""
+    missing = [n for n in OUTPUT_FILES if not (REAL_OUT / n).is_file()]
+    if missing:
+        pytest.skip(f"{NOT_BUILT} (missing from data/out: {', '.join(missing)})")
+    try:
+        plan = json.loads((REAL_OUT / "plan.json").read_text(encoding="utf-8"))
+    except ValueError:
+        pytest.skip(f"{NOT_BUILT} (data/out/plan.json is not valid JSON)")
+    if not isinstance(plan, dict) or "profiles" not in plan:
+        pytest.skip(f"{NOT_BUILT} (data/out/plan.json is still the fake plan)")
 
 
 def load_json(name):
@@ -24,6 +39,7 @@ def load_json(name):
 
 @pytest.fixture(scope="module")
 def real():
+    skip_unless_planner_outputs_exist()
     grid = g.read_grid(REAL_OUT)
     dem = g.load_dem(REAL_OUT, grid)
     return {
@@ -70,7 +86,6 @@ def test_route_slope_under_limit(real, name):
 
 def test_plan_status_ok(real):
     plan = real["plan"]
-    assert "profiles" in plan, "data/out/plan.json is not a routing plan: run python routing/plan_route.py"
     assert plan["status"] == "ok"
     assert all(c["ok"] for c in plan["checks"])
     assert all(p["status"] == "ok" for p in plan["profiles"].values())

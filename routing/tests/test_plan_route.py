@@ -77,6 +77,8 @@ def test_in_out_config_options(tmp_path):
     shared_before = digest(REAL_OUT)
     copy = tmp_path / "copy"
     shutil.copytree(REAL_OUT, copy)
+    for name in OUTPUTS:                                          # only the inputs matter, not old outputs
+        (copy / name).unlink(missing_ok=True)
     copy_before = digest(copy)
 
     # --in with --out: the copy is read and left as it was; the outputs land elsewhere.
