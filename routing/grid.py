@@ -6,11 +6,14 @@ never hard-coded: they always come from layers.json (site.grid).
 """
 import json
 import math
+import numbers
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import rasterio
+import rasterio.errors
 
 from config import ConfigError
 
@@ -53,8 +56,13 @@ class Grid:
     def xy_to_cell(self, x, y):
         """The (row, col) of the cell containing the point (x, y), in metres.
 
-        Raises GridError if the point lies outside the site.
+        Raises GridError if x or y is not a finite number or the point lies outside the site.
         """
+        for label, v in (("x", x), ("y", y)):
+            if isinstance(v, bool) or not isinstance(v, numbers.Real):
+                raise GridError(f"point {label} must be a number in metres, got {v!r}")
+            if not math.isfinite(v):
+                raise GridError(f"point {label} must be a finite number in metres, got {v!r}")
         ex, ey = self.extent_m
         if not (0 <= x <= ex and 0 <= y <= ey):
             raise GridError(f"point ({x}, {y}) m is outside the site ({ex} x {ey} m)")
@@ -68,12 +76,23 @@ class Grid:
 def read_layers(folder):
     """The parsed layers.json in `folder`."""
     path = Path(folder) / LAYERS_FILE
-    if not path.exists():
-        raise GridError(f"{path} not found")
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise GridError(f"{LAYERS_FILE} not found in {Path(folder)}") from None
+    except (OSError, UnicodeDecodeError) as e:
+        raise GridError(f"{LAYERS_FILE} cannot be read ({path}): {e}") from None
+    try:
+        layers = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise GridError(f"{LAYERS_FILE} is not valid JSON: {e}") from None
+    if not isinstance(layers, dict):
+        raise GridError(f"{LAYERS_FILE} must be a JSON object, got {type(layers).__name__}")
+    return layers
 
 
 EXTENT_TOL_M = 1e-6
+MIN_CELLS = 2
 
 
 def _positive_int(label, v):
@@ -94,6 +113,11 @@ def grid_from_layers(layers):
         raise GridError(f"layers.json has no usable site.grid: {e!r}") from None
     width = _positive_int("width", width_v)
     height = _positive_int("height", height_v)
+    if width < MIN_CELLS or height < MIN_CELLS:
+        raise GridError(
+            f"layers.json site.grid is {width} x {height} cells; "
+            f"at least {MIN_CELLS} rows and {MIN_CELLS} columns are needed (slope uses neighbours)"
+        )
     if isinstance(cell_v, bool) or not isinstance(cell_v, (int, float)) or not cell_v > 0:
         raise GridError(f"layers.json site.grid.cell_m must be a positive number, got {cell_v!r}")
     grid = Grid(width=width, height=height, cell_m=float(cell_v))
@@ -123,6 +147,11 @@ GEOTRANSFORM_TOL = 1e-6
 def _check_geotransform(path, t, grid):
     """Pixel size must equal cell_m on both axes and the raster must be north-up."""
     name = Path(path).name
+    if t.is_identity:
+        raise GridError(
+            f"{name} has no geotransform (GDAL reports the identity transform); it must be "
+            f"north-up with {grid.cell_m} m pixels"
+        )
     if abs(t.b) > GEOTRANSFORM_TOL or abs(t.d) > GEOTRANSFORM_TOL:
         raise GridError(f"{name} is rotated (geotransform {tuple(t)[:6]}); it must be north-up")
     if t.e > 0:
@@ -133,13 +162,26 @@ def _check_geotransform(path, t, grid):
         )
 
 
+def _open_raster(path):
+    """rasterio.open, with a missing or unreadable file reported as a GridError naming it."""
+    path = Path(path)
+    if not path.exists():
+        raise GridError(f"{path.name} not found in {path.parent}")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", rasterio.errors.NotGeoreferencedWarning)
+            return rasterio.open(path)
+    except (rasterio.errors.RasterioError, OSError) as e:
+        raise GridError(f"{path.name} cannot be read as a raster ({path}): {e}") from None
+
+
 def _check_rasters_agree(path):
     """dem.tif and hazard.tif must share one geotransform (origin, pixel size, orientation)."""
     folder = Path(path).parent
     dem, haz = folder / DEM_FILE, folder / HAZARD_FILE
     if not (dem.exists() and haz.exists()):
         return
-    with rasterio.open(dem) as a, rasterio.open(haz) as b:
+    with _open_raster(dem) as a, _open_raster(haz) as b:
         ta, tb = tuple(a.transform)[:6], tuple(b.transform)[:6]
     if any(abs(x - y) > GEOTRANSFORM_TOL for x, y in zip(ta, tb)):
         raise GridError(
@@ -149,7 +191,7 @@ def _check_rasters_agree(path):
 
 
 def _read_band(path, grid):
-    with rasterio.open(path) as src:
+    with _open_raster(path) as src:
         if (src.height, src.width) != grid.shape:
             raise GridError(
                 f"{Path(path).name} is {src.width} x {src.height} cells, "
@@ -157,7 +199,10 @@ def _read_band(path, grid):
             )
         _check_geotransform(path, src.transform, grid)
         _check_rasters_agree(path)
-        arr = src.read(1)
+        try:
+            arr = src.read(1)
+        except (rasterio.errors.RasterioError, OSError) as e:
+            raise GridError(f"{Path(path).name} cannot be read ({path}): {e}") from None
         nodata = src.nodata
     return arr, nodata
 
@@ -185,7 +230,13 @@ def load_hazard(folder, grid):
 def slope_deg(dem, cell_m):
     """Steepest terrain slope at each cell, in degrees (central differences).
 
-    Cells next to a NaN in the DEM come out NaN.
+    A cell whose DEM value is NaN or infinite has NaN slope, and so do its four
+    neighbours, which read it. Phase 2 blocks every cell with a NaN slope.
     """
-    dz_dy, dz_dx = np.gradient(dem, cell_m)
-    return np.degrees(np.arctan(np.hypot(dz_dx, dz_dy)))
+    dem = np.asarray(dem, dtype=np.float64)
+    finite = np.isfinite(dem)
+    clean = np.where(finite, dem, np.nan)
+    dz_dy, dz_dx = np.gradient(clean, cell_m)
+    slope = np.degrees(np.arctan(np.hypot(dz_dx, dz_dy)))
+    slope[~finite] = np.nan
+    return slope

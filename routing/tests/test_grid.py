@@ -117,12 +117,15 @@ def test_boundary_snapping_is_half_open_from_south_west():
 
 # ---- rasters -----------------------------------------------------------------
 def test_shape_mismatch_fails(flat_site):
+    """Same transform as the other file and the right pixel size; only the shape is wrong."""
     grid = g.read_grid(flat_site.folder)
-    _write_tif(flat_site.folder / "hazard.tif", np.zeros((10, 20)), "uint8", from_origin(0, 50, 5, 5))
-    with pytest.raises(GridError, match="hazard.tif"):
+    same = from_origin(0, 100, 5, 5)          # the transform flat_site writes for both files
+    _write_tif(flat_site.folder / "hazard.tif", np.zeros((10, 20)), "uint8", same)
+    with pytest.raises(GridError, match=r"hazard\.tif is 20 x 10 cells, layers\.json says 20 x 20"):
         g.load_hazard(flat_site.folder, grid)
-    _write_tif(flat_site.folder / "dem.tif", np.zeros((20, 10)), "float32", from_origin(0, 100, 5, 5))
-    with pytest.raises(GridError, match="dem.tif"):
+    _write_tif(flat_site.folder / "hazard.tif", np.zeros((20, 20)), "uint8", same)
+    _write_tif(flat_site.folder / "dem.tif", np.zeros((20, 10)), "float32", same)
+    with pytest.raises(GridError, match=r"dem\.tif is 10 x 20 cells, layers\.json says 20 x 20"):
         g.load_dem(flat_site.folder, grid)
 
 
@@ -228,8 +231,11 @@ def test_flat_terrain_has_zero_slope_and_nodata_blocks_neighbours(tmp_path):
     assert np.isnan(dem[5, 5])
     assert np.isfinite(dem).sum() == dem.size - 1
     slope = g.slope_deg(dem, cell)
+    assert np.isnan(slope[5, 5])                      # the no-data cell itself
     for rc in [(4, 5), (6, 5), (5, 4), (5, 6)]:
         assert np.isnan(slope[rc]), rc
+    # Exactly those five cells are NaN: Phase 2 can block on isnan(slope) alone.
+    assert np.isnan(slope).sum() == 5
     # Cells further away stay finite and flat.
     assert slope[10, 10] == 0
     assert slope[3, 3] == 0

@@ -382,19 +382,19 @@ source = "Tobler hiking function (1993); cancels after normalising to 1 on flat 
 value = 3.71
 unit = "m/s^2"
 type = "observation"
-source = "Mars surface gravity, project rule in CLAUDE.md"
+source = "NASA Mars Fact Sheet (NSSDC), surface gravity"
 
 [walking.leg_length_m]
 value = 0.9
 unit = "m"
 type = "scenario"
-source = "routing/CLAUDE.md, typical adult leg length"
+source = "Team choice: typical adult leg length"
 
 [walking.froude_walk_run]
 value = 0.5
 unit = "dimensionless"
 type = "proxy"
-source = "Walk-run transition at Froude number 0.5, routing/CLAUDE.md (reduced-gravity studies, Kram et al. 1997)"
+source = "Walk-run transition at Froude number 0.5, Kram et al. 1997 (reduced-gravity locomotion)"
 
 # ---- hard constraints ---------------------------------------------------
 [constraints.slope_max_deg]
@@ -445,7 +445,7 @@ source = "Team choice: rate next to a red cell, falling to 0 at the radius"
 value = 0.0
 unit = "dimensionless"
 type = "scenario"
-source = "routing/CLAUDE.md: fastest ignores risk"
+source = "Definition of the fastest profile: risk is ignored"
 
 [profiles.w_balanced]
 value = 1.0
@@ -513,7 +513,7 @@ source = "CONTRACT.md plan.json example; to be replaced by the mission brief"
 value = 30
 unit = "percent"
 type = "scenario"
-source = "routing/CLAUDE.md"
+source = "Team choice"
 
 # ---- radiation ----------------------------------------------------------
 [radiation.background_dose_rate_msv_day]
@@ -623,6 +623,13 @@ Sources and environment:
 22. The literature references added here (Tobler 1993, Cavagna et al. 1998, Kram et al. 1997, Hassler et al. 2014) are cited from memory and need checking before they go on a slide.
 23. `.venv` is Python 3.12 with `scikit-image`, `scipy` and `pytest` installed locally only. They are requested from Yaj but not yet in `requirements.txt`, so a teammate's fresh install will not have them. Python 3.13 and later lack wheels, so 3.12 is the newest version this module runs on; the project docs say 3.11+.
 24. `skimage.graph.MCP_Geometric` behaves as this design needs. Checked in `.venv` (scikit-image 0.26.0) on a 5 x 5 grid: `sampling` scales move lengths to metres, a negative cost is impassable, unreachable cells come back as `inf`, and `traceback` returns the path as cells.
+
+Grid and rasters:
+
+25. The raster origin is not checked against (0, 0). The pixel indices define the grid (row 0 is the north edge, `CONTRACT.md`). `dem.tif` and `hazard.tif` must carry the same geotransform (origin, pixel size, orientation), and each must have a pixel size equal to `cell_m` on both axes, be north-up and have no rotation; otherwise the run stops with an error naming the file or both files.
+26. A TIFF with no geotransform at all (GDAL then reports the identity transform) is rejected with its own message, not as "south-up".
+27. Slope is the central difference of the four neighbours, so a cell's own height does not enter its slope. A single-cell spike or pit is invisible to it and must come from the hazard map.
+28. A no-data DEM cell is NaN in the DEM and NaN in the slope, and so are its four neighbours (the central difference reads them). `cost.py` blocks every NaN-slope cell. The no-data marker is still an open question for Yaj (section 12).
 
 ## 12. Open questions for teammates
 

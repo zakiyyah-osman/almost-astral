@@ -31,19 +31,19 @@ source = "Tobler hiking function (1993); cancels after normalising to 1 on flat 
 value = 3.71
 unit = "m/s^2"
 type = "observation"
-source = "Mars surface gravity, project rule in CLAUDE.md"
+source = "NASA Mars Fact Sheet (NSSDC), surface gravity"
 
 [walking.leg_length_m]
 value = 0.9
 unit = "m"
 type = "scenario"
-source = "routing/CLAUDE.md, typical adult leg length"
+source = "Team choice: typical adult leg length"
 
 [walking.froude_walk_run]
 value = 0.5
 unit = "dimensionless"
 type = "proxy"
-source = "Walk-run transition at Froude number 0.5, routing/CLAUDE.md (reduced-gravity studies, Kram et al. 1997)"
+source = "Walk-run transition at Froude number 0.5, Kram et al. 1997 (reduced-gravity locomotion)"
 
 # ---- hard constraints ---------------------------------------------------
 [constraints.slope_max_deg]
@@ -94,7 +94,7 @@ source = "Team choice: rate next to a red cell, falling to 0 at the radius"
 value = 0.0
 unit = "dimensionless"
 type = "scenario"
-source = "routing/CLAUDE.md: fastest ignores risk"
+source = "Definition of the fastest profile: risk is ignored"
 
 [profiles.w_balanced]
 value = 1.0
@@ -162,7 +162,7 @@ source = "CONTRACT.md plan.json example; to be replaced by the mission brief"
 value = 30
 unit = "percent"
 type = "scenario"
-source = "routing/CLAUDE.md"
+source = "Team choice"
 
 # ---- radiation ----------------------------------------------------------
 [radiation.background_dose_rate_msv_day]
