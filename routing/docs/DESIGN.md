@@ -25,7 +25,7 @@ Writes to `data/out/`:
 | `plan.json` | contract file, with added fields (section 9) |
 | `route_fastest.geojson`, `route_safest.geojson` | new files, same format as `route.geojson` |
 
-Writes inside `routing/` only: `reports/sweep.csv`, `reports/sensitivity.csv`, `reports/validation.csv`.
+Writes inside `routing/` only: `reports/sweep.csv`, `reports/sensitivity.csv`, `reports/validation.csv`. These come from `analysis.py`, which never writes to `data/out/`.
 
 Nothing in the code may assume the site, the grid size or the cell size. Switching from Jezero to Gale means new files in `data/out/` and no code change.
 
@@ -46,11 +46,26 @@ Flat modules in `routing/`. The entry point stays `python routing/plan_route.py`
 | `storm.py` | return paths from sampled route points |
 | `timeline.py` | legs, totals, track samples, budget checks, radiation |
 | `outputs.py` | writers for the GeoJSON files and `plan.json` |
-| `analysis.py` | w-sweep, sensitivity runs, hard-mask validation against the Perseverance traverse |
-| `plan_route.py` | wires everything; `--out` selects another output folder for tests |
+| `analysis.py` | the w-sweep function, sensitivity runs, hard-mask validation against the Perseverance traverse. Run as a script it writes CSV reports only |
+| `plan_route.py` | wires everything; takes the command-line options below |
 | `tests/` | pytest, on small synthetic grids built in `conftest.py`; only the end-to-end test reads `data/out/` |
 | `docs/` | `DESIGN.md`, `CHECKLIST.md`, `QA.md` |
 | `reports/` | CSV tables from `analysis.py` |
+
+**Command-line options.**
+
+| Option | `plan_route.py` | `analysis.py` | Meaning | Default |
+| --- | --- | --- | --- | --- |
+| `--in DIR` | yes | yes | folder the inputs are read from | `data/out` |
+| `--config FILE` | yes | yes | parameter file | `routing/config.toml` |
+| `--out DIR` | yes | no | folder the route files, `shelter_time.png` and `plan.json` are written to | the value of `--in` |
+| `--reports DIR` | no | yes | folder the CSV reports are written to | `routing/reports` |
+
+With no options, `plan_route.py` reads and writes `data/out`. When `--in` is set and `--out` is not, outputs go to the `--in` folder, never to `data/out`: a run pointed at a test folder cannot overwrite the shared data by accident.
+
+`analysis.py` writes CSV files only, into `--reports`. It has no `--out` and never writes to `data/out/`. The `sweep` block in `plan.json` is produced by `plan_route.py`, which calls the sweep function in `analysis.py`; `analysis.py` run as a script writes the same rows to `sweep.csv`.
+
+Tests and `QA.md` use these options to run on a temporary copy and to change parameters without editing `routing/config.toml`.
 
 Dependencies beyond `requirements.txt`: `scikit-image` (search), `scipy` (distance transform), `pytest`. See section 12.
 
@@ -159,7 +174,7 @@ All three share the hard mask. They differ only in how much risk exposure they t
 
 ### 4.8 Sweep and sensitivity
 
-- **w-sweep:** rerun the route for each value in `profiles.sweep_w`. One row per w: distance, walk minutes, risk minutes and its three parts. This is the time against risk-exposure table. It goes into `plan.json` (`sweep`) and `reports/sweep.csv`.
+- **w-sweep:** rerun the route for each value in `profiles.sweep_w`. One row per w: distance, walk minutes, risk minutes and its three parts. This is the time against risk-exposure table. `plan_route.py` writes it into `plan.json` (`sweep`); `analysis.py` writes the same rows to `reports/sweep.csv`. Both call one sweep function, so the two cannot disagree.
 - **Sensitivity:** every combination of `sensitivity.v_flat_kmh`, `sensitivity.slope_max_deg` and `sensitivity.w` (2 x 3 x 3 = 18 runs). One row each: walk minutes, total minutes, risk minutes, budget status, or `infeasible` with the stop that failed. Goes to `reports/sensitivity.csv`.
 - **Hard-mask validation:** the share of Perseverance traverse points that fall on passable cells, reported in `reports/validation.csv`. A rover drove there, so a low share means the mask is too strict. Blocked until Yaj supplies the traverse in grid coordinates (section 12).
 
@@ -213,7 +228,7 @@ total_min   = walk_min + stop_min + ingress_min
 
 The clock starts when the crew leaves the rover. Legs run rover → stops → rover. Each leg records arrival and departure times, so the web app can draw the timeline.
 
-**Track.** The balanced route sampled every `track.spacing_m`: position, distance, elevation, slope, hazard class, elapsed minutes, minutes back to shelter. It feeds the slope profile chart and the HUD.
+**Track.** The balanced route sampled every `track.spacing_m`: position, distance, elevation, slope, hazard class, elapsed minutes, minutes back to shelter. `elapsed_min` is clock time since leaving the rover, so it includes the time spent at every stop already visited, not only walking time. It feeds the slope profile chart and the HUD.
 
 **Checks**, each written to `plan.json` with its value and limit:
 
