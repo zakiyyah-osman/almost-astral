@@ -40,6 +40,16 @@ class Grid:
     height: int      # rows
     cell_m: float    # metres per cell
 
+    def __post_init__(self):
+        for label, v in (("width", self.width), ("height", self.height)):
+            if isinstance(v, bool) or not isinstance(v, numbers.Integral):
+                raise GridError(f"Grid {label} must be an integer, got {v!r}")
+            if v < MIN_CELLS:
+                raise GridError(f"Grid {label} must be at least {MIN_CELLS} cells, got {v!r}")
+        c = self.cell_m
+        if isinstance(c, bool) or not isinstance(c, numbers.Real) or not math.isfinite(c) or c <= 0:
+            raise GridError(f"Grid cell_m must be a positive finite number, got {c!r}")
+
     @property
     def shape(self):
         """(rows, columns), the shape of every raster."""
