@@ -78,3 +78,17 @@ def wide_site(tmp_path):
     dem = np.zeros((80, 120), dtype=np.float32)
     hazard = np.zeros((80, 120), dtype=np.uint8)
     return write_site(tmp_path / "wide", dem, hazard, 10.0)
+
+def write_waypoints(folder, items):
+    """Write waypoints.geojson. items: (id, name, kind, x, y) tuples, x and y in metres."""
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [x, y]},
+            "properties": {"id": wid, "name": name, "kind": kind, "why": "test", "photo": None},
+        }
+        for wid, name, kind, x, y in items
+    ]
+    path = Path(folder) / "waypoints.geojson"
+    path.write_text(json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8")
+    return path

@@ -36,11 +36,11 @@ Each item: **task** · file · check.
 
 ## Phase 3: routing + profiles
 
-- [ ] **3.1** Search wrapper returning the path, physical minutes and risk minutes separately. · `routing/search.py` · `test_search.py::test_straight_on_open_flat_grid`, `::test_flat_5m_step_is_0_111_min`, `::test_diagonal_is_root2_longer`, `::test_goes_round_red_wall`, `::test_unreachable_reported`, `::test_time_not_changed_by_w_on_same_path`.
-- [ ] **3.2** Load waypoints; fail by name on a blocked or unreachable stop. · `routing/tour.py` · `test_tour.py::test_stop_on_red_names_stop`, `::test_unreachable_stop_names_stop`, `::test_needs_exactly_one_rover`.
-- [ ] **3.3** Stop order, both modes. · `routing/tour.py` · `test_tour.py::test_as_listed_keeps_file_order`, `::test_optimise_minimises_balanced_cost`, `::test_tie_follows_file_order`.
-- [ ] **3.4** The three profile routes. · `routing/tour.py` · `test_tour.py::test_route_is_rover_to_rover_through_all_stops`, `::test_time_fastest_le_balanced_le_safest`, `::test_risk_fastest_ge_balanced_ge_safest`.
-- [ ] **End of phase 3:** `pytest routing/tests` passes · commit.
+- [x] **3.1** Search wrapper returning the path, physical minutes and risk minutes separately. · `routing/search.py` · `test_search.py::test_straight_on_open_flat_grid`, `::test_flat_5m_step_is_0_111_min`, `::test_diagonal_is_root2_longer`, `::test_goes_round_red_wall`, `::test_unreachable_reported`, `::test_time_not_changed_by_w_on_same_path`.
+- [x] **3.2** Load waypoints; fail by name on a blocked or unreachable stop. · `routing/tour.py` · `test_tour.py::test_stop_on_red_names_stop`, `::test_unreachable_stop_names_stop`, `::test_needs_exactly_one_rover`.
+- [x] **3.3** Stop order, both modes. · `routing/tour.py` · `test_tour.py::test_as_listed_keeps_file_order`, `::test_optimise_minimises_balanced_cost`, `::test_tie_follows_file_order`.
+- [x] **3.4** The three profile routes. · `routing/tour.py` · `test_tour.py::test_route_is_rover_to_rover_through_all_stops`, `::test_time_fastest_le_balanced_le_safest`, `::test_risk_fastest_ge_balanced_ge_safest`.
+- [x] **End of phase 3:** `pytest routing/tests` passes · commit.
 
 ## Phase 4: shelter + storm
 
