@@ -190,9 +190,22 @@ export default function App() {
                 <p className="muted">
                   x {stop.geometry.coordinates[0]} m · y {stop.geometry.coordinates[1]} m
                 </p>
-                <div className="photo">
-                  {stop.properties.photo ? `Photo: ${stop.properties.photo}` : 'Photo to add (mission/photos/)'}
-                </div>
+                {stop.properties.photo ? (
+                  <figure className="stop-photo">
+                    <img src={`./photos/${stop.properties.photo}`} alt={stop.properties.photo_caption ?? stop.properties.name} loading="lazy" />
+                    <figcaption>
+                      {stop.properties.photo_caption && <span>{stop.properties.photo_caption} </span>}
+                      {stop.properties.photo_credit && <span>Credit: {stop.properties.photo_credit}. </span>}
+                      {stop.properties.photo_source && (
+                        <a href={stop.properties.photo_source} target="_blank" rel="noreferrer">
+                          Source
+                        </a>
+                      )}
+                    </figcaption>
+                  </figure>
+                ) : (
+                  <div className="photo">Photo to add (mission/photos/)</div>
+                )}
               </div>
             ) : (
               <p className="muted">Click a numbered stop on the map to see what is there.</p>

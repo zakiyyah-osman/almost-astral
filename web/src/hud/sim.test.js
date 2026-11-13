@@ -49,7 +49,7 @@ test('first leg heads north-west (rover to the clay outcrop)', () => {
   const s = stateAt(tl, 5, null)
   near(s.heading, 320, 1) // atan2(-500, 600) is about 320 degrees clockwise from north
   assert.equal(s.phase, 'walk')
-  assert.equal(s.nextName, 'Clay outcrop')
+  assert.equal(s.nextName, 'Clay-bearing outcrop')
 })
 
 test('while sampling, "next" is the following stop', () => {
@@ -57,7 +57,7 @@ test('while sampling, "next" is the following stop', () => {
   const dwell = stopList(tl)[0]
   const s = stateAt(tl, (dwell.t0 + dwell.t1) / 2, null)
   assert.equal(s.phase, 'stop')
-  assert.equal(s.nextName, 'Crater rim ridges')
+  assert.equal(s.nextName, 'Delta front layers')
   assert.ok(s.nextDist > 0)
 })
 
