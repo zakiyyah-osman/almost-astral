@@ -133,6 +133,21 @@ def _check_geotransform(path, t, grid):
         )
 
 
+def _check_rasters_agree(path):
+    """dem.tif and hazard.tif must share one geotransform (origin, pixel size, orientation)."""
+    folder = Path(path).parent
+    dem, haz = folder / DEM_FILE, folder / HAZARD_FILE
+    if not (dem.exists() and haz.exists()):
+        return
+    with rasterio.open(dem) as a, rasterio.open(haz) as b:
+        ta, tb = tuple(a.transform)[:6], tuple(b.transform)[:6]
+    if any(abs(x - y) > GEOTRANSFORM_TOL for x, y in zip(ta, tb)):
+        raise GridError(
+            f"{DEM_FILE} and {HAZARD_FILE} have different geotransforms: "
+            f"{DEM_FILE} {ta}, {HAZARD_FILE} {tb}"
+        )
+
+
 def _read_band(path, grid):
     with rasterio.open(path) as src:
         if (src.height, src.width) != grid.shape:
@@ -141,6 +156,7 @@ def _read_band(path, grid):
                 f"layers.json says {grid.width} x {grid.height}"
             )
         _check_geotransform(path, src.transform, grid)
+        _check_rasters_agree(path)
         arr = src.read(1)
         nodata = src.nodata
     return arr, nodata

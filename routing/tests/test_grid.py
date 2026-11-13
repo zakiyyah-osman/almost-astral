@@ -233,3 +233,21 @@ def test_flat_terrain_has_zero_slope_and_nodata_blocks_neighbours(tmp_path):
     # Cells further away stay finite and flat.
     assert slope[10, 10] == 0
     assert slope[3, 3] == 0
+
+
+def test_hazard_shifted_by_one_cell_fails(flat_site):
+    grid = g.read_grid(flat_site.folder)
+    shifted = from_origin(5.0, 100.0, 5.0, 5.0)  # one cell east of dem.tif
+    _write_tif(flat_site.folder / "hazard.tif", np.zeros((20, 20)), "uint8", shifted)
+    for load in (g.load_dem, g.load_hazard):
+        with pytest.raises(GridError, match=r"dem\.tif and hazard\.tif.*different geotransforms"):
+            load(flat_site.folder, grid)
+
+
+def test_dem_and_hazard_with_same_nonzero_origin_load(flat_site):
+    grid = g.read_grid(flat_site.folder)
+    moved = from_origin(1000.0, 1100.0, 5.0, 5.0)
+    _write_tif(flat_site.folder / "dem.tif", np.zeros((20, 20)), "float32", moved)
+    _write_tif(flat_site.folder / "hazard.tif", np.zeros((20, 20)), "uint8", moved)
+    assert g.load_dem(flat_site.folder, grid).shape == (20, 20)
+    assert g.load_hazard(flat_site.folder, grid).shape == (20, 20)
