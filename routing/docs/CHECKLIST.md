@@ -15,16 +15,16 @@ Each item: **task** · file · check.
 
 ## Phase 1: config + grid
 
-- [ ] **1.0** Confirm the search interface. · no file · `python -c "import skimage, scipy, pytest"` exits 0, and `python -c "from skimage.graph import MCP_Geometric; help(MCP_Geometric)"` shows `sampling`, `fully_connected`, `find_costs` and `traceback`.
-- [ ] **1.1** Write the full config from DESIGN section 10. · `routing/config.toml` · `python -c "import tomllib; tomllib.load(open('routing/config.toml','rb'))"` exits 0.
-- [ ] **1.2** Config loader that rejects a parameter missing `value`, `unit`, `type` or `source`, or with an unknown type. · `routing/config.py` · `test_config.py::test_every_parameter_has_four_keys`, `::test_unknown_type_rejected`.
-- [ ] **1.3** Gravity check at load, covering `v_flat` and every sensitivity value. · `routing/config.py` · `test_config.py::test_walk_run_transition_is_4_65_kmh`, `::test_v_flat_above_transition_fails`.
-- [ ] **1.4** Test fixtures: flat grid, tilted plane, red wall, and a 120 x 80 grid with 10 m cells. · `routing/tests/conftest.py` · `pytest --fixtures routing/tests` lists all four.
-- [ ] **1.5** Read the grid size from `layers.json`. · `routing/grid.py` · `test_grid.py::test_grid_comes_from_layers_json` (uses the 120 x 80 fixture).
-- [ ] **1.6** Cell ↔ metre conversion. · `routing/grid.py` · `test_grid.py::test_cell_centre_matches_contract` (row 0, column 0 on 400 x 400 at 5 m gives x 2.5, y 1997.5), `::test_xy_cell_round_trip`.
-- [ ] **1.7** Load `dem.tif` and `hazard.tif`; reject a wrong shape or a hazard value outside 0–2. · `routing/grid.py` · `test_grid.py::test_shape_mismatch_fails`, `::test_bad_hazard_value_fails`.
-- [ ] **1.8** Terrain slope in degrees. · `routing/grid.py` · `test_grid.py::test_slope_of_10pct_plane_is_5_71_deg`.
-- [ ] **End of phase 1:** `pytest routing/tests` passes · commit.
+- [x] **1.0** Confirm the search interface. · no file · `python -c "import skimage, scipy, pytest"` exits 0, and `python -c "from skimage.graph import MCP_Geometric; help(MCP_Geometric)"` shows `sampling`, `fully_connected`, `find_costs` and `traceback`.
+- [x] **1.1** Write the full config from DESIGN section 10. · `routing/config.toml` · `python -c "import tomllib; tomllib.load(open('routing/config.toml','rb'))"` exits 0.
+- [x] **1.2** Config loader that rejects a parameter missing `value`, `unit`, `type` or `source`, or with an unknown type. · `routing/config.py` · `test_config.py::test_every_parameter_has_four_keys`, `::test_unknown_type_rejected`.
+- [x] **1.3** Gravity check at load, covering `v_flat` and every sensitivity value. · `routing/config.py` · `test_config.py::test_walk_run_transition_is_4_65_kmh`, `::test_v_flat_above_transition_fails`.
+- [x] **1.4** Test fixtures: flat grid, tilted plane, red wall, and a 120 x 80 grid with 10 m cells. · `routing/tests/conftest.py` · `pytest --fixtures routing/tests` lists all four.
+- [x] **1.5** Read the grid size from `layers.json`. · `routing/grid.py` · `test_grid.py::test_grid_comes_from_layers_json` (uses the 120 x 80 fixture).
+- [x] **1.6** Cell ↔ metre conversion. · `routing/grid.py` · `test_grid.py::test_cell_centre_matches_contract` (row 0, column 0 on 400 x 400 at 5 m gives x 2.5, y 1997.5), `::test_xy_cell_round_trip`.
+- [x] **1.7** Load `dem.tif` and `hazard.tif`; reject a wrong shape or a hazard value outside 0–2. · `routing/grid.py` · `test_grid.py::test_shape_mismatch_fails`, `::test_bad_hazard_value_fails`.
+- [x] **1.8** Terrain slope in degrees. · `routing/grid.py` · `test_grid.py::test_slope_of_10pct_plane_is_5_71_deg`.
+- [x] **End of phase 1:** `pytest routing/tests` passes · commit.
 
 ## Phase 2: speed + cost
 
