@@ -281,3 +281,32 @@ button, select, input { font: inherit; }
   .stage.with-hud { grid-template-columns: 1fr; grid-template-rows: 42vh auto; }
   .sidebar { border-right: 0; border-top: 1px solid var(--border); overflow: visible; }
 }
+
+.route-check { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; border-left: 3px solid var(--ok); background: rgba(94, 234, 212, 0.08); font-size: 0.78rem; line-height: 1.35; }
+.route-check.warn { border-color: var(--warn); background: rgba(251, 191, 36, 0.1); }
+.route-check.bad { border-color: var(--bad); background: rgba(255, 107, 87, 0.14); font-weight: 600; }
+
+.presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+.presets button { padding: 7px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--muted); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.presets button:hover { color: var(--text); border-color: var(--accent); }
+.presets button.active { background: var(--accent); border-color: var(--accent); color: #130e0c; }
+.presets button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+.print-btn { width: 100%; margin-top: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.print-btn:hover { border-color: var(--accent); }
+
+/* The mission card is only for paper. */
+.mission-card { display: none; }
+@media print {
+  body { background: #fff; }
+  .app > :not(.mission-card) { display: none !important; }
+  .app { display: block; height: auto; background: #fff; }
+  .mission-card { display: block; padding: 0; color: #111; background: #fff; font: 11pt/1.4 system-ui, sans-serif; }
+  .mission-card h1 { font-size: 16pt; margin: 0 0 6pt; }
+  .mission-card h2 { font-size: 12pt; margin: 12pt 0 4pt; border-bottom: 1px solid #999; }
+  .mission-card table { width: 100%; border-collapse: collapse; }
+  .mission-card th, .mission-card td { text-align: left; vertical-align: top; padding: 2pt 6pt 2pt 0; border-bottom: 1px solid #ddd; }
+  .mission-card ul { margin: 0; padding-left: 16pt; }
+  .mission-card .mc-fake { padding: 4pt 8pt; border: 2px solid #b00; color: #b00; font-weight: 700; }
+  .mission-card .mc-note { margin-top: 10pt; font-size: 9pt; color: #444; }
+}
