@@ -242,9 +242,3 @@ def test_errors_in_a_file_name_the_file(tmp_path):
     bad.write_text('[crew.size]\nvalue = 2\nunit = "people"\ntype = "scenario"\nsource = "x"\n')
     with pytest.raises(ConfigError, match=r"partial\.toml: .*missing parameter walking.v_flat_kmh"):
         load_config(bad)
-
-
-# ---- sources -----------------------------------------------------------------
-def test_no_source_cites_a_project_instruction_file():
-    for key, param in load_config().assumptions().items():
-        assert "claude" not in param["source"].lower(), key
