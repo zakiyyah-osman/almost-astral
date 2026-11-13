@@ -157,5 +157,45 @@ def read_raster(path: Path) -> np.ndarray:
     return img
 
 
-def write_tif(path: Path, arr: np.ndarray, description: dict | None = None) -> None:
-    tifffile.imwrite(path, arr, description=json.dumps(description or {}), compression="zlib")
+# GeoTIFF tags that carry the transform and CRS. GDAL_NODATA (42113) is deliberately
+# NOT copied: the DEM's nodata (-3.4e38) is meaningless for a uint8 class raster.
+GEO_TAGS = {33550: "d", 33922: "d", 34264: "d", 34735: "H", 34736: "d", 34737: "s"}
+
+
+def geo_tags(path: Path) -> list:
+    """GeoTIFF georeferencing tags of `path`, ready for tifffile's extratags."""
+    out = []
+    with tifffile.TiffFile(path) as tf:
+        tags = tf.pages[0].tags
+        for code, dtype in GEO_TAGS.items():
+            if code in tags:
+                v = tags[code].value
+                if dtype == "s":
+                    out.append((code, "s", 0, str(v), False))
+                else:
+                    v = tuple(v) if not isinstance(v, (int, float)) else (v,)
+                    out.append((code, dtype, len(v), v, False))
+    return out
+
+
+def geotransform(path: Path):
+    """GDAL/rasterio-style (a, b, c, d, e, f) of a GeoTIFF: x = a*col + b*row + c (pixel corners).
+    Returns None if the file has no georeferencing."""
+    with tifffile.TiffFile(path) as tf:
+        tags = tf.pages[0].tags
+        if 34264 in tags:
+            m = tags[34264].value
+            return (m[0], m[1], m[3], m[4], m[5], m[7])
+        if 33550 in tags and 33922 in tags:
+            sx, sy = tags[33550].value[:2]
+            i, j, _, x, y, _ = tags[33922].value[:6]
+            return (sx, 0.0, x - i * sx, 0.0, -sy, y + j * sy)
+    return None
+
+
+def write_tif(path: Path, arr: np.ndarray, description: dict | None = None, geo_from: Path | None = None) -> None:
+    """Write a single-band TIFF. With geo_from, copy that file's transform and CRS
+    (same result as rasterio's profile = dem_src.profile, with this dtype and count=1)."""
+    extratags = geo_tags(geo_from) if geo_from is not None else []
+    tifffile.imwrite(path, arr, description=json.dumps(description or {}), compression="zlib",
+                     extratags=extratags)

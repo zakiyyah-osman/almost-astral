@@ -144,6 +144,19 @@ def test_team_layers_json_parses():
     assert L.vectors_map["route"] == "route.geojson"
 
 
+def test_geotransform_from_modeltransformation(tmp_path):
+    import tifffile
+    from hazards.io import geotransform, write_tif
+    src = tmp_path / "src.tif"
+    m = (5.0, 0, 0, 100.0, 0, -5.0, 0, 2000.0, 0, 0, 0, 0, 0, 0, 0, 1)
+    tifffile.imwrite(src, np.zeros((4, 4), np.float32), extratags=[(34264, "d", 16, m, False)])
+    assert geotransform(src) == (5.0, 0, 100.0, 0, -5.0, 2000.0)
+    write_tif(tmp_path / "h.tif", np.zeros((4, 4), np.uint8), geo_from=src)
+    assert geotransform(tmp_path / "h.tif") == geotransform(src)
+    write_tif(tmp_path / "plain.tif", np.zeros((4, 4), np.uint8))
+    assert geotransform(tmp_path / "plain.tif") is None
+
+
 def test_inconsistent_grid_is_rejected():
     from hazards.io import site_grid
     with pytest.raises(ValueError):
@@ -181,9 +194,20 @@ def test_end_to_end_contract(tmp_path):
     assert set(np.unique(hz).tolist()) <= {0, 1, 2}
     png = np.asarray(Image.open(o / "hazard.png").convert("RGBA"))
     colours = {tuple(c) for c in np.unique(png.reshape(-1, 4), axis=0).tolist()}
-    assert colours <= {(0, 0, 0, 0), (240, 190, 40, 255), (220, 50, 50, 255)}
-    lut = {(0, 0, 0, 0): 0, (240, 190, 40, 255): 1, (220, 50, 50, 255): 2}
+    assert colours <= {(0, 0, 0, 0), (240, 190, 40, 150), (220, 50, 50, 170)}
+    assert {(240, 190, 40, 150), (220, 50, 50, 170)} <= colours
+    lut = {(0, 0, 0, 0): 0, (240, 190, 40, 150): 1, (220, 50, 50, 170): 2}
     assert all(lut[tuple(png[r, c])] == hz[r, c] for r in range(0, 400, 7) for c in range(0, 400, 7))
+    # georeferencing copied from dem.tif (what the route planner compares)
+    from hazards.io import geotransform
+    gt = geotransform(tmp_path / "d" / "dem.tif")
+    assert gt == (5.0, 0.0, 0.0, 0.0, -5.0, 2000.0)
+    for f in ("hazard.tif", "coverage.tif", "slope.tif", "roughness.tif", "reasons.tif"):
+        assert geotransform(o / f) == gt, f
+    with tifffile.TiffFile(o / "hazard.tif") as tf:
+        tags = tf.pages[0].tags
+        assert 34735 in tags and tuple(tags[34735].value) == (1, 1, 0, 2, 1024, 0, 1, 1, 1025, 0, 1, 1)  # same CRS keys
+        assert 42113 not in tags  # no float nodata on a uint8 raster
     cov = tifffile.imread(o / "coverage.tif")
     assert (cov == 0).any() and (hz[cov == 0] == 2).all()  # no data -> no-go, never go
     # route through the gap is reported, not passed

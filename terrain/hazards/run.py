@@ -23,7 +23,7 @@ import yaml
 from . import REASON_BITS, GREEN, YELLOW, RED
 from .classify import classify
 from .export import contract_classes, export_all
-from .io import DATA_FILES, Layers, write_tif
+from .io import DATA_FILES, Layers, geotransform, write_tif
 from .terrain import fill_gaps, hillshade, local_relief_m, rock_layers, roughness_m, slope_deg
 from .validate import check_tracks
 
@@ -65,11 +65,19 @@ def run(layers_path, out_dir, config_path=None, tracks_path=None, quiet=False) -
 
     meta = {"grid": {"width": g.shape[1], "height": g.shape[0], "cell_m": g.cell_m},
             "convention": "row 0 = north, col 0 = west, [east,north] m from SW corner"}
-    write_tif(out / "hazard.tif", hz, {**meta, "classes": {"0": "go", "1": "caution", "2": "no-go (incl. no terrain data)"}})
-    write_tif(out / "coverage.tif", (~gap).astype(np.uint8), {**meta, "values": {"1": "terrain data", "0": "no data"}})
-    write_tif(out / "reasons.tif", reasons, {**meta, "bits": REASON_BITS})
-    write_tif(out / "slope.tif", np.where(gap, np.nan, slope).astype(np.float32), {**meta, "units": "deg"})
-    write_tif(out / "roughness.tif", np.where(gap, np.nan, rough).astype(np.float32), {**meta, "units": "m"})
+    dem_path = L.data_file("dtm")
+    write_tif(out / "hazard.tif", hz, {**meta, "classes": {"0": "go", "1": "caution", "2": "no-go (incl. no terrain data)"}}, geo_from=dem_path)
+    write_tif(out / "coverage.tif", (~gap).astype(np.uint8), {**meta, "values": {"1": "terrain data", "0": "no data"}}, geo_from=dem_path)
+    write_tif(out / "reasons.tif", reasons, {**meta, "bits": REASON_BITS}, geo_from=dem_path)
+    write_tif(out / "slope.tif", np.where(gap, np.nan, slope).astype(np.float32), {**meta, "units": "deg"}, geo_from=dem_path)
+    write_tif(out / "roughness.tif", np.where(gap, np.nan, rough).astype(np.float32), {**meta, "units": "m"}, geo_from=dem_path)
+    gt_dem, gt_hz = geotransform(dem_path), geotransform(out / "hazard.tif")
+    if gt_dem is None:
+        log("WARNING: dem.tif has no georeferencing - hazard.tif has none either")
+    elif gt_hz != gt_dem:
+        raise RuntimeError(f"hazard.tif transform {gt_hz} != dem.tif {gt_dem}")
+    else:
+        log(f"hazard.tif georeferencing copied from {dem_path.name}: transform {tuple(round(v, 6) for v in gt_dem)}")
     png_layers = export_all(out, g, shade=shade, slope=slope, classes=classes, gap=gap, cfg=cfg)
 
     stats = {"Go": float(np.mean(classes == GREEN)), "Caution": float(np.mean(classes == YELLOW)),

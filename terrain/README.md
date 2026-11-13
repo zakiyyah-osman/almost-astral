@@ -5,7 +5,7 @@
 ```bash
 python3 tools/make_mock_data.py --out data_mock     # stand-in Jezero-style site (2000 m, 5 m cells, team format)
 ./run_all.sh data_mock/layers.json out             # hazards -> alignment -> base map
-python3 -m pytest -q                               # 30 tests, including the team-contract checks
+python3 -m pytest -q                               # 31 tests, including the team-contract checks
 xdg-open out/martial_map.html
 ```
 
@@ -36,8 +36,8 @@ Needs numpy, scipy, scikit-image, matplotlib, Pillow, PyYAML and tifffile (plus 
 
 | file | contract |
 |---|---|
-| `hazard.tif` | uint8, **only 0 / 1 / 2** (go / caution / no-go). **Cells with no terrain data are 2**, so a route can never cross ground we know nothing about |
-| `hazard.png` | RGBA: no-go **(220,50,50)**, caution **(240,190,40)**, go **transparent**, so the HiRISE image shows through |
+| `hazard.tif` | uint8, **only 0 / 1 / 2** (go / caution / no-go), with **the same transform and CRS as `dem.tif`** (copied from it). **Cells with no terrain data are 2**, so a route can never cross ground we know nothing about |
+| `hazard.png` | RGBA: no-go **(220,50,50,170)**, caution **(240,190,40,150)**, go **fully transparent**, so the map underneath stays visible |
 | `coverage.tif` / `coverage.png` | 1 = terrain data, 0 = none. The PNG shows grey stripes labelled *Unknown terrain coverage* |
 | `relief.png`, `slope.png` | replace the FAKE relief and slope layers |
 | `slope.tif`, `roughness.tif`, `reasons.tif` | for routing (Person 3) and "why is this no-go" messages |
@@ -107,7 +107,7 @@ Teammates can draw their own layers on top with `martialMap.addOverlay(id, (g, v
 
 ## Tested
 
-* **30 tests.** These include checks that `hazard.tif` holds only 0, 1 and 2; that `hazard.png` uses exactly the three contract colours and agrees with `hazard.tif` cell for cell; that no-data cells are 2; that the route through the gap is reported as *Unknown terrain coverage*; that the team's `layers.json` (saved in `tests/fixtures/`) parses correctly; the 5 m cliff and buffer rules; and the JS coordinate maths.
+* **31 tests.** These include checks that `hazard.tif` holds only 0, 1 and 2; that `hazard.png` uses exactly the three contract colours and agrees with `hazard.tif` cell for cell; that no-data cells are 2; that the route through the gap is reported as *Unknown terrain coverage*; that the team's `layers.json` (saved in `tests/fixtures/`) parses correctly; the 5 m cliff and buffer rules; and the JS coordinate maths.
 * **Alignment on 5 m cells.** A fake orbital image placed correctly measures under 2.5 m off; a 15 m E / 10 m N error is measured to within 1.5 m. A 1.25 m product averaged down to 5 m lands under 1 m off.
 * **Viewer.** Rendered in Chrome with no console errors.
 

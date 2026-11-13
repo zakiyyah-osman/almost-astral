@@ -71,14 +71,18 @@ def main(argv=None):
     z, craters = terrain(n, cell, rng)
     dem = z.astype(np.float32)
     dem[int(0.62 * n):int(0.74 * n), int(0.10 * n):int(0.24 * n)] = -3.4028227e38  # HiRISE-style nodata
-    tifffile.imwrite(out / "dem.tif", dem, compression="zlib")
+    # georeferenced like the team's dem.tif: transform (cell, 0, 0, 0, -cell, height_m), pixel corners
+    geo = [(33550, "d", 3, (cell, cell, 0.0), False),
+           (33922, "d", 6, (0.0, 0.0, 0.0, 0.0, W, 0.0), False),
+           (34735, "H", 12, (1, 1, 0, 2, 1024, 0, 1, 1, 1025, 0, 1, 1), False)]  # projected, PixelIsArea
+    tifffile.imwrite(out / "dem.tif", dem, compression="zlib", extratags=geo)
 
     yy, xx = np.mgrid[0:n, 0:n]
     ti = 380 + 2500 * gaussian_filter(rng.normal(size=(n, n)), 12)
     sand = np.exp(-(((yy - 0.85 * n) / (0.07 * n)) ** 2 + ((xx - 0.45 * n) / (0.2 * n)) ** 2))
     ti = np.clip(ti * (1 - 0.85 * sand), 40, 1200).astype(np.float32)
     ti = gaussian_filter(ti, 4)  # THEMIS is ~100 m: soft edges
-    tifffile.imwrite(out / "thermal_inertia.tif", ti.astype(np.float32), compression="zlib")
+    tifffile.imwrite(out / "thermal_inertia.tif", ti.astype(np.float32), compression="zlib", extratags=geo)
 
     en = lambda col, row: [round((col + 0.5) * cell, 1), round(W - (row + 0.5) * cell, 1)]
     rocks = []
