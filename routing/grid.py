@@ -5,11 +5,14 @@ Contract constants (file names, hazard codes) live here. Grid size and cell size
 never hard-coded: they always come from layers.json (site.grid).
 """
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import rasterio
+
+from config import ConfigError
 
 # ---- contract constants (CONTRACT.md) --------------------------------------
 LAYERS_FILE = "layers.json"
@@ -24,7 +27,7 @@ PLAN_FILE = "plan.json"
 HAZARD_GREEN, HAZARD_YELLOW, HAZARD_RED = 0, 1, 2
 
 
-class GridError(ValueError):
+class GridError(ConfigError):
     """An input file does not match the grid or the contract."""
 
 
@@ -55,9 +58,11 @@ class Grid:
         ex, ey = self.extent_m
         if not (0 <= x <= ex and 0 <= y <= ey):
             raise GridError(f"point ({x}, {y}) m is outside the site ({ex} x {ey} m)")
-        col = min(int(x // self.cell_m), self.width - 1)
-        row = min(int((ey - y) // self.cell_m), self.height - 1)
-        return row, col
+        # Half-open cells measured from the south-west corner: the lower edge belongs
+        # to the cell. The far north and east edges belong to the last cell.
+        col = min(int(math.floor(x / self.cell_m)), self.width - 1)
+        row_from_south = min(int(math.floor(y / self.cell_m)), self.height - 1)
+        return self.height - 1 - row_from_south, col
 
 
 def read_layers(folder):
@@ -68,17 +73,64 @@ def read_layers(folder):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+EXTENT_TOL_M = 1e-6
+
+
+def _positive_int(label, v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise GridError(f"layers.json site.grid.{label} must be a positive integer, got {v!r}")
+    if isinstance(v, float) and not v.is_integer():
+        raise GridError(f"layers.json site.grid.{label} must be a whole number, got {v!r}")
+    if v <= 0:
+        raise GridError(f"layers.json site.grid.{label} must be positive, got {v!r}")
+    return int(v)
+
+
 def grid_from_layers(layers):
     try:
         g = layers["site"]["grid"]
-        return Grid(width=int(g["width"]), height=int(g["height"]), cell_m=float(g["cell_m"]))
-    except (KeyError, TypeError, ValueError) as e:
-        raise GridError(f"layers.json has no usable site.grid: {e}") from None
+        width_v, height_v, cell_v = g["width"], g["height"], g["cell_m"]
+    except (KeyError, TypeError) as e:
+        raise GridError(f"layers.json has no usable site.grid: {e!r}") from None
+    width = _positive_int("width", width_v)
+    height = _positive_int("height", height_v)
+    if isinstance(cell_v, bool) or not isinstance(cell_v, (int, float)) or not cell_v > 0:
+        raise GridError(f"layers.json site.grid.cell_m must be a positive number, got {cell_v!r}")
+    grid = Grid(width=width, height=height, cell_m=float(cell_v))
+    extent = layers["site"].get("extent_m")
+    if extent is not None:
+        ok = (
+            isinstance(extent, (list, tuple)) and len(extent) == 2
+            and all(isinstance(e, (int, float)) and not isinstance(e, bool) for e in extent)
+            and all(abs(e - want) <= EXTENT_TOL_M for e, want in zip(extent, grid.extent_m))
+        )
+        if not ok:
+            raise GridError(
+                f"layers.json site.extent_m {extent!r} does not equal width/height x cell_m "
+                f"{list(grid.extent_m)}"
+            )
+    return grid
 
 
 def read_grid(folder):
     """The Grid described by layers.json in `folder`."""
     return grid_from_layers(read_layers(folder))
+
+
+GEOTRANSFORM_TOL = 1e-6
+
+
+def _check_geotransform(path, t, grid):
+    """Pixel size must equal cell_m on both axes and the raster must be north-up."""
+    name = Path(path).name
+    if abs(t.b) > GEOTRANSFORM_TOL or abs(t.d) > GEOTRANSFORM_TOL:
+        raise GridError(f"{name} is rotated (geotransform {tuple(t)[:6]}); it must be north-up")
+    if t.e > 0:
+        raise GridError(f"{name} is south-up (positive y pixel size); row 0 must be the north edge")
+    if abs(t.a - grid.cell_m) > GEOTRANSFORM_TOL or abs(-t.e - grid.cell_m) > GEOTRANSFORM_TOL:
+        raise GridError(
+            f"{name} has pixel size {t.a} x {abs(t.e)} m, layers.json says cell_m = {grid.cell_m}"
+        )
 
 
 def _read_band(path, grid):
@@ -88,6 +140,7 @@ def _read_band(path, grid):
                 f"{Path(path).name} is {src.width} x {src.height} cells, "
                 f"layers.json says {grid.width} x {grid.height}"
             )
+        _check_geotransform(path, src.transform, grid)
         arr = src.read(1)
         nodata = src.nodata
     return arr, nodata
