@@ -616,7 +616,7 @@ Timeline and radiation:
 18. `stop_order` defaults to `as_listed`.
 19. The Sv dose uses the config background rate, not the hourly values in `radiation.csv`.
 20. The 8.1 mGy figure is reported as a whole-event value. There is no event duration here, so it is not scaled to the time needed to reach shelter.
-21. Gale measurements are typed `proxy` for Jezero. `routing/CLAUDE.md` words the background rate as a scenario.
+21. Gale measurements are typed `proxy` for Jezero. The routing instructions word the background rate as a scenario.
 
 Sources and environment:
 
