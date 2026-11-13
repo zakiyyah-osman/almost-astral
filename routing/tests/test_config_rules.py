@@ -50,9 +50,9 @@ RANGE_RULES = [
     ("risk.steep_rate_max", [-0.1], [0, 2]),
     ("risk.near_red_rate_max", [-0.1], [0, 2]),
     ("risk.near_red_radius_m", [0, -1], [0.5, 30]),
-    ("profiles.w_fastest", [-1, -0.001], [0, 3]),
+    ("profiles.w_fastest", [-1, -0.001], [0]),
     ("profiles.w_balanced", [-1], [0, 3]),
-    ("profiles.w_safest", [-1], [0, 3]),
+    ("profiles.w_safest", [-1], [1, 3]),
     ("profiles.sweep_w", [-0.5, -1e-9], [0.0, 4.0]),
     ("sensitivity.w", [-1, -0.001], [0.0, 4.0]),
     ("sensitivity.slope_max_deg", [0, -5, 90, 100], [1, 89]),
@@ -270,3 +270,32 @@ def test_optimise_max_stops_must_be_an_integer(raw, bad):
     _set(raw, "timeline.optimise_max_stops", bad)
     with pytest.raises(ConfigError, match="optimise_max_stops"):
         Config.from_dict(raw)
+
+
+# ---- profile weights ---------------------------------------------------------
+@pytest.mark.parametrize("bad", [0.1, 1.0, 5.0, 1e-9])
+def test_w_fastest_must_be_exactly_zero(raw, bad):
+    _set(raw, "profiles.w_fastest", bad)
+    with pytest.raises(ConfigError, match=r"w_fastest: must be 0"):
+        Config.from_dict(raw)
+
+
+@pytest.mark.parametrize("balanced,safest", [(2.0, 1.0), (6.0, 5.0), (1.0, 0.5), (0.0, -0.0 - 1)])
+def test_weights_must_be_ordered(raw, balanced, safest):
+    _set(raw, "profiles.w_balanced", balanced)
+    _set(raw, "profiles.w_safest", safest)
+    with pytest.raises(ConfigError, match=r"w_balanced|w_safest"):
+        Config.from_dict(raw)
+
+
+def test_ordering_error_names_all_three(raw):
+    _set(raw, "profiles.w_balanced", 9.0)
+    with pytest.raises(ConfigError, match=r"w_fastest <= w_balanced <= w_safest, got 0.0, 9.0, 5.0"):
+        Config.from_dict(raw)
+
+
+@pytest.mark.parametrize("balanced,safest", [(0.0, 0.0), (1.0, 1.0), (0.0, 5.0), (5.0, 5.0), (2.5, 100.0)])
+def test_equal_or_ordered_weights_are_accepted(raw, balanced, safest):
+    _set(raw, "profiles.w_balanced", balanced)
+    _set(raw, "profiles.w_safest", safest)
+    Config.from_dict(raw)

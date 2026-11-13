@@ -104,7 +104,7 @@ def test_stop_on_red_names_stop():
     c = make_cost(hazard)
     rover, stop = rover_at((10, 2)), wp("stop2", "stop", (10, 15), name="Crater rim")
     with pytest.raises(RouteError) as e:
-        tour.check_waypoints(c, rover, [stop], Searcher(c, 1.0))
+        tour.check_waypoints(c, rover, [stop], Searcher(c, 1.0, 8))
     msg = str(e.value)
     assert "stop2" in msg and "Crater rim" in msg and "red hazard cell" in msg
     assert f"{stop.x:g}" in msg and f"{stop.y:g}" in msg
@@ -115,7 +115,7 @@ def test_rover_on_a_blocked_cell_names_the_rover():
     hazard[10, 2] = 2
     c = make_cost(hazard)
     with pytest.raises(RouteError, match="rover 'rover'.*red hazard cell"):
-        tour.check_waypoints(c, rover_at((10, 2)), [wp("s", "stop", (10, 9))], Searcher(c, 1.0))
+        tour.check_waypoints(c, rover_at((10, 2)), [wp("s", "stop", (10, 9))], Searcher(c, 1.0, 8))
 
 
 @pytest.mark.parametrize("setup,reason", [
@@ -152,7 +152,7 @@ def test_unreachable_stop_names_stop():
     c = make_cost(hazard)
     rover, stop = rover_at((10, 2)), wp("stop3", "stop", (10, 25), name="Far dune")
     with pytest.raises(RouteError) as e:
-        tour.check_waypoints(c, rover, [stop], Searcher(c, 1.0))
+        tour.check_waypoints(c, rover, [stop], Searcher(c, 1.0, 8))
     msg = str(e.value)
     assert "stop3" in msg and "Far dune" in msg and "cannot be reached" in msg
 
@@ -183,7 +183,7 @@ def brute_force_costs(searcher, rover, stops):
 
 def test_as_listed_keeps_file_order():
     c, rover, stops = line_site()
-    s = Searcher(c, 1.0)
+    s = Searcher(c, 1.0, 8)
     assert [x.id for x in tour.stop_order(s, rover, stops, "as_listed")] == ["A", "B", "C"]
     plan = tour.plan_routes(c, rover, stops, CFG, mode="as_listed")
     assert plan.mode == "as_listed" and [x.id for x in plan.order] == ["A", "B", "C"]
@@ -192,7 +192,7 @@ def test_as_listed_keeps_file_order():
 
 def test_optimise_minimises_balanced_cost():
     c, rover, stops = line_site()
-    s = Searcher(c, CFG.value("profiles.w_balanced"))
+    s = Searcher(c, CFG.value("profiles.w_balanced"), 8)
     costs = brute_force_costs(s, rover, stops)
     order = tuple(x.id for x in tour.stop_order(s, rover, stops, "optimise"))
     # Out along the line and back is optimal either way round; the two tie, so file order wins.
@@ -212,7 +212,7 @@ def test_optimise_uses_the_balanced_cost_not_distance():
     c = make_cost(hazard)
     rover = rover_at((10, 2))
     stops = [wp("far", "stop", (10, 27)), wp("near", "stop", (2, 8))]
-    s = Searcher(c, CFG.value("profiles.w_balanced"))
+    s = Searcher(c, CFG.value("profiles.w_balanced"), 8)
     costs = brute_force_costs(s, rover, stops)
     order = tuple(x.id for x in tour.stop_order(s, rover, stops, "optimise"))
     assert costs[order] == pytest.approx(min(costs.values()))
@@ -222,7 +222,7 @@ def test_tie_follows_file_order():
     c = make_cost()
     rover = rover_at((10, 15))
     left, right = wp("L", "stop", (10, 5)), wp("R", "stop", (10, 25))
-    s = Searcher(c, 1.0)
+    s = Searcher(c, 1.0, 8)
     costs = brute_force_costs(s, rover, [left, right])
     assert costs[("L", "R")] == pytest.approx(costs[("R", "L")])     # a genuine tie
     assert [x.id for x in tour.stop_order(s, rover, [left, right], "optimise")] == ["L", "R"]
@@ -233,7 +233,7 @@ def test_three_way_tie_keeps_file_order():
     c = make_cost(shape=(21, 21))
     rover = rover_at((10, 10), shape=(21, 21))
     stops = [wp(i, "stop", cell, shape=(21, 21)) for i, cell in (("n", (4, 10)), ("e", (10, 16)), ("w", (10, 4)))]
-    s = Searcher(c, 1.0)
+    s = Searcher(c, 1.0, 8)
     order = tour.stop_order(s, rover, stops, "optimise")
     costs = brute_force_costs(s, rover, stops)
     assert tour._tour_cost(s, rover, order) == pytest.approx(min(costs.values()))
@@ -244,7 +244,7 @@ def test_three_way_tie_keeps_file_order():
 def test_unknown_order_mode_rejected():
     c, rover, stops = line_site()
     with pytest.raises(ConfigError, match="stop order mode"):
-        tour.stop_order(Searcher(c, 1.0), rover, stops, "random")
+        tour.stop_order(Searcher(c, 1.0, 8), rover, stops, "random")
 
 
 # ---- the three profile routes ------------------------------------------------
@@ -352,7 +352,7 @@ def test_stop_order_is_chosen_on_the_balanced_weight():
     c, cells = random_site(25)
     rover = rover_at(cells[0])
     stops = [wp("A", "stop", cells[1]), wp("B", "stop", cells[2]), wp("C", "stop", cells[3])]
-    fastest_s, balanced_s = Searcher(c, 0.0), Searcher(c, CFG.value("profiles.w_balanced"))
+    fastest_s, balanced_s = Searcher(c, 0.0, 8), Searcher(c, CFG.value("profiles.w_balanced"), 8)
     o_fast = tuple(s.id for s in tour.stop_order(fastest_s, rover, stops, "optimise"))
     o_bal = tuple(s.id for s in tour.stop_order(balanced_s, rover, stops, "optimise"))
     assert o_fast != o_bal
@@ -399,7 +399,7 @@ def spread_stops(n, shape=(20, 30)):
 def test_optimise_runs_one_search_per_waypoint(search_counter, n):
     c = make_cost()
     rover, stops = rover_at((10, 0)), spread_stops(n)
-    s = Searcher(c, 1.0)
+    s = Searcher(c, 1.0, 8)
     tour.stop_order(s, rover, stops, "optimise")
     assert search_counter["n"] == n + 1                      # rover and every stop, once each, not once per order
     tour.stop_order(s, rover, stops, "optimise")
@@ -416,7 +416,7 @@ def test_plan_routes_search_count_is_one_per_waypoint_per_profile(search_counter
 def test_cost_matrix_matches_the_individual_costs():
     c = make_cost()
     rover, stops = rover_at((10, 0)), spread_stops(3)
-    s = Searcher(c, 1.0)
+    s = Searcher(c, 1.0, 8)
     m = tour.cost_matrix(s, [rover, *stops])
     ws = [rover, *stops]
     for i, a in enumerate(ws):
@@ -455,7 +455,7 @@ def test_optimise_at_the_limit_still_optimises():
     cfg = cfg_with(timeline__optimise_max_stops=4)
     plan = tour.plan_routes(c, rover, stops, cfg, mode="optimise")
     assert plan.mode == "optimise" and plan.warnings == ()
-    balanced = Searcher(c, 1.0)
+    balanced = Searcher(c, 1.0, 8)
     costs = brute_force_costs(balanced, rover, stops)
     assert costs[tuple(s.id for s in plan.order)] == pytest.approx(min(costs.values()))
 
@@ -481,3 +481,48 @@ def test_the_plan_mode_defaults_to_the_config_and_records_it():
     c = make_cost()
     plan = tour.plan_routes(c, rover_at((10, 0)), spread_stops(3), CFG)
     assert plan.mode == "as_listed" and plan.requested_mode == "as_listed" and plan.warnings == ()
+
+
+def test_waypoints_with_a_utf8_bom_are_accepted(flat_site):
+    grid = g.read_grid(flat_site.folder)
+    path = write_waypoints(flat_site.folder, [
+        ("rover", "Rover", "rover", 52.5, 52.5), ("stop1", "A", "stop", 12.5, 12.5),
+    ])
+    path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
+    ws = tour.load_waypoints(flat_site.folder, grid)
+    assert [w.id for w in ws] == ["rover", "stop1"]
+
+
+# ---- plan_routes uses the checks and the config ------------------------------
+def test_plan_routes_checks_waypoints_and_names_stop_and_reason():
+    hazard = np.zeros((20, 30), np.uint8)
+    hazard[10, 15] = 2
+    c = make_cost(hazard)
+    stops = [wp("stop1", "stop", (5, 9)), wp("stop2", "stop", (10, 15), name="Crater rim")]
+    with pytest.raises(RouteError) as e:
+        tour.plan_routes(c, rover_at((10, 2)), stops, CFG)
+    msg = str(e.value)
+    assert "stop2" in msg and "Crater rim" in msg and "red hazard cell" in msg
+    wall = np.zeros((20, 30), np.uint8)
+    wall[:, 15] = 2
+    with pytest.raises(RouteError, match=r"stop1.*cannot be reached"):
+        tour.plan_routes(make_cost(wall), rover_at((10, 2)), [wp("stop1", "stop", (10, 25))], CFG)
+
+
+def test_plan_routes_honours_timeline_stop_order_from_config():
+    c, rover, stops = line_site()
+    as_listed = tour.plan_routes(c, rover, stops, cfg_with(timeline__stop_order="as_listed"))
+    optimised = tour.plan_routes(c, rover, stops, cfg_with(timeline__stop_order="optimise"))
+    assert as_listed.mode == "as_listed" and [s.id for s in as_listed.order] == ["A", "B", "C"]
+    assert optimised.mode == "optimise" and [s.id for s in optimised.order] == ["A", "C", "B"]
+    assert optimised.routes["balanced"].physical_min < as_listed.routes["balanced"].physical_min - 0.5
+
+
+def test_plan_routes_honours_search_connectivity_from_config():
+    c = make_cost()
+    rover, stops = rover_at((10, 0)), [wp("s", "stop", (14, 4))]
+    eight = tour.plan_routes(c, rover, stops, cfg_with(search__connectivity=8)).routes["balanced"]
+    four = tour.plan_routes(c, rover, stops, cfg_with(search__connectivity=4)).routes["balanced"]
+    assert eight.distance_m == pytest.approx(2 * 4 * math.sqrt(2) * CELL)       # diagonal there and back
+    assert four.distance_m == pytest.approx(2 * 8 * CELL)                      # steps along rows and columns
+    assert four.physical_min > eight.physical_min

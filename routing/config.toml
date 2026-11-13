@@ -87,7 +87,7 @@ source = "Team choice: three cells at 5 m"
 value = 1.0
 unit = "risk-min per min"
 type = "scenario"
-source = "Team choice: rate next to a red cell, falling to 0 at the radius"
+source = "Team choice: rate at distance 0 from a red cell, falling linearly to 0 at near_red_radius_m"
 
 # ---- profiles -----------------------------------------------------------
 [profiles.w_fastest]

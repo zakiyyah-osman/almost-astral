@@ -104,7 +104,7 @@ class Tree:
 class Searcher:
     """Searches one site at one risk weight w. Trees are cached by start cell."""
 
-    def __init__(self, cost: Cost, w, connectivity=8):
+    def __init__(self, cost: Cost, w, connectivity):
         self.cost = cost
         self.w = w
         self.planning = cost.planning_rate(w)

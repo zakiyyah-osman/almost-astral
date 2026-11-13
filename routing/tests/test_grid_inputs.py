@@ -226,3 +226,17 @@ def test_xy_to_cell_accepts_numpy_numbers():
     grid = Grid(20, 20, 5.0)
     assert grid.xy_to_cell(np.float64(52.5), np.int64(5)) == (18, 10)
     assert grid.xy_to_cell(np.float32(2.5), np.float32(97.5)) == (0, 0)
+
+
+# ---- a byte-order mark -------------------------------------------------------
+def test_layers_json_with_a_utf8_bom_is_accepted(tmp_path):
+    text = json.dumps({"site": {"grid": {"width": 20, "height": 20, "cell_m": 5}}})
+    (tmp_path / "layers.json").write_bytes(b"\xef\xbb\xbf" + text.encode("utf-8"))
+    assert g.read_grid(tmp_path) == Grid(20, 20, 5.0)
+
+
+def test_layers_json_without_a_bom_still_works(tmp_path):
+    (tmp_path / "layers.json").write_text(
+        json.dumps({"site": {"grid": {"width": 20, "height": 20, "cell_m": 5}}}), encoding="utf-8"
+    )
+    assert g.read_grid(tmp_path) == Grid(20, 20, 5.0)

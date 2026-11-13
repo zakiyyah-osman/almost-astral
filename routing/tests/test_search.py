@@ -23,20 +23,20 @@ def make_cost(hazard=None, slope=None, shape=(9, 9), cell=CELL, p=P):
 
 def test_straight_on_open_flat_grid():
     c = make_cost()
-    path = Searcher(c, 1.0).path((4, 0), (4, 8))
+    path = Searcher(c, 1.0, 8).path((4, 0), (4, 8))
     assert list(path.cells) == [(4, col) for col in range(9)]
     assert path.distance_m == pytest.approx(40.0)
 
 
 def test_flat_5m_step_is_0_111_min():
-    path = Searcher(make_cost(), 0.0).path((4, 3), (4, 4))
+    path = Searcher(make_cost(), 0.0, 8).path((4, 3), (4, 4))
     assert path.distance_m == pytest.approx(5.0)
     assert path.physical_min == pytest.approx(5.0 / 45.0)
     assert path.physical_min == pytest.approx(0.111, abs=0.0005)
 
 
 def test_diagonal_is_root2_longer():
-    s = Searcher(make_cost(), 0.0)
+    s = Searcher(make_cost(), 0.0, 8)
     straight, diagonal = s.path((4, 3), (4, 4)), s.path((3, 3), (4, 4))
     assert list(diagonal.cells) == [(3, 3), (4, 4)]
     assert diagonal.distance_m == pytest.approx(math.sqrt(2) * straight.distance_m)
@@ -47,7 +47,7 @@ def test_goes_round_red_wall(red_wall_site):
     grid = g.read_grid(red_wall_site.folder)
     dem = g.load_dem(red_wall_site.folder, grid)
     c = cost.build(dem, g.load_hazard(red_wall_site.folder, grid), g.slope_deg(dem, grid.cell_m), grid, P)
-    path = Searcher(c, 1.0).path((5, 5), (5, 15))
+    path = Searcher(c, 1.0, 8).path((5, 5), (5, 15))
     assert path.distance_m > 10 * grid.cell_m                    # longer than the straight line
     for rc in path.cells:
         assert not c.blocked[rc]
@@ -60,7 +60,7 @@ def test_unreachable_reported():
     hazard = np.zeros((9, 9), np.uint8)
     hazard[:, 4] = 2                                             # a wall across the whole grid
     c = make_cost(hazard)
-    s = Searcher(c, 1.0)
+    s = Searcher(c, 1.0, 8)
     assert not s.tree((4, 0)).reachable((4, 8))
     assert math.isinf(s.planning_cost((4, 0), (4, 8)))
     with pytest.raises(NoPath, match="cannot be reached"):
@@ -71,7 +71,7 @@ def test_unreachable_reported():
 def test_blocked_start_and_end_reported():
     hazard = np.zeros((9, 9), np.uint8)
     hazard[4, 4] = 2
-    s = Searcher(make_cost(hazard), 1.0)
+    s = Searcher(make_cost(hazard), 1.0, 8)
     with pytest.raises(NoPath, match="blocked"):
         s.path((4, 4), (0, 0))
     with pytest.raises(NoPath, match="blocked"):
@@ -90,7 +90,7 @@ def corridor():
 
 def test_time_not_changed_by_w_on_same_path():
     c = corridor()
-    paths = [Searcher(c, w).path((2, 0), (2, 11)) for w in (0.0, 1.0, 5.0, 50.0)]
+    paths = [Searcher(c, w, 8).path((2, 0), (2, 11)) for w in (0.0, 1.0, 5.0, 50.0)]
     assert all(p.cells == paths[0].cells for p in paths)         # the corridor forces one path
     assert all(p.physical_min == paths[0].physical_min for p in paths)
     assert all(p.risk_min == paths[0].risk_min for p in paths)
@@ -105,7 +105,7 @@ def test_planning_cost_equals_physical_plus_w_times_risk():
     hazard[8, 0] = 2
     c = make_cost(hazard)
     for w in (0.0, 0.5, 1.0, 5.0):
-        s = Searcher(c, w)
+        s = Searcher(c, w, 8)
         path = s.path((4, 0), (4, 8))
         planned = s.planning_cost((4, 0), (4, 8))
         assert planned == pytest.approx(path.physical_min + w * path.risk_min, rel=1e-12)
@@ -116,24 +116,24 @@ def test_risk_parts_add_up():
     hazard[3:6, 3:5] = 1
     hazard[0, 6] = 2
     c = make_cost(hazard)
-    path = Searcher(c, 3.0).path((4, 0), (0, 8))
+    path = Searcher(c, 3.0, 8).path((4, 0), (0, 8))
     assert path.risk_min == pytest.approx(path.yellow_min + path.steep_min + path.near_red_min)
     assert path.steep_min == 0.0                                 # the steep term is off by default
 
 
 def test_physical_time_follows_slope():
     slope = np.full((9, 9), math.degrees(math.atan(0.1)))
-    path = Searcher(make_cost(slope=slope), 0.0).path((4, 3), (4, 4))
+    path = Searcher(make_cost(slope=slope), 0.0, 8).path((4, 3), (4, 4))
     assert path.physical_min == pytest.approx(5.0 / (45.0 * math.exp(-0.35)))
 
 
 def test_same_cell_path_is_empty():
-    path = Searcher(make_cost(), 1.0).path((4, 4), (4, 4))
+    path = Searcher(make_cost(), 1.0, 8).path((4, 4), (4, 4))
     assert path.cells == ((4, 4),) and path.distance_m == 0 and path.physical_min == 0
 
 
 def test_trees_are_cached():
-    s = Searcher(make_cost(), 1.0)
+    s = Searcher(make_cost(), 1.0, 8)
     assert s.tree((1, 1)) is s.tree((1, 1))
     assert s.tree((1, 1)) is not s.tree((1, 2))
 
@@ -163,7 +163,7 @@ def test_summary_rejects_a_bad_path():
 
 
 def test_search_uses_the_cell_size_in_metres():
-    path = Searcher(make_cost(cell=10.0), 0.0).path((4, 3), (4, 4))
+    path = Searcher(make_cost(cell=10.0), 0.0, 8).path((4, 3), (4, 4))
     assert path.distance_m == pytest.approx(10.0)
     assert path.physical_min == pytest.approx(10.0 / 45.0)
 
@@ -172,7 +172,7 @@ def test_wide_site_search(wide_site):
     grid = g.read_grid(wide_site.folder)
     dem = g.load_dem(wide_site.folder, grid)
     c = cost.build(dem, g.load_hazard(wide_site.folder, grid), g.slope_deg(dem, grid.cell_m), grid, P)
-    path = Searcher(c, 1.0).path((40, 0), (40, 119))
+    path = Searcher(c, 1.0, 8).path((40, 0), (40, 119))
     assert path.distance_m == pytest.approx(119 * 10.0)
 
 
@@ -183,8 +183,8 @@ def test_edge_cost_averages_the_two_cells():
     hazard[4, 3] = 1
     c = make_cost(hazard, p=P.with_(near_red_rate_max=0.0))
     tr = 1 / 45.0
-    forward = Searcher(c, 0.0).path((4, 3), (4, 4))
-    backward = Searcher(c, 0.0).path((4, 4), (4, 3))
+    forward = Searcher(c, 0.0, 8).path((4, 3), (4, 4))
+    backward = Searcher(c, 0.0, 8).path((4, 4), (4, 3))
     assert forward.yellow_min == pytest.approx(5.0 * (tr * 1.0 + 0.0) / 2)
     assert backward.yellow_min == pytest.approx(forward.yellow_min)          # same either way round
     assert forward.risk_min == pytest.approx(forward.yellow_min)
@@ -193,6 +193,6 @@ def test_edge_cost_averages_the_two_cells():
 def test_edge_cost_averages_cells_with_different_slopes():
     slope = np.zeros((9, 9))
     slope[4, 4] = math.degrees(math.atan(0.2))
-    path = Searcher(make_cost(slope=slope), 0.0).path((4, 3), (4, 4))
+    path = Searcher(make_cost(slope=slope), 0.0, 8).path((4, 3), (4, 4))
     flat, steep = 1 / 45.0, 1 / (45.0 * math.exp(-0.7))
     assert path.physical_min == pytest.approx(5.0 * (flat + steep) / 2)

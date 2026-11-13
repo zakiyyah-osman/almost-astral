@@ -97,7 +97,7 @@ def load_waypoints(folder, grid: Grid):
     """All waypoints in file order, each snapped to its cell. Exactly one must be the rover."""
     path = Path(folder) / WAYPOINTS_FILE
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         raise RouteError(f"{WAYPOINTS_FILE} not found in {Path(folder)}") from None
     except (OSError, UnicodeDecodeError) as e:

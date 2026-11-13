@@ -87,7 +87,7 @@ def read_layers(folder):
     """The parsed layers.json in `folder`."""
     path = Path(folder) / LAYERS_FILE
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         raise GridError(f"{LAYERS_FILE} not found in {Path(folder)}") from None
     except (OSError, UnicodeDecodeError) as e:

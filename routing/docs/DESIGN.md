@@ -2,7 +2,7 @@
 
 What the route planner does and why. Build order is in `CHECKLIST.md`; independent checks are in `QA.md`.
 
-Status: design only, nothing is built yet. Items still waiting for a decision are collected in sections 11 and 12.
+Status: phases 1 to 3 are built (config, grid, walking, cost, search, tour); the rest is still design. Items still waiting for a decision are collected in sections 11 and 12.
 
 ## 1. Scope
 
@@ -438,7 +438,7 @@ source = "Team choice: three cells at 5 m"
 value = 1.0
 unit = "risk-min per min"
 type = "scenario"
-source = "Team choice: rate next to a red cell, falling to 0 at the radius"
+source = "Team choice: rate at distance 0 from a red cell, falling linearly to 0 at near_red_radius_m"
 
 # ---- profiles -----------------------------------------------------------
 [profiles.w_fastest]

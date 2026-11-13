@@ -120,6 +120,7 @@ class Config:
         self.raw = copy.deepcopy(raw)
         self._check_names()
         self._validate_parameters()
+        self._check_profile_weights()
         self._check_gravity()
 
     # -- loading -----------------------------------------------------------
@@ -225,6 +226,19 @@ class Config:
                 cls._check_number(label, v)
         else:
             cls._check_number(label, value)
+
+    def _check_profile_weights(self):
+        """w_fastest is exactly 0 (risk ignored) and w_fastest <= w_balanced <= w_safest."""
+        fast = self.value("profiles.w_fastest")
+        balanced = self.value("profiles.w_balanced")
+        safest = self.value("profiles.w_safest")
+        if fast != 0:
+            raise ConfigError(f"profiles.w_fastest: must be 0 (the fastest profile ignores risk), got {fast!r}")
+        if not fast <= balanced <= safest:
+            raise ConfigError(
+                "profiles: need w_fastest <= w_balanced <= w_safest, got "
+                f"{fast!r}, {balanced!r}, {safest!r}"
+            )
 
     def transition_kmh(self):
         return walk_run_transition_kmh(
