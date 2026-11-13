@@ -1,9 +1,9 @@
 {
   "_help": "Settings for the real-data build (python data/build_real.py). Paths are relative to data/. Set a path to null to skip that source; its fake file then stays in data/out/.",
 
-  "name": "Mount Sharp boxwork region, Gale crater (placeholder: confirm with Zakiyyah)",
-  "center_lat": -4.78,
-  "center_lon_east": 137.38,
+  "name": "Jezero crater delta (site centre is a placeholder)",
+  "center_lat": 18.38,
+  "center_lon_east": 77.58,
   "_center_note": "PLACEHOLDER. Replace with the real site centre once the site is chosen. Longitude is degrees east, 0 to 360.",
 
   "grid": { "width": 400, "height": 400, "cell_m": 5 },
