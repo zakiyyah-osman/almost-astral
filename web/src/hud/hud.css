@@ -1,0 +1,144 @@
+/* Helmet HUD styles. Always dark, like a visor, whatever the page theme is. */
+
+.hud {
+  --hud-ok: var(--ok);
+  --hud-warn: var(--warn);
+  --hud-bad: var(--bad);
+  --hud-dim: #8fb3ab;
+  --hud-line: #1f4a42;
+  /* Docked beside the map, full height: nothing on the map is covered. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  font-size: 1rem;
+  border-left: 1px solid #2f6f62;
+  background: #08110f;
+  color: #d7f5ee;
+  font-variant-numeric: tabular-nums;
+}
+.hud p { margin: 0; }
+.hud-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 4px; }
+.hud-foot { padding: 10px 16px 12px; border-top: 1px solid var(--hud-line); background: #0b1a18; }
+.hud-hint { margin-bottom: 10px; padding: 8px 10px; border-radius: 6px; background: rgba(224, 113, 79, 0.14); color: #ffd2c2; font-size: 0.8em; }
+.hud-title { font-weight: 600; margin-bottom: 6px; }
+
+/* Storm: red edge that pulses. */
+.hud.alarm { border-left-color: var(--hud-bad); animation: hud-pulse 1.2s ease-in-out infinite; }
+@keyframes hud-pulse {
+  50% { box-shadow: inset 4px 0 0 var(--hud-bad), inset 0 0 40px rgba(255, 107, 87, 0.22); }
+}
+
+.hud-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
+.hud-phase { font-weight: 700; letter-spacing: 0.06em; font-size: 0.8em; color: var(--hud-ok); }
+.hud-phase.return { color: var(--hud-bad); }
+.hud-phase.done { color: #9aa7a4; }
+.hud-clock { margin-left: auto; font-size: 0.75em; color: var(--hud-dim); }
+.hud-toggle.on { background: var(--hud-ok); color: #06110f; border-color: var(--hud-ok); }
+.hud-toggle { min-width: 26px; height: 26px; font-size: 0.75em; font-weight: 700; padding: 0; line-height: 1; border: 1px solid #2f6f62; border-radius: 5px; background: transparent; color: var(--hud-dim); cursor: pointer; }
+
+.hud-row { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.hud-compass { width: 42%; max-width: 150px; aspect-ratio: 1; flex: none; }
+.hud-compass .dial { transform-origin: 0 0; transition: transform 0.1s linear; }
+.hud-compass .ring { fill: #0b1a18; stroke: #2f6f62; stroke-width: 1.5; }
+.hud-compass line { stroke: var(--hud-dim); stroke-width: 1.2; }
+.hud-compass text { fill: var(--hud-dim); font-size: 10px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
+.hud-compass text.north { fill: var(--hud-bad); }
+.hud-compass .pointer { fill: var(--hud-ok); }
+.hud-compass .deg { fill: #fff; font-size: 17px; font-weight: 700; }
+.hud-compass .card { fill: var(--hud-ok); font-size: 11px; }
+
+.hud-mini { flex: 1; min-width: 0; max-width: 170px; aspect-ratio: 1; height: auto; background: #0b1a18; border: 1px solid var(--hud-line); border-radius: 6px; }
+.hud-mini .grid line { stroke: var(--hud-line); stroke-width: 6; }
+.hud-mini .route { fill: none; stroke: #4c6d66; stroke-width: 12; stroke-dasharray: 40 30; }
+.hud-mini .trail { fill: none; stroke: var(--hud-ok); stroke-width: 16; stroke-linecap: round; stroke-linejoin: round; }
+.hud-mini .trail.storm { stroke: var(--hud-bad); }
+.hud-mini .rover { fill: #378add; }
+.hud-mini .stop { fill: #d85a30; }
+.hud-mini .next circle { stroke: #fff; stroke-width: 14; }
+.hud-mini .label { fill: #fff; font-size: 80px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.hud-mini .me { fill: #fff; stroke: var(--hud-ok); stroke-width: 20; }
+.hud-mini .me.storm { stroke: var(--hud-bad); }
+
+.hud-big { font-size: 1.35em; font-weight: 600; }
+.hud-small { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--hud-dim); }
+.hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+
+.hud-card { display: grid; gap: 2px; margin-bottom: 10px; padding: 7px 9px; border-radius: 6px; background: rgba(94, 234, 212, 0.1); font-size: 0.8em; }
+.hud-card span { color: var(--hud-dim); }
+
+.hud-gauge { margin-bottom: 8px; }
+.hud-gauge-top { display: flex; justify-content: space-between; font-size: 0.78em; margin-bottom: 3px; }
+.hud-bar { height: 9px; border-radius: 3px; background: #16302c; overflow: hidden; }
+.hud-bar div {
+  height: 100%;
+  background: var(--hud-ok);
+  transition: width 0.1s linear;
+  /* segmented look */
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 8px, transparent 8px 10px);
+  mask: repeating-linear-gradient(90deg, #000 0 8px, transparent 8px 10px);
+}
+.hud-bar div.low { background: var(--hud-bad); }
+
+.hud-pace { margin: -2px 0 10px; font-size: 0.8em; color: var(--hud-dim); }
+.hud-pace b { color: #d7f5ee; font-weight: 600; }
+.hud-toggle.wide { padding: 0 8px; }
+
+.hud-weather { display: flex; gap: 8px; margin: 10px 0 0; }
+.hud-weather div { flex: 1; display: grid; gap: 1px; padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); }
+.hud-weather b { font-size: 0.95em; font-weight: 600; }
+
+.hud-alerts { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 4px; }
+.hud-alerts li { padding: 5px 8px; border-radius: 5px; font-size: 0.8em; border-left: 4px solid; background: rgba(255, 255, 255, 0.05); }
+.hud-alerts .green { border-color: var(--hud-ok); }
+.hud-alerts .amber { border-color: var(--hud-warn); }
+.hud-alerts .red { border-color: var(--hud-bad); font-weight: 600; }
+
+.hud-stops { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 3px; font-size: 0.8em; }
+.hud-stops li { display: flex; align-items: center; gap: 8px; color: var(--hud-dim); }
+.hud-stops .dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--hud-dim); }
+.hud-stops .done { color: #d7f5ee; }
+.hud-stops .done .dot { background: var(--hud-ok); border-color: var(--hud-ok); }
+.hud-stops .now { color: #fff; font-weight: 600; }
+.hud-stops .now .dot { border-color: var(--hud-ok); }
+
+.hud-summary { display: grid; gap: 2px; margin-bottom: 10px; padding: 8px 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.07); font-size: 0.82em; }
+.hud-summary span { color: var(--hud-dim); }
+
+.hud-controls { display: flex; gap: 6px; margin-bottom: 8px; }
+.hud-controls button, .hud-controls select {
+  padding: 6px 8px;
+  border: 1px solid #2f6f62;
+  border-radius: 6px;
+  background: #0b1a18;
+  color: #d7f5ee;
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+.hud-controls button:first-child { flex: 1; background: #134e44; }
+.hud-controls button.storm { border-color: var(--hud-bad); color: #ff9b8c; }
+.hud-controls button:disabled { opacity: 0.4; cursor: default; }
+.hud-controls button:focus-visible, .hud-toggle:focus-visible, .hud input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.hud input[type='range'] { width: 100%; accent-color: var(--hud-ok); }
+.hud-note { font-size: 0.68em; color: #7b9a93; margin-top: 6px; }
+
+@media (max-width: 900px) {
+  .hud { height: auto; border-left: 0; border-top: 1px solid #2f6f62; }
+  .hud-scroll { overflow: visible; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud.alarm { animation: none; }
+  .hud-compass .dial, .hud-bar div { transition: none; }
+}
+
+/* Large text for a projector: toggled with the Aa button or the L key. */
+.hud.large { font-size: 1.3rem; }
+.hud.large .hud-compass { max-width: 200px; }
+.hud.large .hud-mini { max-width: 230px; }
+.hud.large .hud-note { display: none; }
+
+.hud-realstorm { display: grid; gap: 2px; margin: 10px 0 0; padding: 7px 9px; border-radius: 6px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid var(--hud-warn); font-size: 0.8em; }
+.hud-realstorm span:last-child { color: var(--hud-dim); }
+.hud-realstorm a { color: var(--hud-warn); }

@@ -9,17 +9,37 @@ You own the data going in and the file everyone reads: `layers.json`.
 3. Crop and align every layer to the same grid (see [../CONTRACT.md](../CONTRACT.md)) and write it to `out/`.
 4. On Saturday, write `adapters/official.py` to convert the official dataset into the contract format.
 
-## Folders
+## Folders and files
 
 - `out/`: the shared folder everyone reads. Fake data is committed here so the app runs straight after cloning.
 - `raw/`: big downloaded files. Never committed.
-- `adapters/`: scripts that convert one data source into the contract format.
+- `adapters/`: one script per data source (`hirise.py`, `themis.py`, `crism.py`, `rems.py`, `rad.py`, `donki.py`), plus `official.py` for Saturday.
+- `site.json`: the site centre, the grid, and which raw file each source uses. Set a source to `null` to keep its fake data.
+- `grid.py`: shared code that reprojects any map file onto the site grid and writes contract-format files.
+- `tables.py`: shared code that turns REMS/RAD readings into hourly rows. `python data/tables.py <file>` shows a file's columns.
+- `inspect_raw.py`: `python data/inspect_raw.py <file>` shows a raster's projection, pixel size, and whether the site is inside it.
+- `SOURCES.md`: where to download each dataset.
 
 ## Quick start
 
 ```bash
-python data/make_fake.py
+python data/make_fake.py               # fake data for everything
+python data/build_real.py --list       # which sources are set in site.json
+python data/build_real.py              # swap in every real source that is set
+python data/build_real.py themis rems  # or only some
+python data/validate.py
 ```
+
+`make_fake.py` rewrites all of `out/`, including `layers.json`. If you run it after real data is in, run `build_real.py` again.
+
+## Extra files the real build adds
+
+These are additions; the contract allows extra fields and files:
+
+- `hirise.png`: a new optical layer (HiRISE image), listed after `relief` in `layers.json`.
+- `thermal_inertia.tif`: real thermal inertia values (float32, NaN = no data) for Nahla's thresholds.
+- `space_weather.csv`: solar flares, CMEs and SEP events from DONKI, listed under `tables.space_weather`.
+- In `layers.json`: `site.center_lat` / `center_lon_east`, `sources_notes` (credits for the tables and `dem.tif`), and on some layers `native_resolution_m`, `note` and `legend`.
 
 ## Before you go further
 

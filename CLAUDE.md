@@ -42,6 +42,7 @@ cd web
 npm install
 npm run dev       # development server
 npm run build     # production build, run it before saying the web app works
+npm test          # tests for the HUD maths (web/src/hud/sim.test.js)
 ```
 
 Python (3.11+):
@@ -61,3 +62,18 @@ python data/validate.py      # checks data/out/ against CONTRACT.md
 - `routing/`: walking speed, route finding, shelter-time map and the EVA plan.
 - `web/`: React + Vite + Leaflet app. `vite.config.js` serves `data/out/` as the site's public folder.
 - `mission/`: science stops, mission brief, photos, slides and the demo script.
+- `docs/`: `work-split.md` (tasks and schedule), `requirements.md` (what the challenge asks for and where we stand), `ai-use.md`.
+
+## Where things are in the web app
+
+- `web/src/App.jsx`: page layout, layer switches, selected stop, and the Planning/HUD switch. It holds the state shared by the map and the HUD.
+- `web/src/components/SiteMap.jsx`: the Leaflet map (layers, route, numbered stop pins, the moving astronaut and trail). It refits itself when `layoutKey` changes.
+- `web/src/index.css`: the shared look. Colours are set once at the top (`:root`); change them there only.
+- `web/src/hud/`: the helmet HUD. `HudView.jsx` is the screen, `sim.js` is the maths (route following, storm return, dose, weather) with no React, `sim.test.js` holds the tests, `hud.css` its styles.
+- `web/src/lib/loadData.js`: loads `layers.json`, route, waypoints and plan from `data/out/`.
+
+## Things that are easy to get wrong
+
+- Oxygen and battery in the HUD are simulated from the EVA time limit, not NASA data. The limits and the dust threshold are assumptions (see `web/src/hud/sim.js`).
+- The map refits through both a `ResizeObserver` and the `layoutKey` prop. Keep both: the in-app preview browser does not deliver resize events, so `layoutKey` is what makes it testable there.
+- If the page behaves like old code after several quick edits, restart `npm run dev`.
