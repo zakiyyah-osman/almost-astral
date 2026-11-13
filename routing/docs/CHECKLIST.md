@@ -74,4 +74,4 @@ Each item: **task** · file · check.
 - [x] **7.3** Site-agnostic. · `routing/tests/test_end_to_end.py` · `::test_runs_on_120x80_grid`; a search for `400`, `2000` and `5.0` in `routing/*.py` finds nothing.
 - [x] **7.4** The web app still builds. · no file · `cd web && npm run build` exits 0.
 - [x] **7.5** Update the run instructions. · `routing/README.md` · every command in it runs as written.
-- [ ] **End of phase 7:** `pytest routing/tests` passes · `python data/validate.py` passes · commit · hand over to `QA.md`.
+- [x] **End of phase 7:** `pytest routing/tests` passes · `python data/validate.py` passes · commit · hand over to `QA.md`.
