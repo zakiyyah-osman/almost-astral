@@ -9,7 +9,9 @@ import {
   parseTable,
   radiationModel,
   stateAt,
+  startStorm,
   stopList,
+  trackAt,
   trailUntil,
   weatherModel,
   spaceWeatherModel,
@@ -212,4 +214,108 @@ test('space weather: picks the fastest event that reaches Mars', () => {
   assert.equal(m.fastest.kms, 1033)
   assert.equal(spaceWeatherModel('event_id,type\n'), null)
   assert.equal(spaceWeatherModel(''), null)
+})
+
+// ---- real route data from the route planner (track and storm_replan) ----
+
+// A plan like the planner writes: a track along the route and a storm return from one point on it.
+function plannedPlan() {
+  const base = buildTimeline(plan, waypoints, route)
+  const L = base.routeLen
+  const track = Array.from({ length: 11 }, (_, i) => {
+    const d = (L * i) / 10
+    return { distance_m: d, elev_m: -2500 + i * 10, slope_deg: 5 + i, hazard: i === 5 ? 1 : 0, shelter_min: 15 + Math.min(d, L - d) / 40 }
+  })
+  const here = stateAt(base, 30, null)
+  const home = [base.pts[0][0], base.pts[0][1]]
+  const mid = [(here.x + home[0]) / 2, (here.y + home[1]) / 2]
+  const len = Math.hypot(here.x - home[0], here.y - home[1])
+  const storm_replan = {
+    points: [{ x: here.x, y: here.y, route_distance_m: here.d, elapsed_min: 30, return_min: 15 + len / 50, return_distance_m: len, path: [[here.x, here.y], mid, home] }],
+  }
+  return { plan: { ...plan, totals: { ...plan.totals, ingress_min: 15 }, track, storm_replan }, here, len, home }
+}
+
+test('no track in the plan: trackAt is null and shelter time is distance over pace', () => {
+  const tl = buildTimeline(plan, waypoints, route)
+  assert.equal(trackAt(tl, 100), null)
+  const s = stateAt(tl, 5, null)
+  near(s.shelterMin, Math.min(s.d, tl.routeLen - s.d) / tl.speed, 1e-6)
+})
+
+test('with a track: slope, height and ground class are read at the crew position', () => {
+  const { plan: p } = plannedPlan()
+  const tl = buildTimeline(p, waypoints, route)
+  const L = tl.routeLen
+  const g = trackAt(tl, L / 2)
+  near(g.elev, -2450, 1e-6)
+  near(g.slope, 10, 1e-6)
+  assert.equal(g.hazard, 1)
+  near(trackAt(tl, L / 20).elev, -2495, 1e-6, 'interpolates between samples')
+  assert.equal(trackAt(tl, -50).elev, -2500) // before the start
+  near(trackAt(tl, L + 99).elev, -2400, 1e-6) // past the end
+})
+
+test('with a track: time back to shelter comes from the planner, and is 0 at the rover', () => {
+  const { plan: p } = plannedPlan()
+  const tl = buildTimeline(p, waypoints, route)
+  const s = stateAt(tl, 5, null)
+  near(s.shelterMin, trackAt(tl, s.d).shelter, 1e-9)
+  assert.equal(stateAt(tl, tl.totalMin, null).shelterMin, 0)
+})
+
+test('a track for a different route is ignored', () => {
+  const { plan: p } = plannedPlan()
+  const wrong = { ...p, track: p.track.map((r) => ({ ...r, distance_m: r.distance_m * 3 })) }
+  const tl = buildTimeline(wrong, waypoints, route)
+  assert.equal(tl.track, null)
+  assert.equal(tl.stormPts, null)
+})
+
+test('bad track rows and bad storm points are skipped', () => {
+  const { plan: p } = plannedPlan()
+  const messy = {
+    ...p,
+    track: [{ distance_m: 'x' }, null, ...p.track],
+    storm_replan: { points: [{ route_distance_m: 5 }, ...p.storm_replan.points] },
+  }
+  const tl = buildTimeline(messy, waypoints, route)
+  assert.equal(tl.track.length, p.track.length)
+  assert.equal(tl.stormPts.length, 1)
+  assert.equal(buildTimeline({ ...p, track: 'nope', storm_replan: 5 }, waypoints, route).track, null)
+})
+
+test('storm with a plan: the crew follows the planned path home and arrives at the rover', () => {
+  const { plan: p, here, len, home } = plannedPlan()
+  const tl = buildTimeline(p, waypoints, route)
+  const storm = startStorm(tl, 30, here.d)
+  assert.ok(storm.ret, 'uses the planner path')
+  const walkMin = len / 50 // the planner minutes without the 15 min to get inside
+  const first = stateAt(tl, 30, storm)
+  assert.equal(first.phase, 'return')
+  near(first.shelterMin, walkMin + 15, 0.5)
+  const half = stateAt(tl, 30 + walkMin / 2, storm)
+  near(half.x, (here.x + home[0]) / 2, len * 0.02) // on the planned path, not the route
+  near(half.y, (here.y + home[1]) / 2, len * 0.02)
+  const end = stateAt(tl, 30 + walkMin + 1, storm)
+  assert.equal(end.phase, 'done')
+  near(end.x, home[0], 0.5)
+  near(end.y, home[1], 0.5)
+  assert.equal(end.shelterMin, 0)
+})
+
+test('storm without a usable plan turns round on the route as before', () => {
+  const tl = buildTimeline(plan, waypoints, route)
+  const s0 = stateAt(tl, 20, null)
+  const storm = startStorm(tl, 20, s0.d)
+  assert.equal(storm.ret, undefined)
+  assert.equal(stateAt(tl, 21, storm).phase, 'return')
+})
+
+test('a planned storm path that starts far from the crew is not used', () => {
+  const { plan: p, here } = plannedPlan()
+  const tl = buildTimeline(p, waypoints, route)
+  assert.equal(startStorm(tl, 30, here.d + 0).ret !== undefined, true)
+  const far = { ...p, storm_replan: { points: p.storm_replan.points.map((q) => ({ ...q, path: q.path.map(([x, y]) => [x + 900, y]) })) } }
+  assert.equal(startStorm(buildTimeline(far, waypoints, route), 30, here.d).ret, undefined)
 })
