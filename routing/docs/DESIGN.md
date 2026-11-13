@@ -105,7 +105,7 @@ A cell is blocked when any of these holds:
 - Terrain slope is above `constraints.slope_max_deg`.
 - It lies within `constraints.cliff_buffer_m` of a cell that is over the slope limit (0 turns the buffer off; a value below `cell_m` has no effect). Distance comes from `scipy.ndimage.distance_transform_edt` with `sampling=cell_m`.
 - The DEM has no data there.
-- It is a free cell in a 2x2 block whose other diagonal is blocked. The search allows diagonal moves, so without this a path could squeeze between two blocked cells that touch only at a corner.
+- It is sealed by the gap rule. The search allows diagonal moves, so without it a path could squeeze between two blocked cells that touch only at a corner. In any 2x2 block where one diagonal is blocked and the other is free, both free cells are sealed. Sealing is repeated until no such block remains (it only adds blocked cells, so it ends); a sealed cell can create a new squeeze, which the next pass closes. A free cell is not sealed just because two perpendicular neighbours are blocked: if the cell on its own diagonal is blocked too, there is no gap, so the bend of a 1-wide corridor and the cells around a no-data cell stay open.
 
 Blocked cells get cost −1, which `MCP_Geometric` treats as impassable.
 

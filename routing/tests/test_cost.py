@@ -121,11 +121,56 @@ def test_single_blocked_cell_and_straight_walls_are_not_sealed():
     assert blocked_cells(mask(hazard, p=P.with_(cliff_buffer_m=0))) == {(4, 4)} | {(r, 6) for r in range(9)}
 
 
-def test_sealing_is_not_applied_twice():
+def has_squeeze(blocked):
+    """True if some 2x2 block has both cells of one diagonal blocked and both of the other free."""
+    for r in range(blocked.shape[0] - 1):
+        for c in range(blocked.shape[1] - 1):
+            nw, ne, sw, se = blocked[r, c], blocked[r, c + 1], blocked[r + 1, c], blocked[r + 1, c + 1]
+            if (nw and se and not ne and not sw) or (ne and sw and not nw and not se):
+                return True
+    return False
+
+
+def test_a_diagonal_line_of_three_is_sealed_on_both_sides():
     hazard = np.zeros((9, 9), np.uint8)
-    hazard[2, 2] = hazard[3, 3] = hazard[4, 4] = 2    # a diagonal line of three
+    hazard[2, 2] = hazard[3, 3] = hazard[4, 4] = 2
     m = blocked_cells(mask(hazard, p=P.with_(cliff_buffer_m=0)))
     assert m == {(2, 2), (3, 3), (4, 4), (2, 3), (3, 2), (3, 4), (4, 3)}
+
+
+def test_sealing_repeats_when_the_first_pass_creates_a_new_squeeze():
+    hazard = np.zeros((4, 4), np.uint8)
+    for rc in [(1, 2), (2, 3), (3, 1)]:
+        hazard[rc] = 2
+    p = P.with_(cliff_buffer_m=0)
+    first = cost._squeeze_cells(hazard == 2)
+    assert blocked_cells(first) == {(1, 3), (2, 2)}                  # the first pass
+    assert cost._squeeze_cells((hazard == 2) | first).any()          # which makes a new squeeze
+    m = mask(hazard, p=p, shape=(4, 4))
+    assert blocked_cells(m) == {(1, 2), (2, 3), (3, 1), (1, 3), (2, 2), (2, 1), (3, 2)}
+    assert not has_squeeze(m)
+    r = cost.hard_constraints(np.zeros((4, 4)), np.zeros((4, 4)), hazard, CELL, p)
+    assert blocked_cells(r["sealed"]) == {(1, 3), (2, 2), (2, 1), (3, 2)}
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_final_mask_has_no_squeeze_block_on_random_grids(seed):
+    rng = np.random.RandomState(seed)
+    shape = (int(rng.randint(3, 14)), int(rng.randint(3, 14)))
+    hazard = np.where(rng.rand(*shape) < rng.choice([0.1, 0.25, 0.4]), 2, 0).astype(np.uint8)
+    p = P.with_(cliff_buffer_m=0)
+    m = mask(hazard, p=p, shape=shape)
+    assert not has_squeeze(m)
+    assert (m >= (hazard == 2)).all()                                 # sealing only adds blocks
+    assert not cost._squeeze_cells(m).any()                           # a second run adds nothing
+
+
+def test_squeeze_check_finds_the_pattern():
+    b = np.zeros((3, 3), bool)
+    b[0, 0] = b[1, 1] = True
+    assert has_squeeze(b)
+    assert not has_squeeze(np.array([[1, 1], [1, 0]], bool))
+    assert not has_squeeze(np.array([[1, 0], [1, 0]], bool))
 
 
 def test_one_wide_corridor_with_a_bend_is_not_cut():

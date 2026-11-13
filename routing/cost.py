@@ -76,14 +76,13 @@ def _check_shapes(**arrays):
 
 
 # ---- hard constraints --------------------------------------------------------
-def _seal_diagonal_gaps(blocked):
-    """Free cells in a 2x2 block whose other diagonal is blocked and whose own diagonal is free.
+def _squeeze_cells(blocked):
+    """One pass: free cells in a 2x2 block whose other diagonal is blocked and own diagonal free.
 
     This is the squeeze the search would otherwise allow: two free cells that touch only at a
     corner, with a blocked cell on each side. For a free cell, the other diagonal of a 2x2
-    block is its two orthogonal neighbours in that block, so a cell is sealed when two
+    block is its two orthogonal neighbours in that block, so a cell is flagged when two
     perpendicular neighbours are both blocked and the diagonal cell between them is free.
-    Computed once on the input mask, not repeated.
     """
     pad = np.pad(blocked, 1, constant_values=False)
     h, w = blocked.shape
@@ -91,11 +90,24 @@ def _seal_diagonal_gaps(blocked):
     west, east = pad[1:h + 1, 0:w], pad[1:h + 1, 2:w + 2]
     nw, ne = pad[0:h, 0:w], pad[0:h, 2:w + 2]
     sw, se = pad[2:h + 2, 0:w], pad[2:h + 2, 2:w + 2]
-    # A free cell and its diagonal partner are both free; the other diagonal is blocked.
     squeeze = (
         (n & west & ~nw) | (n & east & ~ne) | (s & west & ~sw) | (s & east & ~se)
     )
     return squeeze & ~blocked
+
+
+def _seal_diagonal_gaps(blocked):
+    """Cells added by sealing, repeated until no 2x2 block has one diagonal blocked and the other free.
+
+    Sealing only adds blocked cells, so the loop ends after at most as many passes as there are
+    cells. A sealed cell can create a new squeeze, which the next pass closes.
+    """
+    current = blocked.copy()
+    while True:
+        new = _squeeze_cells(current)
+        if not new.any():
+            return current & ~blocked
+        current |= new
 
 
 def hard_constraints(dem, slope_deg, hazard, cell_m, p: Params):
