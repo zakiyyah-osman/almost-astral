@@ -28,7 +28,14 @@ TIE_TOL = 1e-9          # relative slack when two stop orders cost the same
 
 
 class RouteError(ConfigError):
-    """The waypoints cannot be turned into a tour (bad file, blocked or unreachable stop)."""
+    """The waypoints cannot be turned into a tour (bad file, blocked or unreachable stop).
+
+    `waypoint_id` names the rover or stop that failed, when the failure is about one.
+    """
+
+    def __init__(self, message, waypoint_id=None):
+        super().__init__(message)
+        self.waypoint_id = waypoint_id
 
 
 @dataclass(frozen=True)
@@ -172,11 +179,11 @@ def check_waypoints(cost: Cost, rover: Waypoint, stops, searcher: Searcher):
     for wp in [rover, *stops]:
         reason = block_reason(cost, wp.cell)
         if reason:
-            raise RouteError(f"{wp.describe()} is on a blocked cell: {reason}")
+            raise RouteError(f"{wp.describe()} is on a blocked cell: {reason}", wp.id)
     tree = searcher.tree(rover.cell)
     for wp in stops:
         if not tree.reachable(wp.cell):
-            raise RouteError(f"{wp.describe()} cannot be reached from the rover: no passable path")
+            raise RouteError(f"{wp.describe()} cannot be reached from the rover: no passable path", wp.id)
 
 
 # ---- stop order --------------------------------------------------------------
@@ -274,7 +281,7 @@ def build_route(searcher: Searcher, rover: Waypoint, order, profile):
         try:
             path = searcher.path(a.cell, b.cell)
         except NoPath as e:
-            raise RouteError(f"no route from {a.id!r} to {b.id!r}: {e}") from None
+            raise RouteError(f"no route from {a.id!r} to {b.id!r}: {e}", b.id) from None
         legs.append(Leg(a.id, b.id, path))
         cells.extend(path.cells if not cells else path.cells[1:])
     return Route(profile, searcher.w, tuple(s.id for s in order), tuple(legs), tuple(cells))

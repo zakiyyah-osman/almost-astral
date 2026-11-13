@@ -18,6 +18,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import analysis
 import config as config_mod
 import cost
 import grid as grid_mod
@@ -41,12 +42,9 @@ class RunResult:
 def run(in_dir, config_path=None):
     """Compute every output from the inputs in `in_dir`. Writes nothing."""
     cfg = config_mod.load_config(config_path)
-    layers = grid_mod.read_layers(in_dir)
-    grid = grid_mod.grid_from_layers(layers)
-    dem = grid_mod.load_dem(in_dir, grid)
-    hazard = grid_mod.load_hazard(in_dir, grid)
-    slope = grid_mod.slope_deg(dem, grid.cell_m)
-    model = cost.build(dem, hazard, slope, grid, cost.Params.from_config(cfg))
+    site = grid_mod.load_site(in_dir)
+    layers, grid, dem, hazard = site.layers, site.grid, site.dem, site.hazard
+    model = cost.build(dem, hazard, site.slope, grid, cost.Params.from_config(cfg))
 
     rover, stops = tour.split_waypoints(tour.load_waypoints(in_dir, grid))
     tour_plan = tour.plan_routes(model, rover, stops, cfg)
@@ -62,14 +60,15 @@ def run(in_dir, config_path=None):
         model, tour_plan.routes["balanced"], sheltered,
         cfg.value("storm.sample_spacing_m"), cfg.value("timeline.stop_min_default"),
     )
+    sweep_rows = analysis.sweep(model, rover, tour_plan.order, cfg)
     legend = shelter.legend(
         cfg.value("shelter_map.colour_max_min"), cfg.value("shelter_map.contour_interval_min")
     )
     warnings = [*tour_plan.warnings, *rad.warnings]
     files = outputs.render_outputs(
-        cfg, grid, layers, tour_plan, timelines, replan, sheltered.minutes, legend, rad, warnings
+        cfg, grid, layers, tour_plan, timelines, replan, sheltered.minutes, legend, rad, warnings, sweep_rows
     )
-    plan = outputs.build_plan(cfg, grid, layers, tour_plan, timelines, replan, legend, rad, warnings)
+    plan = outputs.build_plan(cfg, grid, layers, tour_plan, timelines, replan, legend, rad, warnings, sweep_rows)
     return RunResult(files, plan, tuple(warnings))
 
 

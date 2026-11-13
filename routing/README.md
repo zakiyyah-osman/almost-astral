@@ -45,6 +45,18 @@ python routing/plan_route.py --config routing/config.toml        # the same para
 
 The command prints the status, the totals, the three profiles and any warning. A plan that goes over a budget is still written, with status `over_budget` and a warning, so the map stays usable. If a stop is on a blocked cell, a stop cannot be reached, or an input is missing or malformed, the run stops with a message that names the problem, exits with a non-zero code and writes nothing.
 
+## Sweep and sensitivity
+
+```bash
+python routing/analysis.py                                   # reads data/out, writes routing/reports/
+python routing/analysis.py --in DIR --config FILE --reports DIR
+```
+
+Writes two CSV files into `--reports` (default `routing/reports`) and nothing else; it has no `--out` and never writes to `data/out`.
+
+- `sweep.csv`: the time against risk-exposure table. One row per weight in `profiles.sweep_w`: distance, walk minutes, and risk minutes split into `yellow_min`, `steep_min` and `near_red_min`. The same rows are in `plan.json` under `sweep`.
+- `sensitivity.csv`: every combination of the walking speed, the slope limit and w from the `[sensitivity]` section of `config.toml` (18 runs). Each row has the walk, total and risk minutes and the budget `status` (`ok` or `over_budget`), or `infeasible` with the `failed_stop` (the rover or stop that is on a blocked cell or cannot be reached) and the `reason`.
+
 ## Inputs
 
 Read from the `--in` folder: `layers.json` (grid size, site name, whether layers are fake), `dem.tif`, `hazard.tif`, `waypoints.geojson` (exactly one `rover` and at least one `stop`) and `radiation.csv`. `dem.tif` and `hazard.tif` must have the pixel size in `layers.json`, be north-up and share one geotransform.
@@ -76,6 +88,7 @@ Added fields:
 - `budgets`: also `reserve_pct` and `usable_min`.
 - `stop_order`: the `mode` used, the mode `requested`, the stop `order` and `warnings` (optimising falls back to the file order above `timeline.optimise_max_stops` stops).
 - `profiles`: `fastest`, `balanced`, `safest`, each with its risk weight `w`, output `file`, `distance_m`, `walk_min`, `risk_min` (split into `yellow_min`, `steep_min`, `near_red_min`), `total_min` and `status`.
+- `sweep[]`: the w-sweep table (see above), one row per weight.
 - `track[]`: the balanced route sampled every `track.spacing_m` and at each stop, for the slope profile and the timeline: `distance_m`, `x`, `y`, `elev_m`, `slope_deg`, `hazard`, `elapsed_min` (clock time, including time at stops already visited) and `shelter_min` (minutes back to the rover, ingress included). Stop arrivals also carry `stop`.
 - `storm_replan`: the fastest way back from points of the route. `points[]` have `x`, `y`, `route_distance_m`, `elapsed_min`, `return_min`, `return_distance_m` and `path` (a list of `[x, y]` ending at the rover); `worst` is the index of the point with the longest way back.
 - `shelter_map`: the legend for `shelter_time.png` (the colour stops, `colour_max_min`, `contour_interval_min`, `includes_ingress`), because the app cannot read minutes back out of a picture. The exact value at each point of the walk is in `track[].shelter_min`.

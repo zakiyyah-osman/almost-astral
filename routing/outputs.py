@@ -122,8 +122,11 @@ def _storm(rep: StormReplan, grid: Grid):
 
 
 def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines: dict,
-               storm: StormReplan, legend: dict, rad: RadiationInfo, warnings):
-    """The plan.json dictionary. `timelines` maps profile name to Timeline; balanced is the plan."""
+               storm: StormReplan, legend: dict, rad: RadiationInfo, warnings, sweep):
+    """The plan.json dictionary. `timelines` maps profile name to Timeline; balanced is the plan.
+
+    `sweep` is the list of w-sweep rows from analysis.sweep (the time against risk-exposure table).
+    """
     tl: Timeline = timelines["balanced"]
     walk, stop, ingress = whole(tl.walk_min), whole(tl.stop_min), whole(tl.ingress_min)
     profiles = {}
@@ -156,6 +159,7 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
             "order": [s.id for s in tour.order], "warnings": list(tour.warnings),
         },
         "profiles": profiles,
+        "sweep": [dict(row) for row in sweep],
         "track": [_track(p) for p in tl.track],
         "storm_replan": _storm(storm, grid),
         "shelter_map": legend,
@@ -196,7 +200,7 @@ def png_bytes(minutes, colour_max_min, interval_min):
 
 
 def render_outputs(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines: dict,
-                   storm: StormReplan, shelter_minutes, legend: dict, rad: RadiationInfo, warnings):
+                   storm: StormReplan, shelter_minutes, legend: dict, rad: RadiationInfo, warnings, sweep):
     """Every output file as {file name: bytes}. Nothing is written here."""
     files = {
         name: dumps(route_geojson(tour.routes[profile], grid)).encode("utf-8")
@@ -206,7 +210,7 @@ def render_outputs(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timeli
         shelter_minutes, cfg.value("shelter_map.colour_max_min"), cfg.value("shelter_map.contour_interval_min")
     )
     files[PLAN_FILE] = dumps(
-        build_plan(cfg, grid, layers, tour, timelines, storm, legend, rad, warnings)
+        build_plan(cfg, grid, layers, tour, timelines, storm, legend, rad, warnings, sweep)
     ).encode("utf-8")
     return files
 

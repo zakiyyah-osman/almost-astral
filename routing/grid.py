@@ -237,6 +237,26 @@ def load_hazard(folder, grid):
     return arr.astype(np.uint8)
 
 
+@dataclass(frozen=True)
+class Site:
+    """Everything read from an input folder: layers.json, dem.tif and hazard.tif."""
+
+    layers: dict
+    grid: Grid
+    dem: np.ndarray
+    hazard: np.ndarray
+    slope: np.ndarray       # degrees, NaN where the DEM has no data (see slope_deg)
+
+
+def load_site(folder):
+    """Read layers.json, dem.tif and hazard.tif from `folder` and compute the slope."""
+    layers = read_layers(folder)
+    grid = grid_from_layers(layers)
+    dem = load_dem(folder, grid)
+    hazard = load_hazard(folder, grid)
+    return Site(layers, grid, dem, hazard, slope_deg(dem, grid.cell_m))
+
+
 def slope_deg(dem, cell_m):
     """Steepest terrain slope at each cell, in degrees (central differences).
 

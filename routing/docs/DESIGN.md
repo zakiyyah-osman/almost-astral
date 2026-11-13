@@ -2,7 +2,7 @@
 
 What the route planner does and why. Build order is in `CHECKLIST.md`; independent checks are in `QA.md`.
 
-Status: phases 1 to 5 are built (config, grid, walking, cost, search, tour, shelter, storm, timeline, outputs, entry point); the sweep, sensitivity and end-to-end checks are still to do. Items still waiting for a decision are collected in sections 11 and 12.
+Status: everything is built except the hard-mask validation against the Perseverance traverse (CHECKLIST 6.3), which waits for the traverse data. Items still waiting for a decision are collected in sections 11 and 12. Items still waiting for a decision are collected in sections 11 and 12.
 
 ## 1. Scope
 
@@ -643,7 +643,8 @@ Shelter, storm, timeline and outputs:
 30. Storm samples and track points sit on the route cell whose distance along the route is nearest to each multiple of the spacing, not on interpolated points. Every value (elevation, slope, hazard, shelter minutes, return path) is then the exact value of one cell, and the reported `distance_m` is the actual distance to that cell, within half a step of the multiple. The arrival at each stop is always a sample, and the track also ends at the final cell. `elapsed_min` counts the time spent at a stop from the cell after the arrival cell.
 31. The `abort` check covers every track point and also the moment of leaving each stop (arrival time plus stop time plus the way back from the stop). It cannot fail while `reserve` passes, because the way back is never longer than finishing the route, so the worst moment is the end of the walk; it is kept because section 8 asks for it and because its limit is the hard EVA limit.
 32. `radiation.csv` that is missing gives a warning in `plan.json` (`warnings`) and skips the cross-check; a file with the wrong columns or non-numeric values stops the run. The date and source text of the 2024-05-20 solar event are fixed strings in `timeline.py`; its dose comes from `radiation.solar_event_dose_mgy`.
-33. `plan.json` carries extra fields beyond section 9.2: `warnings`, `stop_order.requested` and `stop_order.warnings`, `shelter_map.contour_rgba`, and `stop` on track and storm points that are a stop arrival. The `sweep` block is added with phase 6. Contract fields are whole minutes and metres; `totals.total_min` is the sum of the rounded parts. The file is about 120 kB for the fake site (arrays of numbers are kept on one line).
+33. `plan.json` carries extra fields beyond section 9.2: `warnings`, `stop_order.requested` and `stop_order.warnings`, `shelter_map.contour_rgba`, and `stop` on track and storm points that are a stop arrival.
+34. The w-sweep reruns the route for every w over the stop order chosen for the plan (balanced weight), so the rows differ only in w. Each sensitivity run rebuilds the cost for its walking speed and slope limit, chooses the stop order again as the plan does (`timeline.stop_order`, balanced weight) and routes at its own w. A run is `infeasible` when the rover or a stop stands on a blocked cell or cannot be reached, and the row names that waypoint; the rover can be the one that fails, for example when a tighter slope limit puts it inside the cliff buffer. Contract fields are whole minutes and metres; `totals.total_min` is the sum of the rounded parts. The file is about 120 kB for the fake site (arrays of numbers are kept on one line).
 
 ## 12. Open questions for teammates
 
