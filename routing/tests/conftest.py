@@ -110,6 +110,11 @@ def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False):
         "id": "hazard", "title": "Hazards", "file": "hazard.png",
         "source": "FAKE (test)" if fake else "Test site", "default": True, "opacity": 0.7,
     }]
+    if not fake:                                          # data/validate.py: real tables are credited in sources_notes
+        layers["sources_notes"] = {
+            "radiation.csv": "Synthetic test table, not a measurement.",
+            "weather.csv": "Synthetic test table, not a measurement.",
+        }
     (folder / "layers.json").write_text(json.dumps(layers, indent=2), encoding="utf-8")
     rows = ["sol,local_hour,dose_rate_usv_h", *(f"40,{h},27" for h in range(24))]
     (folder / "radiation.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
