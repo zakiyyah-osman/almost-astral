@@ -28,11 +28,11 @@ Each item: **task** · file · check.
 
 ## Phase 2: speed + cost
 
-- [ ] **2.1** Walking speed. · `routing/walking.py` · `test_walking.py::test_flat_speed_is_v_flat`, `::test_uphill_equals_downhill`, `::test_10pct_slope_factor_is_0_705`.
-- [ ] **2.2** Hard mask: red, slope limit, cliff buffer, sealed diagonal gaps. · `routing/cost.py` · `test_cost.py::test_red_blocked`, `::test_over_limit_slope_blocked`, `::test_buffer_ring_blocked`, `::test_buffer_zero_disables`, `::test_diagonal_gap_sealed`.
-- [ ] **2.3** Risk rate: yellow, steep ramp, near-red. · `routing/cost.py` · `test_cost.py::test_yellow_rate`, `::test_steep_ramp_zero_at_onset_full_at_limit` (sets a non-zero rate; the config default is 0), `::test_near_red_zero_at_radius`.
-- [ ] **2.4** Time-rate and planning-cost arrays in minutes per metre, −1 where blocked. · `routing/cost.py` · `test_cost.py::test_flat_rate_is_0_0222_min_per_m`, `::test_blocked_cells_are_negative`, `::test_w_zero_cost_equals_time_rate`.
-- [ ] **End of phase 2:** `pytest routing/tests` passes · commit.
+- [x] **2.1** Walking speed. · `routing/walking.py` · `test_walking.py::test_flat_speed_is_v_flat`, `::test_uphill_equals_downhill`, `::test_10pct_slope_factor_is_0_705`.
+- [x] **2.2** Hard mask: red, slope limit, cliff buffer, sealed diagonal gaps. · `routing/cost.py` · `test_cost.py::test_red_blocked`, `::test_over_limit_slope_blocked`, `::test_buffer_ring_blocked`, `::test_buffer_zero_disables`, `::test_diagonal_gap_sealed`.
+- [x] **2.3** Risk rate: yellow, steep ramp, near-red. · `routing/cost.py` · `test_cost.py::test_yellow_rate`, `::test_steep_ramp_zero_at_onset_full_at_limit` (sets a non-zero rate; the config default is 0), `::test_near_red_zero_at_radius`.
+- [x] **2.4** Time-rate and planning-cost arrays in minutes per metre, −1 where blocked. · `routing/cost.py` · `test_cost.py::test_flat_rate_is_0_0222_min_per_m`, `::test_blocked_cells_are_negative`, `::test_w_zero_cost_equals_time_rate`.
+- [x] **End of phase 2:** `pytest routing/tests` passes · commit.
 
 ## Phase 3: routing + profiles
 
