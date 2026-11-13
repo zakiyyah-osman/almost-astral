@@ -13,11 +13,13 @@ const HAZARD_KEY = [
 ]
 
 // One-click sets of layers: the ones that exist in layers.json are switched on, the rest off.
+// 'base' stands for the real HiRISE image when there is one, and the shaded relief otherwise.
 const PRESETS = [
-  { id: 'safety', label: 'Safety', hint: 'Hazards on terrain', on: ['relief', 'hazard'] },
-  { id: 'science', label: 'Science', hint: 'Minerals on terrain', on: ['relief', 'minerals'] },
-  { id: 'ground', label: 'Ground', hint: 'Slope and thermal', on: ['relief', 'slope', 'thermal'] },
+  { id: 'safety', label: 'Safety', hint: 'Hazards on terrain', on: ['base', 'hazard'] },
+  { id: 'science', label: 'Science', hint: 'Minerals on terrain', on: ['base', 'minerals'] },
+  { id: 'ground', label: 'Ground', hint: 'Slope and thermal', on: ['base', 'slope', 'thermal'] },
 ]
+const presetIds = (preset, ids) => preset.on.map((id) => (id === 'base' ? (ids.includes('hirise') ? 'hirise' : 'relief') : id))
 
 export default function App() {
   const [data, setData] = useState(null)
@@ -36,9 +38,9 @@ export default function App() {
     loadData()
       .then((d) => {
         setData(d)
-        setLayerState(
-          Object.fromEntries(d.layers.map((l) => [l.id, { on: !!l.default, opacity: l.opacity ?? 1 }])),
-        )
+        const ids = d.layers.map((l) => l.id)
+        const start = presetIds(PRESETS[0], ids) // open on the Safety view
+        setLayerState(Object.fromEntries(d.layers.map((l) => [l.id, { on: start.includes(l.id), opacity: l.opacity ?? 1 }])))
       })
       .catch((e) => setError(e.message))
   }, [])
@@ -65,10 +67,14 @@ export default function App() {
   }, [data])
 
   const applyPreset = (preset) =>
-    setLayerState((s) => Object.fromEntries(Object.entries(s).map(([id, v]) => [id, { ...v, on: preset.on.includes(id) }])))
+    setLayerState((s) => {
+      const on = presetIds(preset, Object.keys(s))
+      return Object.fromEntries(Object.entries(s).map(([id, v]) => [id, { ...v, on: on.includes(id) }]))
+    })
   const isPreset = (preset) => {
     const have = Object.keys(layerState)
-    return have.length > 0 && have.every((id) => !!layerState[id].on === preset.on.includes(id))
+    const on = presetIds(preset, have)
+    return have.length > 0 && have.every((id) => !!layerState[id].on === on.includes(id))
   }
 
   const update = (id, patch) => setLayerState((s) => ({ ...s, [id]: { ...s[id], ...patch } }))
