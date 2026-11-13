@@ -10,10 +10,12 @@ import numbers
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from config import Config, ConfigError
 from cost import Cost
 from grid import WAYPOINTS_FILE, Grid, GridError
-from search import NoPath, PathSummary, Searcher
+from search import NoPath, PathSummary, Searcher, path_profile
 
 KIND_ROVER, KIND_STOP = "rover", "stop"
 ORDER_MODES = ("as_listed", "optimise")
@@ -227,6 +229,30 @@ def choose_order(searcher: Searcher, rover: Waypoint, stops, mode, max_stops):
             f"{max_stops}; the order in waypoints.geojson is used",
         )
     return OrderChoice(tuple(stop_order(searcher, rover, stops, used)), used, mode, warnings)
+
+
+# ---- clock along a route -----------------------------------------------------
+@dataclass(frozen=True)
+class RouteClock:
+    """Distance and time at every cell of a route (arrays are indexed like route.cells)."""
+
+    distance_m: np.ndarray      # cumulative distance from the start
+    walk_min: np.ndarray        # cumulative physical walking minutes
+    elapsed_min: np.ndarray     # clock since leaving the rover: walking + time at stops already done
+    arrival_index: dict         # stop id -> index of the route cell where the crew arrives
+
+
+def route_clock(cost: Cost, route: "Route", stop_min):
+    """The clock along a route. Time at a stop counts from the cell after the arrival cell."""
+    distance, walk = path_profile(cost, route.cells)
+    arrivals, at = {}, 0
+    for leg in route.legs[:-1]:                      # the last leg returns to the rover
+        at += len(leg.path.cells) - 1
+        arrivals[leg.to_id] = at
+    done = np.zeros(len(route.cells))
+    for idx in arrivals.values():
+        done[idx + 1:] += 1.0
+    return RouteClock(distance, walk, walk + stop_min * done, arrivals)
 
 
 # ---- routes ------------------------------------------------------------------

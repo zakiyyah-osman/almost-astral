@@ -79,13 +79,35 @@ def summarise(cost: Cost, cells):
     )
 
 
+def path_profile(cost: Cost, cells):
+    """Cumulative distance (m) and physical minutes at every cell of a path, from 0 at the first.
+
+    Uses the same edge formula as summarise, so the last entries equal its totals.
+    """
+    cells = tuple((int(r), int(c)) for r, c in cells)
+    rows = np.fromiter((r for r, _ in cells), dtype=int, count=len(cells))
+    cols = np.fromiter((c for _, c in cells), dtype=int, count=len(cells))
+    dr, dc = np.diff(rows), np.diff(cols)
+    length = cost.grid.cell_m * np.where((dr != 0) & (dc != 0), math.sqrt(2.0), 1.0)
+    tr = cost.time_rate[rows, cols]
+    minutes = length * (tr[:-1] + tr[1:]) / 2.0
+    return (
+        np.concatenate([[0.0], np.cumsum(length)]),
+        np.concatenate([[0.0], np.cumsum(minutes)]),
+    )
+
+
 class Tree:
-    """Cheapest planning cost from one start cell to every cell, and the paths that give it."""
+    """Cheapest cost from one start cell to every cell, and the paths that give it.
+
+    `planning_cost` is cumulative in the units of the rate array that was searched: planning
+    minutes for a Searcher, physical minutes for the shelter map. inf if unreachable.
+    """
 
     def __init__(self, cost: Cost, mcp, start, planning_cost):
         self.cost = cost
         self.start = start
-        self.planning_cost = planning_cost      # cumulative planning minutes, inf if unreachable
+        self.planning_cost = planning_cost
         self._mcp = mcp
 
     def reachable(self, end):
@@ -101,6 +123,19 @@ class Tree:
         return summarise(self.cost, self._mcp.traceback(end))
 
 
+def build_tree(cost: Cost, rate, start, connectivity):
+    """One MCP_Geometric run over the rate array `rate` (min/m, negative = blocked) from `start`."""
+    start = (int(start[0]), int(start[1]))
+    if not (0 <= start[0] < cost.grid.height and 0 <= start[1] < cost.grid.width):
+        raise NoPath(f"cell {start} is outside the grid")
+    if cost.blocked[start]:
+        raise NoPath(f"cell {start} is blocked")
+    cell_m = cost.grid.cell_m
+    mcp = MCP_Geometric(rate, fully_connected=fully_connected(connectivity), sampling=(cell_m, cell_m))
+    cumulative, _ = mcp.find_costs([start])
+    return Tree(cost, mcp, start, cumulative)
+
+
 class Searcher:
     """Searches one site at one risk weight w. Trees are cached by start cell."""
 
@@ -108,20 +143,14 @@ class Searcher:
         self.cost = cost
         self.w = w
         self.planning = cost.planning_rate(w)
-        self._full = fully_connected(connectivity)
+        self.connectivity = connectivity
+        fully_connected(connectivity)               # reject a bad value now, not at the first search
         self._trees = {}
 
     def tree(self, start):
         start = (int(start[0]), int(start[1]))
         if start not in self._trees:
-            if not (0 <= start[0] < self.cost.grid.height and 0 <= start[1] < self.cost.grid.width):
-                raise NoPath(f"cell {start} is outside the grid")
-            if self.cost.blocked[start]:
-                raise NoPath(f"cell {start} is blocked")
-            cell_m = self.cost.grid.cell_m
-            mcp = MCP_Geometric(self.planning, fully_connected=self._full, sampling=(cell_m, cell_m))
-            cumulative, _ = mcp.find_costs([start])
-            self._trees[start] = Tree(self.cost, mcp, start, cumulative)
+            self._trees[start] = build_tree(self.cost, self.planning, start, self.connectivity)
         return self._trees[start]
 
     def planning_cost(self, a, b):

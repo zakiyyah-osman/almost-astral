@@ -44,10 +44,10 @@ Each item: **task** · file · check.
 
 ## Phase 4: shelter + storm
 
-- [ ] **4.1** Shelter-time array, ingress included. · `routing/shelter.py` · `test_shelter.py::test_rover_cell_equals_ingress`, `::test_flat_matches_distance_over_speed`, `::test_blocked_cells_are_nan`.
-- [ ] **4.2** Render the PNG with contour lines. · `routing/shelter.py` · `test_shelter.py::test_png_is_grid_sized_rgba`, `::test_blocked_cells_transparent`, `::test_contours_at_interval`.
-- [ ] **4.3** Storm return table. · `routing/storm.py` · `test_storm.py::test_samples_include_every_stop`, `::test_return_path_ends_at_rover`, `::test_return_min_equals_shelter_time`, `::test_worst_point_is_maximum`.
-- [ ] **End of phase 4:** `pytest routing/tests` passes · commit.
+- [x] **4.1** Shelter-time array, ingress included. · `routing/shelter.py` · `test_shelter.py::test_rover_cell_equals_ingress`, `::test_flat_matches_distance_over_speed`, `::test_blocked_cells_are_nan`.
+- [x] **4.2** Render the PNG with contour lines. · `routing/shelter.py` · `test_shelter.py::test_png_is_grid_sized_rgba`, `::test_blocked_cells_transparent`, `::test_contours_at_interval`.
+- [x] **4.3** Storm return table. · `routing/storm.py` · `test_storm.py::test_samples_include_every_stop`, `::test_return_path_ends_at_rover`, `::test_return_min_equals_shelter_time`, `::test_worst_point_is_maximum`.
+- [x] **End of phase 4:** `pytest routing/tests` passes · commit.
 
 ## Phase 5: timeline + radiation + outputs
 

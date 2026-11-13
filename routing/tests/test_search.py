@@ -196,3 +196,24 @@ def test_edge_cost_averages_cells_with_different_slopes():
     path = Searcher(make_cost(slope=slope), 0.0, 8).path((4, 3), (4, 4))
     flat, steep = 1 / 45.0, 1 / (45.0 * math.exp(-0.7))
     assert path.physical_min == pytest.approx(5.0 * (flat + steep) / 2)
+
+
+def test_path_profile_accumulates_the_same_distance_and_time_as_summarise():
+    from search import path_profile
+    hazard = np.zeros((9, 9), np.uint8)
+    hazard[2:6, 2:5] = 1
+    slope = np.zeros((9, 9))
+    slope[:, 6:] = math.degrees(math.atan(0.15))
+    c = make_cost(hazard, slope)
+    path = Searcher(c, 1.0, 8).path((0, 0), (7, 8))
+    steps = np.diff(np.array(path.cells), axis=0)
+    assert (np.abs(steps).sum(axis=1) == 2).any()                  # the path really has diagonal steps
+    dist, minutes = path_profile(c, path.cells)
+    assert len(dist) == len(minutes) == len(path.cells)
+    assert dist[0] == 0 and minutes[0] == 0
+    assert dist[-1] == pytest.approx(path.distance_m) and minutes[-1] == pytest.approx(path.physical_min)
+    assert (np.diff(dist) > 0).all() and (np.diff(minutes) > 0).all()
+    for k in (2, 5, len(path.cells)):
+        part = summarise(c, path.cells[:k])
+        assert dist[k - 1] == pytest.approx(part.distance_m)
+        assert minutes[k - 1] == pytest.approx(part.physical_min)
