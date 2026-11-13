@@ -1,6 +1,6 @@
 {
   "site": {
-    "name": "Jezero crater delta (site centre is a placeholder)",
+    "name": "Jezero crater, delta front (eastern lobe)",
     "grid": {
       "width": 400,
       "height": 400,
@@ -10,8 +10,8 @@
       2000.0,
       2000.0
     ],
-    "center_lat": 18.38,
-    "center_lon_east": 77.58
+    "center_lat": 18.46,
+    "center_lon_east": 77.4
   },
   "layers": [
     {
@@ -21,6 +21,15 @@
       "source": "FAKE (real: HiRISE terrain model, MRO)",
       "default": true,
       "opacity": 1.0
+    },
+    {
+      "id": "hirise",
+      "title": "HiRISE image",
+      "file": "hirise.png",
+      "source": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: PSP_003798_1985_Edited_affine_25cm_Eqc_latTs0_lon0_offNadir.tif",
+      "default": false,
+      "opacity": 1.0,
+      "native_resolution_m": 0.25
     },
     {
       "id": "slope",
@@ -34,17 +43,40 @@
       "id": "thermal",
       "title": "Thermal inertia",
       "file": "thermal.png",
-      "source": "FAKE (real: THEMIS, Mars Odyssey)",
+      "source": "THEMIS (Mars Odyssey), thermal inertia mosaic: THEMIS_TI_Mosaic_Quant_00N060E_100mpp.cub",
       "default": false,
-      "opacity": 0.6
+      "opacity": 0.6,
+      "native_resolution_m": 100.0,
+      "note": "Values in J m^-2 K^-1 s^-1/2 are in thermal_inertia.tif (NaN = no data). Native pixels are much larger than the 5 m grid, so edges look soft."
     },
     {
       "id": "minerals",
       "title": "Minerals",
       "file": "minerals.png",
-      "source": "FAKE (real: CRISM, MRO)",
+      "source": "CRISM (MRO), MTRDR summary parameters, image FRT00005C5E: frt00005c5e_07_su166j_mtr3.img",
       "default": false,
-      "opacity": 0.8
+      "opacity": 0.8,
+      "legend": [
+        {
+          "label": "Olivine",
+          "color": "#78c846",
+          "parameter": "OLINDEX3",
+          "threshold": 0.1058
+        },
+        {
+          "label": "Clays (Fe/Mg smectite)",
+          "color": "#46aae6",
+          "parameter": "D2300",
+          "threshold": 0.0111
+        },
+        {
+          "label": "Carbonates",
+          "color": "#eb8c37",
+          "parameter": "MIN2295_2480",
+          "threshold": 0.0011
+        }
+      ],
+      "note": "Coloured where a CRISM summary parameter passes our threshold. Thresholds were tuned by eye."
     },
     {
       "id": "hazard",
@@ -74,6 +106,8 @@
   },
   "plan": "plan.json",
   "sources_notes": {
-    "space_weather.csv": "NASA DONKI (CCMC space weather database), 2025-06-01 to 2025-12-31. mars_impact comes from DONKI's own model runs and instrument lists."
+    "space_weather.csv": "NASA DONKI (CCMC space weather database), 2025-06-01 to 2025-12-31. mars_impact comes from DONKI's own model runs and instrument lists.",
+    "radiation.csv": "ESTIMATE, not a measurement at this site: Curiosity RAD surface average at Gale, 0.64 mSv/day (Hassler et al. 2014, Science 343). Applied unchanged at Jezero, which sits about 2 km higher than Gale crater's floor under a thinner atmosphere, so the real dose is probably somewhat higher.",
+    "dem.tif": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif"
   }
 }
