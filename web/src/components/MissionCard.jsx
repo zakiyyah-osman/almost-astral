@@ -2,7 +2,7 @@ import { buildTimeline, clock } from '../hud/sim.js'
 
 // One printable page for the crew: stops with arrival times, limits and where every layer comes from.
 // Hidden on screen and shown only when printing (see .mission-card in index.css).
-export default function MissionCard({ data, safety }) {
+export default function MissionCard({ data, routeLabel }) {
   const { plan, waypoints, route, site } = data
   if (!plan || !waypoints) return null
   const tl = buildTimeline(plan, waypoints, route)
@@ -18,8 +18,9 @@ export default function MissionCard({ data, safety }) {
     <section className="mission-card" aria-label="Printable mission card">
       <h1>Mission card: {site.name}</h1>
       {fake && <p className="mc-fake">Some layers are still placeholder data. Do not use this card for a real outing.</p>}
+      {routeLabel && <p><b>Route: {routeLabel}.</b></p>}
       <p>
-        Two crew walk out from {rover?.properties.name ?? 'the rover'} and back. Outing {plan.totals.total_min} min of{' '}
+        {stops.length ? `Two crew walk out from ${rover?.properties.name ?? 'the rover'} and back.` : 'Two crew walk from point A to point B.'} Outing {Math.round(plan.totals.total_min)} min of{' '}
         {plan.budgets?.eva_max_min ?? '?'} allowed, walk {(walkedM / 1000).toFixed(1)} km, dose about {plan.radiation_dose_usv} µSv
         {plan.budgets?.radiation_limit_usv ? ` of ${plan.budgets.radiation_limit_usv} µSv allowed` : ''}.
       </p>
@@ -48,19 +49,22 @@ export default function MissionCard({ data, safety }) {
             <tr key={`${l.from}-${l.to}`}>
               <td>{names[l.from] ?? l.from} to {names[l.to] ?? l.to}</td>
               <td>{l.distance_m} m</td>
-              <td>{l.walk_min} min</td>
+              <td>{Math.round(l.walk_min)} min</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      {safety && (
-        <p>
-          Route check against the hazard map:{' '}
-          {safety.redM > 1
-            ? `WARNING, ${Math.round(safety.redM)} m of the route crosses no-go ground.`
-            : `stays out of every no-go cell, ${Math.round((safety.safeM / safety.totalM) * 100)}% on clear ground.`}
-        </p>
+      {plan.checks && (
+        <>
+          <h2>Checks</h2>
+          <ul>
+            {plan.checks.map((c) => (
+              <li key={c.id}>{c.ok ? 'OK' : 'CHECK'}: {c.message}</li>
+            ))}
+            {plan.max_slope_deg != null && <li>Steepest slope {plan.max_slope_deg}°, climb {plan.ascent_m} m, {plan.metres_careful} m on careful ground.</li>}
+          </ul>
+        </>
       )}
 
       <h2>Turn back if</h2>
