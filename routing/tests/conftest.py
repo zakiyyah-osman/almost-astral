@@ -92,3 +92,28 @@ def write_waypoints(folder, items):
     path = Path(folder) / "waypoints.geojson"
     path.write_text(json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8")
     return path
+
+
+def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False):
+    """A complete input folder as plan_route.py and data/validate.py expect it.
+
+    waypoints: (id, name, kind, x, y) tuples. Adds radiation.csv, weather.csv and one layer image.
+    """
+    from PIL import Image
+
+    site = write_site(folder, dem, hazard, cell_m)
+    height, width = dem.shape
+    folder = Path(folder)
+    Image.fromarray(np.zeros((height, width, 4), np.uint8), mode="RGBA").save(folder / "hazard.png")
+    layers = json.loads((folder / "layers.json").read_text(encoding="utf-8"))
+    layers["layers"] = [{
+        "id": "hazard", "title": "Hazards", "file": "hazard.png",
+        "source": "FAKE (test)" if fake else "Test site", "default": True, "opacity": 0.7,
+    }]
+    (folder / "layers.json").write_text(json.dumps(layers, indent=2), encoding="utf-8")
+    rows = ["sol,local_hour,dose_rate_usv_h", *(f"40,{h},27" for h in range(24))]
+    (folder / "radiation.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    weather = ["sol,local_hour,temp_c,pressure_pa,dust_tau", "40,12,-20,700,0.5"]
+    (folder / "weather.csv").write_text("\n".join(weather) + "\n", encoding="utf-8")
+    write_waypoints(folder, waypoints)
+    return site

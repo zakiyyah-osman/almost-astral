@@ -2,7 +2,7 @@
 
 What the route planner does and why. Build order is in `CHECKLIST.md`; independent checks are in `QA.md`.
 
-Status: phases 1 to 3 are built (config, grid, walking, cost, search, tour); the rest is still design. Items still waiting for a decision are collected in sections 11 and 12.
+Status: phases 1 to 5 are built (config, grid, walking, cost, search, tour, shelter, storm, timeline, outputs, entry point); the sweep, sensitivity and end-to-end checks are still to do. Items still waiting for a decision are collected in sections 11 and 12.
 
 ## 1. Scope
 
@@ -637,6 +637,14 @@ Grid and rasters:
 27. Slope is the central difference of the four neighbours, so a cell's own height does not enter its slope. A single-cell spike or pit is invisible to it and must come from the hazard map.
 28. A no-data DEM cell is NaN in the DEM and NaN in the slope, and so are its four neighbours (the central difference reads them). `cost.py` blocks every NaN-slope cell. The no-data marker is still an open question for Yaj (section 12).
 
+Shelter, storm, timeline and outputs:
+
+29. The shelter map is built on `time_rate` directly (a search over the physical rate, w = 0), not through the fastest profile route. The colour ramp (ColorBrewer YlOrRd, five stops spread evenly over `colour_max_min`, alpha 210) and the contour colour are presentation choices; the ramp is written to `plan.json` (`shelter_map.stops`, `contour_rgba`). A contour cell is the one in the higher 10-minute band of two horizontally or vertically adjacent cells, so lines are one cell wide; a cell with no value never starts a line.
+30. Storm samples and track points sit on the route cell whose distance along the route is nearest to each multiple of the spacing, not on interpolated points. Every value (elevation, slope, hazard, shelter minutes, return path) is then the exact value of one cell, and the reported `distance_m` is the actual distance to that cell, within half a step of the multiple. The arrival at each stop is always a sample, and the track also ends at the final cell. `elapsed_min` counts the time spent at a stop from the cell after the arrival cell.
+31. The `abort` check covers every track point and also the moment of leaving each stop (arrival time plus stop time plus the way back from the stop). It cannot fail while `reserve` passes, because the way back is never longer than finishing the route, so the worst moment is the end of the walk; it is kept because section 8 asks for it and because its limit is the hard EVA limit.
+32. `radiation.csv` that is missing gives a warning in `plan.json` (`warnings`) and skips the cross-check; a file with the wrong columns or non-numeric values stops the run. The date and source text of the 2024-05-20 solar event are fixed strings in `timeline.py`; its dose comes from `radiation.solar_event_dose_mgy`.
+33. `plan.json` carries extra fields beyond section 9.2: `warnings`, `stop_order.requested` and `stop_order.warnings`, `shelter_map.contour_rgba`, and `stop` on track and storm points that are a stop arrival. The `sweep` block is added with phase 6. Contract fields are whole minutes and metres; `totals.total_min` is the sum of the rounded parts. The file is about 120 kB for the fake site (arrays of numbers are kept on one line).
+
 ## 12. Open questions for teammates
 
 **Yaj (data)**
@@ -671,4 +679,4 @@ Grid and rasters:
 - Will the app show all three routes, with a way to switch?
 - Is `plan.json` `track[]` (distance, elevation, slope, elapsed, shelter minutes) enough for the slope profile and the timeline chart?
 - Contour lines are burned into `shelter_time.png`. Is that fine, or do you want to draw them yourself?
-- `plan.json` grows to roughly 100 kB with the track and return paths. Any problem?
+- `plan.json` grows to roughly 120 kB with the track and return paths. Any problem?

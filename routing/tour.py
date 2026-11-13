@@ -255,6 +255,16 @@ def route_clock(cost: Cost, route: "Route", stop_min):
     return RouteClock(distance, walk, walk + stop_min * done, arrivals)
 
 
+def sample_indices(distance_m, spacing_m):
+    """Route-cell indices nearest to 0, spacing, 2 x spacing ... up to the route length."""
+    total = float(distance_m[-1])
+    targets = np.arange(0.0, total + 1e-9, spacing_m)
+    right = np.clip(np.searchsorted(distance_m, targets), 0, len(distance_m) - 1)
+    left = np.clip(right - 1, 0, len(distance_m) - 1)
+    pick_left = np.abs(distance_m[left] - targets) <= np.abs(distance_m[right] - targets)
+    return np.where(pick_left, left, right)
+
+
 # ---- routes ------------------------------------------------------------------
 def build_route(searcher: Searcher, rover: Waypoint, order, profile):
     """The route rover -> order -> rover at the searcher's risk weight."""

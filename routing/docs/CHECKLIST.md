@@ -51,14 +51,14 @@ Each item: **task** · file · check.
 
 ## Phase 5: timeline + radiation + outputs
 
-- [ ] **5.1** Legs and totals. · `routing/timeline.py` · `test_timeline.py::test_total_is_walk_plus_stops_plus_ingress`, `::test_legs_chain_rover_to_rover`.
-- [ ] **5.2** Budget checks and status. · `routing/timeline.py` · `test_timeline.py::test_usable_is_252_min_for_360_and_30pct`, `::test_over_reserve_flags_status`, `::test_abort_check_uses_elapsed_plus_return`.
-- [ ] **5.3** Radiation. · `routing/timeline.py` · `test_timeline.py::test_background_dose_180_min_is_80_usv`, `::test_solar_event_is_8_1_mgy_in_its_own_field`, `::test_event_dose_not_added_to_sv`, `::test_csv_baseline_mismatch_warns`.
-- [ ] **5.4** Track samples. · `routing/timeline.py` · `test_timeline.py::test_track_spacing`, `::test_elapsed_never_decreases`, `::test_elapsed_includes_stop_time`.
-- [ ] **5.5** Writers for the three route files. · `routing/outputs.py` · `test_outputs.py::test_single_linestring_inside_extent`, `::test_no_fake_property`.
-- [ ] **5.6** `plan.json` writer. · `routing/outputs.py` · `test_outputs.py::test_all_contract_keys_present`, `::test_assumptions_match_config`, `::test_two_runs_identical`.
-- [ ] **5.7** Wire the entry point, with `--in DIR` (default `data/out`), `--out DIR` (default: the value of `--in`) and `--config FILE` (default `routing/config.toml`), as in DESIGN section 2. · `routing/plan_route.py` · `test_plan_route.py::test_in_out_config_options` (runs on a temp copy, `data/out` untouched); `python routing/plan_route.py` exits 0 and writes `route.geojson`, `route_fastest.geojson`, `route_safest.geojson`, `shelter_time.png` and `plan.json`; `python data/validate.py` prints `OK`.
-- [ ] **End of phase 5:** `pytest routing/tests` passes · `python data/validate.py` passes · commit.
+- [x] **5.1** Legs and totals. · `routing/timeline.py` · `test_timeline.py::test_total_is_walk_plus_stops_plus_ingress`, `::test_legs_chain_rover_to_rover`.
+- [x] **5.2** Budget checks and status. · `routing/timeline.py` · `test_timeline.py::test_usable_is_252_min_for_360_and_30pct`, `::test_over_reserve_flags_status`, `::test_abort_check_uses_elapsed_plus_return`.
+- [x] **5.3** Radiation. · `routing/timeline.py` · `test_timeline.py::test_background_dose_180_min_is_80_usv`, `::test_solar_event_is_8_1_mgy_in_its_own_field`, `::test_event_dose_not_added_to_sv`, `::test_csv_baseline_mismatch_warns`.
+- [x] **5.4** Track samples. · `routing/timeline.py` · `test_timeline.py::test_track_spacing`, `::test_elapsed_never_decreases`, `::test_elapsed_includes_stop_time`.
+- [x] **5.5** Writers for the three route files. · `routing/outputs.py` · `test_outputs.py::test_single_linestring_inside_extent`, `::test_no_fake_property`.
+- [x] **5.6** `plan.json` writer. · `routing/outputs.py` · `test_outputs.py::test_all_contract_keys_present`, `::test_assumptions_match_config`, `::test_two_runs_identical`.
+- [x] **5.7** Wire the entry point, with `--in DIR` (default `data/out`), `--out DIR` (default: the value of `--in`) and `--config FILE` (default `routing/config.toml`), as in DESIGN section 2. · `routing/plan_route.py` · `test_plan_route.py::test_in_out_config_options` (runs on a temp copy, `data/out` untouched); `python routing/plan_route.py` exits 0 and writes `route.geojson`, `route_fastest.geojson`, `route_safest.geojson`, `shelter_time.png` and `plan.json`; `python data/validate.py` prints `OK`.
+- [x] **End of phase 5:** `pytest routing/tests` passes · `python data/validate.py` passes · commit.
 
 ## Phase 6: sweep + sensitivity
 
