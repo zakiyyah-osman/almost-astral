@@ -69,7 +69,7 @@ Each item: **task** · file · check.
 
 ## Phase 7: end-to-end run
 
-- [ ] **7.1** Full rebuild, in this order. · no file · `python data/make_fake.py`, then `python routing/plan_route.py`, then `python data/validate.py` prints `OK` with no warning for `plan.json` or `route.geojson`. **`make_fake.py` overwrites `route.geojson`, `plan.json` and `shelter_time.png` with fake versions, so `plan_route.py` must always run after it.**
+- [x] **7.1** Full rebuild, in this order. · no file · `python data/make_fake.py`, then `python routing/plan_route.py`, then `python data/validate.py` prints `OK` with no warning for `plan.json` or `route.geojson`. **`make_fake.py` overwrites `route.geojson`, `plan.json` and `shelter_time.png` with fake versions, so `plan_route.py` must always run after it.**
 - [ ] **7.2** Checks on the real outputs. · `routing/tests/test_end_to_end.py` · `::test_no_route_touches_red` (no route cell is red; diagonal steps past a red corner are allowed), `::test_route_slope_under_limit`, `::test_plan_status_ok`.
 - [ ] **7.3** Site-agnostic. · `routing/tests/test_end_to_end.py` · `::test_runs_on_120x80_grid`; a search for `400`, `2000` and `5.0` in `routing/*.py` finds nothing.
 - [ ] **7.4** The web app still builds. · no file · `cd web && npm run build` exits 0.
