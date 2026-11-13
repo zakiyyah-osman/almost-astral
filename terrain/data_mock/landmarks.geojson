@@ -1,0 +1,103 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          582.5,
+          187.5
+        ]
+      },
+      "properties": {
+        "name": "Crater A (r=55 m)",
+        "kind": "crater_centre"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          164.5,
+          174.5
+        ]
+      },
+      "properties": {
+        "name": "Crater B (r=51 m)",
+        "kind": "crater_centre"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          713.5,
+          487.5
+        ]
+      },
+      "properties": {
+        "name": "Crater C (r=50 m)",
+        "kind": "crater_centre"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          296.5,
+          306.5
+        ]
+      },
+      "properties": {
+        "name": "Crater D (r=45 m)",
+        "kind": "crater_centre"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          350.5,
+          649.5
+        ]
+      },
+      "properties": {
+        "name": "Boxwork network centre",
+        "kind": "boxwork"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          770.5,
+          449.5
+        ]
+      },
+      "properties": {
+        "name": "Scarp ramp",
+        "kind": "ramp"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          240.5,
+          379.5
+        ]
+      },
+      "properties": {
+        "name": "Coverage gap NE corner",
+        "kind": "gap_corner"
+      }
+    }
+  ]
+}

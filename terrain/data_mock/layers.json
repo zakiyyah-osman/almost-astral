@@ -1,0 +1,60 @@
+{
+  "site": {
+    "name": "Gale - Boxwork (SIMULATED)",
+    "crs": "local_meters",
+    "origin_latlon": [
+      -4.7,
+      137.4
+    ],
+    "width_m": 1000.0,
+    "height_m": 1000.0,
+    "cell_m": 1.0,
+    "simulated": true,
+    "source_crs": "Mars 2000 equirectangular, centre lon 0, lat_ts 0, R=3396190 m (placeholder)",
+    "origin_source_xy": [
+      8144343.4,
+      -278591.1
+    ]
+  },
+  "layers": [
+    {
+      "id": "dtm",
+      "kind": "raster",
+      "units": "m",
+      "file": "dtm.tif",
+      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    },
+    {
+      "id": "thermal_inertia",
+      "kind": "raster",
+      "units": "TIU",
+      "file": "ti.tif",
+      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    },
+    {
+      "id": "minerals",
+      "kind": "raster",
+      "units": "class",
+      "file": "minerals.tif",
+      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    },
+    {
+      "id": "rocks",
+      "kind": "vector",
+      "file": "rocks.geojson",
+      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    },
+    {
+      "id": "rover_tracks",
+      "kind": "vector",
+      "file": "rover_tracks.geojson",
+      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    },
+    {
+      "id": "landmarks",
+      "kind": "vector",
+      "file": "landmarks.geojson",
+      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    }
+  ]
+}
