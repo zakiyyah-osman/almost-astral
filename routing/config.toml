@@ -140,6 +140,12 @@ unit = "as_listed | optimise"
 type = "scenario"
 source = "Default until Zakiyyah decides whether routing may reorder stops"
 
+[timeline.optimise_max_stops]
+value = 8
+unit = "stops"
+type = "scenario"
+source = "Team choice: 8 stops is 40,320 orders, still fast; above this, optimise falls back to as_listed with a warning"
+
 [timeline.stop_min_default]
 value = 25
 unit = "min"

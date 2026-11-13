@@ -160,7 +160,7 @@ Because the cost is the same in both directions, the time from A to B equals the
 - A point `(x, y)` snaps to the cell that contains it. Route vertices are cell centres, so a marker can sit up to half a cell diagonal from the line.
 - Exactly one `kind: "rover"` is required.
 - A stop on a blocked cell, or with no path to the rover, stops the run with a non-zero exit code. The message names the stop id, its name, its coordinates and the reason (red cell, slope over limit, inside buffer, unreachable). No output file is written.
-- `timeline.stop_order` chooses the order: `as_listed` follows `waypoints.geojson`; `optimise` tries every order (3 to 5 stops is at most 120) on the balanced planning cost, uses that order for all three profiles, and breaks ties by file order. Default is `as_listed` until Zakiyyah answers.
+- `timeline.stop_order` chooses the order: `as_listed` follows `waypoints.geojson`; `optimise` tries every order (3 to 5 stops is at most 120) on the balanced planning cost, uses that order for all three profiles, and breaks ties by file order. The pairwise costs come from one search per waypoint, computed once and reused for every order. With more than `timeline.optimise_max_stops` stops (8, which is 40,320 orders) `optimise` falls back to `as_listed` and records a warning in `plan.json` (`stop_order.warnings`). Default is `as_listed` until Zakiyyah answers.
 
 ### 4.7 Profiles
 
@@ -285,7 +285,7 @@ Shape (numbers are placeholders):
   "checks": [
     { "id": "reserve", "ok": true, "value": 186, "limit": 252, "unit": "min", "message": "..." }
   ],
-  "stop_order": { "mode": "as_listed", "order": ["stop1", "stop2", "stop3"] },
+  "stop_order": { "mode": "as_listed", "order": ["stop1", "stop2", "stop3"], "warnings": [] },
   "profiles": {
     "balanced": {
       "w": 1, "file": "route.geojson", "distance_m": 3890, "walk_min": 96.2,
@@ -490,6 +490,12 @@ value = "as_listed"
 unit = "as_listed | optimise"
 type = "scenario"
 source = "Default until Zakiyyah decides whether routing may reorder stops"
+
+[timeline.optimise_max_stops]
+value = 8
+unit = "stops"
+type = "scenario"
+source = "Team choice: 8 stops is 40,320 orders, still fast; above this, optimise falls back to as_listed with a warning"
 
 [timeline.stop_min_default]
 value = 25

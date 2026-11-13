@@ -371,3 +371,113 @@ def test_waypoint_without_a_name_uses_its_id(flat_site):
     (flat_site.folder / "waypoints.geojson").write_text(json.dumps({"features": [feature]}), encoding="utf-8")
     (wp_loaded,) = tour.load_waypoints(flat_site.folder, grid)
     assert wp_loaded.name == "stopX"
+
+
+# ---- one search per waypoint -------------------------------------------------
+@pytest.fixture
+def search_counter(monkeypatch):
+    import search
+
+    real = search.MCP_Geometric
+    count = {"n": 0}
+
+    class Counting(real):
+        def __init__(self, *args, **kwargs):
+            count["n"] += 1
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(search, "MCP_Geometric", Counting)
+    return count
+
+
+def spread_stops(n, shape=(20, 30)):
+    cells = [(2, 3), (15, 8), (4, 20), (17, 26), (9, 14), (1, 27), (18, 2), (11, 6), (6, 9), (13, 22)]
+    return [wp(f"s{i}", "stop", cells[i], shape=shape) for i in range(n)]
+
+
+@pytest.mark.parametrize("n", [2, 3, 4, 5, 6])
+def test_optimise_runs_one_search_per_waypoint(search_counter, n):
+    c = make_cost()
+    rover, stops = rover_at((10, 0)), spread_stops(n)
+    s = Searcher(c, 1.0)
+    tour.stop_order(s, rover, stops, "optimise")
+    assert search_counter["n"] == n + 1                      # rover and every stop, once each, not once per order
+    tour.stop_order(s, rover, stops, "optimise")
+    assert search_counter["n"] == n + 1                      # and cached afterwards
+
+
+def test_plan_routes_search_count_is_one_per_waypoint_per_profile(search_counter):
+    c = make_cost()
+    rover, stops = rover_at((10, 0)), spread_stops(5)
+    tour.plan_routes(c, rover, stops, CFG, mode="optimise")
+    assert search_counter["n"] == 3 * 6                      # three profiles x (rover + 5 stops)
+
+
+def test_cost_matrix_matches_the_individual_costs():
+    c = make_cost()
+    rover, stops = rover_at((10, 0)), spread_stops(3)
+    s = Searcher(c, 1.0)
+    m = tour.cost_matrix(s, [rover, *stops])
+    ws = [rover, *stops]
+    for i, a in enumerate(ws):
+        for j, b in enumerate(ws):
+            assert m[i][j] == s.planning_cost(a.cell, b.cell)
+    assert all(m[i][i] == 0 for i in range(4))
+    assert m[0][1] == pytest.approx(m[1][0])
+
+
+# ---- the optimise limit ------------------------------------------------------
+def cfg_with(**values):
+    import copy
+    from config import Config
+    raw = copy.deepcopy(CFG.raw)
+    for key, v in values.items():
+        section, name = key.split("__")
+        raw[section][name]["value"] = v
+    return Config.from_dict(raw)
+
+
+def test_optimise_over_the_limit_falls_back_to_as_listed_with_a_warning():
+    c = make_cost()
+    rover, stops = rover_at((10, 0)), spread_stops(4)
+    cfg = cfg_with(timeline__optimise_max_stops=3)
+    plan = tour.plan_routes(c, rover, stops, cfg, mode="optimise")
+    assert plan.mode == "as_listed" and plan.requested_mode == "optimise"
+    assert [s.id for s in plan.order] == ["s0", "s1", "s2", "s3"]
+    assert len(plan.warnings) == 1
+    assert "optimise" in plan.warnings[0] and "4 stops" in plan.warnings[0] and "limit of 3" in plan.warnings[0]
+    assert all(r.order == ("s0", "s1", "s2", "s3") for r in plan.routes.values())
+
+
+def test_optimise_at_the_limit_still_optimises():
+    c = make_cost()
+    rover, stops = rover_at((10, 0)), spread_stops(4)
+    cfg = cfg_with(timeline__optimise_max_stops=4)
+    plan = tour.plan_routes(c, rover, stops, cfg, mode="optimise")
+    assert plan.mode == "optimise" and plan.warnings == ()
+    balanced = Searcher(c, 1.0)
+    costs = brute_force_costs(balanced, rover, stops)
+    assert costs[tuple(s.id for s in plan.order)] == pytest.approx(min(costs.values()))
+
+
+def test_as_listed_over_the_limit_has_no_warning():
+    c = make_cost()
+    rover, stops = rover_at((10, 0)), spread_stops(4)
+    plan = tour.plan_routes(c, rover, stops, cfg_with(timeline__optimise_max_stops=2), mode="as_listed")
+    assert plan.mode == "as_listed" and plan.requested_mode == "as_listed" and plan.warnings == ()
+
+
+def test_the_default_limit_is_8_and_9_stops_fall_back(search_counter):
+    c = make_cost()
+    rover = rover_at((10, 0))
+    assert CFG.value("timeline.optimise_max_stops") == 8
+    plan9 = tour.plan_routes(c, rover, spread_stops(9), CFG, mode="optimise")
+    assert plan9.mode == "as_listed" and plan9.warnings and "limit of 8" in plan9.warnings[0]
+    plan8 = tour.plan_routes(c, rover, spread_stops(8), CFG, mode="optimise")
+    assert plan8.mode == "optimise" and plan8.warnings == ()
+
+
+def test_the_plan_mode_defaults_to_the_config_and_records_it():
+    c = make_cost()
+    plan = tour.plan_routes(c, rover_at((10, 0)), spread_stops(3), CFG)
+    assert plan.mode == "as_listed" and plan.requested_mode == "as_listed" and plan.warnings == ()

@@ -56,6 +56,7 @@ RANGE_RULES = [
     ("profiles.sweep_w", [-0.5, -1e-9], [0.0, 4.0]),
     ("sensitivity.w", [-1, -0.001], [0.0, 4.0]),
     ("sensitivity.slope_max_deg", [0, -5, 90, 100], [1, 89]),
+    ("timeline.optimise_max_stops", [0, -1], [1, 8, 20]),
     ("timeline.ingress_min", [-1, -0.001], [0, 20]),
     ("timeline.reserve_pct", [-1, 100, 150], [0, 99.9]),
     ("timeline.eva_max_min", [0, -60], [1, 480]),
@@ -242,3 +243,30 @@ def test_errors_in_a_file_name_the_file(tmp_path):
     bad.write_text('[crew.size]\nvalue = 2\nunit = "people"\ntype = "scenario"\nsource = "x"\n')
     with pytest.raises(ConfigError, match=r"partial\.toml: .*missing parameter walking.v_flat_kmh"):
         load_config(bad)
+
+
+# ---- search.connectivity and optimise_max_stops ------------------------------
+@pytest.mark.parametrize("good", [4, 8])
+def test_connectivity_4_and_8_accepted(raw, good):
+    _set(raw, "search.connectivity", good)
+    assert Config.from_dict(raw).value("search.connectivity") == good
+
+
+@pytest.mark.parametrize("bad", [5, 6, 0, 1, 16, -8, 8.0, 4.5, True, False, "8", [8], None, math.nan, math.inf])
+def test_connectivity_must_be_4_or_8(raw, bad):
+    _set(raw, "search.connectivity", bad)
+    with pytest.raises(ConfigError, match="search.connectivity"):
+        Config.from_dict(raw)
+
+
+def test_connectivity_error_says_what_is_allowed(raw):
+    _set(raw, "search.connectivity", 6)
+    with pytest.raises(ConfigError, match=r"search\.connectivity: must be one of 4, 8, got 6"):
+        Config.from_dict(raw)
+
+
+@pytest.mark.parametrize("bad", [8.5, 8.0, True, "8"])
+def test_optimise_max_stops_must_be_an_integer(raw, bad):
+    _set(raw, "timeline.optimise_max_stops", bad)
+    with pytest.raises(ConfigError, match="optimise_max_stops"):
+        Config.from_dict(raw)

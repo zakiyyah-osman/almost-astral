@@ -28,7 +28,7 @@ EXPECTED_PARAMS = (
     "risk.near_red_radius_m", "risk.near_red_rate_max",
     "profiles.w_fastest", "profiles.w_balanced", "profiles.w_safest", "profiles.sweep_w",
     "sensitivity.v_flat_kmh", "sensitivity.slope_max_deg", "sensitivity.w",
-    "timeline.stop_order", "timeline.stop_min_default", "timeline.ingress_min",
+    "timeline.stop_order", "timeline.optimise_max_stops", "timeline.stop_min_default", "timeline.ingress_min",
     "timeline.eva_max_min", "timeline.reserve_pct",
     "radiation.background_dose_rate_msv_day", "radiation.limit_usv",
     "radiation.solar_event_dose_mgy", "radiation.baseline_tolerance_pct",
@@ -44,7 +44,8 @@ LIST_PARAMS = {
     "profiles.sweep_w", "sensitivity.v_flat_kmh", "sensitivity.slope_max_deg", "sensitivity.w",
 }
 STRING_PARAMS = {"timeline.stop_order": ("as_listed", "optimise")}
-INT_PARAMS = {"crew.size"}
+INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity"}
+ALLOWED_VALUES = {"search.connectivity": (4, 8)}
 
 
 def _range(lo=-math.inf, hi=math.inf, lo_in=True, hi_in=True):
@@ -75,6 +76,7 @@ RANGES = {
     "sensitivity.v_flat_kmh": _POS,
     "sensitivity.slope_max_deg": _range(0, 90, lo_in=False, hi_in=False),
     "sensitivity.w": _NONNEG,
+    "timeline.optimise_max_stops": _POS,
     "timeline.ingress_min": _NONNEG,
     "timeline.eva_max_min": _POS,
     "timeline.reserve_pct": _range(0, 100, hi_in=False),
@@ -202,6 +204,9 @@ class Config:
             raise ConfigError(f"{label}: must be a finite number, got {v!r}")
         if label in INT_PARAMS and not isinstance(v, int):
             raise ConfigError(f"{label}: must be an integer, got {v!r}")
+        allowed = ALLOWED_VALUES.get(label)
+        if allowed is not None and v not in allowed:
+            raise ConfigError(f"{label}: must be one of {', '.join(map(str, allowed))}, got {v!r}")
         rng = RANGES.get(label)
         if rng is not None and not _in_range(v, rng):
             raise ConfigError(f"{label}: must be {_describe(rng)}, got {v!r}")

@@ -74,8 +74,18 @@ class Route:
 class TourPlan:
     rover: Waypoint
     order: tuple            # stops in visiting order (Waypoint objects)
-    mode: str
+    mode: str               # the mode actually used
     routes: dict            # profile name -> Route
+    requested_mode: str = ""    # the mode asked for; differs from `mode` after a fallback
+    warnings: tuple = ()        # recorded in plan.json (stop_order.warnings)
+
+
+@dataclass(frozen=True)
+class OrderChoice:
+    order: tuple
+    mode: str
+    requested_mode: str
+    warnings: tuple
 
 
 # ---- waypoints ---------------------------------------------------------------
@@ -173,24 +183,50 @@ def _tour_cost(searcher: Searcher, rover, order):
     return sum(searcher.planning_cost(a.cell, b.cell) for a, b in zip(chain, chain[1:]))
 
 
+def cost_matrix(searcher: Searcher, waypoints):
+    """Planning minutes between every pair of waypoints, from one search per waypoint."""
+    cells = [w.cell for w in waypoints]
+    trees = [searcher.tree(cell) for cell in cells]
+    return [[float(tree.planning_cost[cell]) for cell in cells] for tree in trees]
+
+
 def stop_order(searcher: Searcher, rover: Waypoint, stops, mode):
     """Stops in visiting order. `searcher` carries the balanced risk weight.
 
     as_listed keeps the file order. optimise tries every order and keeps the cheapest tour on
-    the balanced planning cost; a tie goes to the order that comes first in file order.
+    the balanced planning cost; a tie goes to the order that comes first in file order. The
+    pairwise costs are computed once (one search per waypoint) and every order is summed from
+    them. There is no limit on the number of stops here: choose_order applies it.
     """
     if mode not in ORDER_MODES:
         raise ConfigError(f"stop order mode must be one of {', '.join(ORDER_MODES)}, got {mode!r}")
     stops = list(stops)
     if mode == "as_listed":
         return stops
+    matrix = cost_matrix(searcher, [rover, *stops])      # index 0 is the rover, i + 1 is stops[i]
     best, best_cost = stops, math.inf
     for perm in itertools.permutations(range(len(stops))):       # file order comes first
         order = [stops[i] for i in perm]
-        c = _tour_cost(searcher, rover, order)
+        chain = [0, *(i + 1 for i in perm), 0]
+        c = sum(matrix[a][b] for a, b in zip(chain, chain[1:]))
         if c < best_cost and (not math.isfinite(best_cost) or best_cost - c > TIE_TOL * max(1.0, best_cost)):
             best, best_cost = order, c
     return best
+
+
+def choose_order(searcher: Searcher, rover: Waypoint, stops, mode, max_stops):
+    """stop_order with the stop limit: optimise over more than `max_stops` stops uses as_listed."""
+    if mode not in ORDER_MODES:
+        raise ConfigError(f"stop order mode must be one of {', '.join(ORDER_MODES)}, got {mode!r}")
+    stops = list(stops)
+    used, warnings = mode, ()
+    if mode == "optimise" and len(stops) > max_stops:
+        used = "as_listed"
+        warnings = (
+            f"stop order 'optimise' skipped: {len(stops)} stops is more than the limit of "
+            f"{max_stops}; the order in waypoints.geojson is used",
+        )
+    return OrderChoice(tuple(stop_order(searcher, rover, stops, used)), used, mode, warnings)
 
 
 # ---- routes ------------------------------------------------------------------
@@ -216,6 +252,11 @@ def plan_routes(cost: Cost, rover: Waypoint, stops, cfg: Config, mode=None):
         name: Searcher(cost, cfg.value(key), connectivity) for name, key in PROFILES
     }
     check_waypoints(cost, rover, stops, searchers["balanced"])
-    order = stop_order(searchers["balanced"], rover, stops, mode)
-    routes = {name: build_route(s, rover, order, name) for name, s in searchers.items()}
-    return TourPlan(rover=rover, order=tuple(order), mode=mode, routes=routes)
+    choice = choose_order(
+        searchers["balanced"], rover, stops, mode, cfg.value("timeline.optimise_max_stops")
+    )
+    routes = {name: build_route(s, rover, choice.order, name) for name, s in searchers.items()}
+    return TourPlan(
+        rover=rover, order=choice.order, mode=choice.mode, routes=routes,
+        requested_mode=choice.requested_mode, warnings=choice.warnings,
+    )
