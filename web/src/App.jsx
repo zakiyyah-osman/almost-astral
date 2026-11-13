@@ -4,6 +4,8 @@ import HudView from './hud/HudView.jsx'
 import { loadData } from './lib/loadData.js'
 import { checkRoute } from './lib/routeCheck.js'
 import MissionCard from './components/MissionCard.jsx'
+import RouteCharts from './components/RouteCharts.jsx'
+import ConditionsPanel from './components/ConditionsPanel.jsx'
 
 // hazard.png draws red and yellow; green cells are see-through, so green here just means "no overlay".
 const HAZARD_KEY = [
@@ -93,7 +95,7 @@ export default function App() {
   const anyFake = data.layers.some((l) => l.source.startsWith('FAKE'))
 
   return (
-    <div className={`app${visor ? ' visor' : ''}`}>
+    <div className={`app${visor ? ' visor' : ''}${view === 'tablet' ? ' tablet' : ''}`}>
       <MissionCard data={data} safety={safety} />
       <aside className="sidebar">
         <header className="brand">
@@ -110,6 +112,9 @@ export default function App() {
           </button>
           <button className={view === 'hud' ? 'active' : ''} aria-pressed={view === 'hud'} onClick={() => setView('hud')}>
             HUD
+          </button>
+          <button className={view === 'tablet' ? 'active' : ''} aria-pressed={view === 'tablet'} onClick={() => setView('tablet')}>
+            Tablet
           </button>
         </div>
 
@@ -194,6 +199,11 @@ export default function App() {
             )}
           </section>
         )}
+
+        <div className="detail">
+          {plan && <RouteCharts data={data} />}
+          <ConditionsPanel data={data} />
+        </div>
 
         <section>
           <h2>Layers</h2>
