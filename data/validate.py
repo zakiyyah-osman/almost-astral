@@ -64,6 +64,11 @@ def check_layers(out, index):
             size = Image.open(path).size
             if size != (w, h):
                 err(f"{path.name}: image is {size[0]}x{size[1]} but the grid is {w}x{h}")
+    # Real tables get a credit in sources_notes from their adapter; fake ones never do.
+    notes = index.get("sources_notes", {})
+    for table_file in index.get("tables", {}).values():
+        if table_file not in notes:
+            fake.append(f"{table_file} still uses fake data (no entry in layers.json sources_notes)")
     return w, h, extent
 
 

@@ -1,42 +1,65 @@
 {
   "_help": "Settings for the real-data build (python data/build_real.py). Paths are relative to data/. Set a path to null to skip that source; its fake file then stays in data/out/.",
 
-  "name": "Mount Sharp boxwork region, Gale crater (placeholder: confirm with Zakiyyah)",
-  "center_lat": -4.78,
-  "center_lon_east": 137.38,
-  "_center_note": "PLACEHOLDER. Replace with the real site centre once the site is chosen. Longitude is degrees east, 0 to 360.",
+  "name": "Jezero crater, delta front (eastern lobe)",
+  "center_lat": 18.46,
+  "center_lon_east": 77.40,
+  "_center_note": "Chosen by eye on the USGS HiRISE DTM mosaic (13 Nov): the 2 km square covers the eastern lobe of the delta front and the crater floor below it, about 3 km west of the Octavia E. Butler landing site (18.4447 N, 77.4508 E). Not a published coordinate. Longitude is degrees east, 0 to 360.",
 
   "grid": { "width": 400, "height": 400, "cell_m": 5 },
   "mars_radius_m": 3396190,
 
   "hirise": {
-    "dtm": null,
-    "image": null,
-    "_example_dtm": "raw/hirise/MSL_Gale_DEM_Mosaic_1m_v3.tif",
-    "_example_image": "raw/hirise/MSL_Gale_Orthophoto_Mosaic_25cm_v3.tif",
-    "label": "HiRISE (MRO), MSL Gale merged mosaic"
+    "dtm": "raw/hirise/JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "image": "raw/hirise/PSP_003798_1985_Edited_affine_25cm_Eqc_latTs0_lon0_offNadir.tif",
+    "_example_dtm": "raw/hirise/JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "_example_image": "raw/hirise/JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first.tif",
+    "_example_note": "The example names are from the USGS Mars 2020 TRN mosaics; use the real names of the files you downloaded.",
+    "label": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero"
   },
 
   "themis": {
-    "file": null,
-    "_example": "raw/themis/THEMIS_TI_Mosaic_Quant_30S120E_100mpp.tif",
+    "file": "raw/themis/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.cub",
+    "_example": "raw/themis/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.tif",
+    "_tile_note": "Tile 00N060E covers 0-30 N, 60-120 E, which includes Jezero (checked 13 Nov). Absolute accuracy of THEMIS thermal inertia is about 20% (USGS).",
     "kind": "thermal_inertia",
     "_kind_help": "thermal_inertia = quantitative TI in SI units (best); night_ir = night-time brightness only (qualitative, still shows sand vs rock)",
     "label": "THEMIS (Mars Odyssey), thermal inertia mosaic"
   },
 
   "crism": {
-    "minerals": [],
+    "minerals": [
+      {"label": "Olivine", "file": "raw/crism/frt00005c5e_07_su166j_mtr3.img", "band_name": "OLINDEX3", "threshold": 0.1058, "color": [120, 200, 70]},
+      {"label": "Clays (Fe/Mg smectite)", "file": "raw/crism/frt00005c5e_07_su166j_mtr3.img", "band_name": "D2300", "threshold": 0.0111, "color": [70, 170, 230]},
+      {"label": "Carbonates", "file": "raw/crism/frt00005c5e_07_su166j_mtr3.img", "band_name": "MIN2295_2480", "threshold": 0.0011, "color": [235, 140, 55]}
+    ],
     "_example_minerals": [
       { "label": "Sulfates", "file": "raw/crism/FRT0000xxxx_su.img", "band_name": "SINDEX2", "threshold": 0.02, "color": [70, 170, 230] },
       { "label": "Hydrated minerals", "file": "raw/crism/FRT0000xxxx_su.img", "band_name": "BD1900_2", "threshold": 0.01, "color": [150, 90, 200] },
       { "label": "Clays (Fe/Mg)", "file": "raw/crism/FRT0000xxxx_su.img", "band_name": "D2300", "threshold": 0.01, "color": [60, 190, 150] }
     ],
-    "_threshold_note": "Thresholds are starting values to tune by eye, not published cut-offs. Use band (a number from 1) if band_name does not match.",
-    "label": "CRISM (MRO), MTRDR summary parameters"
+    "_threshold_note": "Each threshold is the 95th percentile of that parameter over the whole CRISM image FRT00005C5E (so the strongest 5% of the image is coloured). A relative cut-off chosen by us, not a published detection limit. Parameters follow Viviano-Beck et al. 2014: OLINDEX3 olivine, D2300 Fe/Mg clays, MIN2295_2480 carbonates.",
+    "label": "CRISM (MRO), MTRDR summary parameters, image FRT00005C5E"
+  },
+
+  "meda": {
+    "temp_files": null,
+    "pressure_files": null,
+    "_example_temp_files": "raw/meda/*ATS*.CSV",
+    "_example_pressure_files": "raw/meda/*PS*.CSV",
+    "sols": [420, 422],
+    "_sols_note": "Placeholder: sols early in the delta front campaign (it began on sol 415). Set them to the sols you downloaded.",
+    "temp_columns": { "ltst": "LTST", "value": "ATS_LOCAL_TEMP1" },
+    "pressure_columns": { "ltst": "LTST", "value": "PRESSURE" },
+    "_columns_note": "Column names are guesses until checked: run python data/tables.py <file> and copy the real names. Add \"sol\": \"<column>\" only if the sol is not in the file name.",
+    "temp_units": "K",
+    "dust_tau_estimate": 0.6,
+    "_dust_note": "Not measured by MEDA in these files. A single estimate; replace it with a Mastcam-Z or SkyCam tau value if you find one.",
+    "label": "MEDA (Perseverance)"
   },
 
   "rems": {
+    "_note": "Curiosity (Gale) weather. Not used for Jezero: use the meda block. Leave file null.",
     "file": null,
     "_example": "raw/rems/rems_sols.csv",
     "sols": [4600, 4600],
@@ -48,9 +71,14 @@
   },
 
   "rad": {
+    "_note": "Perseverance has no dose instrument, so Jezero uses the estimate below (file stays null). The constant is written for every hour of sols; keep sols equal to meda.sols.",
     "file": null,
     "_example": "raw/rad/rad_dose.csv",
-    "sols": [4600, 4600],
+    "estimate": {
+      "usv_per_day": 640,
+      "source": "Curiosity RAD surface average at Gale, 0.64 mSv/day (Hassler et al. 2014, Science 343). Applied unchanged at Jezero, which sits about 2 km higher than Gale crater's floor under a thinner atmosphere, so the real dose is probably somewhat higher."
+    },
+    "sols": [420, 422],
     "columns": { "sol": "sol", "ltst": "ltst", "dose": "dose_rate" },
     "dose_units": "ugy_per_day",
     "_units_help": "ugy_per_day, ugy_per_h or usv_per_h",

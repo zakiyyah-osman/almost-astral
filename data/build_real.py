@@ -13,9 +13,10 @@ import sys
 import traceback
 
 import grid
-from adapters import crism, donki, hirise, rad, rems, themis
+from adapters import crism, donki, hirise, meda, rad, rems, themis
 
-SOURCES = {"hirise": hirise, "themis": themis, "crism": crism, "rems": rems, "rad": rad, "donki": donki}
+SOURCES = {"hirise": hirise, "themis": themis, "crism": crism, "meda": meda, "rems": rems, "rad": rad,
+           "donki": donki}
 
 
 def is_set(site, name):
@@ -24,8 +25,9 @@ def is_set(site, name):
         "hirise": bool(cfg.get("dtm") or cfg.get("image")),
         "themis": bool(cfg.get("file")),
         "crism": bool(cfg.get("minerals")),
+        "meda": bool(cfg.get("temp_files") and cfg.get("pressure_files")),
         "rems": bool(cfg.get("file")),
-        "rad": bool(cfg.get("file")),
+        "rad": bool(cfg.get("file") or cfg.get("estimate")),
         "donki": bool(cfg.get("start")),
     }[name]
 
@@ -54,6 +56,9 @@ def main():
     unknown = [c for c in chosen if c not in SOURCES]
     if unknown:
         sys.exit(f"Unknown source(s): {', '.join(unknown)}. Choose from: {', '.join(SOURCES)}")
+
+    if is_set(site, "meda") and is_set(site, "rems") and {"meda", "rems"} <= set(chosen):
+        sys.exit("Both meda and rems are set in data/site.json and both write weather.csv. Set only one.")
 
     grid.set_site_name(site)
     failed = 0
