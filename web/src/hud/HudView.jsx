@@ -17,6 +17,7 @@ import {
   localClock,
   DUST_WARN_TAU,
   parseTable,
+  spaceWeatherModel,
   radiationModel,
   stateAt,
   stopList,
@@ -113,6 +114,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
   // Radiation and weather tables are optional: the HUD still works without them.
   const [rad, setRad] = useState(null)
   const [wx, setWx] = useState(null)
+  const [sw, setSw] = useState(null)
   useEffect(() => {
     const load = (file, make, set) => {
       if (!file) return set(null)
@@ -123,6 +125,12 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
     }
     load(data.tables?.radiation, radiationModel, setRad)
     load(data.tables?.weather, weatherModel, setWx)
+    if (data.tables?.space_weather) {
+      fetch(`./${data.tables.space_weather}`)
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
+        .then((text) => setSw(spaceWeatherModel(text)))
+        .catch(() => setSw(null))
+    } else setSw(null)
   }, [data.tables])
 
   const [t, setT] = useState(0)
@@ -295,7 +303,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
       <Gauge label="Battery" pct={battery} value={`${Math.round(battery)}%`} low={battery < 20} />
       {rad && (
         <Gauge
-          label={`Radiation ${Math.round(rate)} µSv/h`}
+          label={`Radiation (est.) ${Math.round(rate)} µSv/h`}
           pct={limit ? (dose / limit) * 100 : 0}
           value={limit ? `${Math.round(dose)} / ${limit} µSv` : `${Math.round(dose)} µSv`}
           low={rate > rad.baseline * 2}
@@ -321,6 +329,19 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
             </div>
           )}
         </div>
+      )}
+
+      {sw && (
+        <p className="hud-realstorm">
+          <span className="hud-small">Real NASA storm data (DONKI)</span>
+          <b>
+            {sw.fastest.kms} km/s CME, {sw.fastest.start_utc.slice(0, 10)}
+          </b>
+          <span>
+            Expected at Mars {sw.fastest.mars_arrival_utc.slice(0, 10)}. {sw.hits} such events in this file.{' '}
+            <a href={sw.fastest.link} target="_blank" rel="noreferrer">Source</a>
+          </span>
+        </p>
       )}
 
       {t === 0 && !playing && (
@@ -384,7 +405,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
         onChange={(e) => scrub(e.target.value)}
         aria-label="EVA time"
       />
-      <p className="hud-note">Keys: space play, S storm, R reset, L large text, V visor. Oxygen and battery are simulated from the EVA time limit.</p>
+      <p className="hud-note">Keys: space play, S storm, R reset, L large text, V visor. Oxygen and battery are simulated from the EVA time limit. Radiation is an estimate, not a Jezero measurement.</p>
       </div>
     </section>
   )

@@ -20,7 +20,7 @@ Last updated: 12 Nov 2026 (before the official data arrives).
 | # | Signal in the challenge | Task and owner | Status |
 | --- | --- | --- | --- |
 | 5 | At least three kinds of data (optical, thermal, spectral, topographic, radiation and so on) | Layers (Yaj) | Relief, thermal, minerals exist but are fake |
-| 6 | Safety information such as radiation or space weather | Radiation table (Yaj), dose and storm alert (Zakiyyah) | Alert and dose built, numbers fake |
+| 6 | Safety information such as radiation or space weather | Radiation table (Yaj), dose and storm alert (Zakiyyah) | Alert and dose built, dose numbers fake and, at Jezero, modelled not measured. HUD shows **real** NASA DONKI storm data (`space_weather.csv`) |
 | 7 | A route that avoids large rock formations and other obstacles | Hazard map (Nahla), route planner (Tushaar) | Fake straight route, code still stubs |
 | 8 | Mobility in a spacesuit with equipment | Walking speed (Tushaar), brief and HUD pace (Zakiyyah) | HUD shows pace from the plan. **Gap**: a sourced suit and kit slowdown, in Tushaar's model |
 
@@ -36,7 +36,7 @@ Last updated: 12 Nov 2026 (before the official data arrives).
 
 ## Open decisions
 
-- The site (the draft assumes the Mount Sharp boxwork area).
+- The site: **Jezero crater** (team decision, 12 Nov). Radiation there is modelled, not measured, because Perseverance has no RAD equivalent: say so on screen. Yaj's `data/site.json` still points at Gale and needs the Jezero centre point.
 - The time frame, or "none".
 - The limits in `mission/brief.md` (360 min outing, 1000 µSv dose): they are our assumptions.
 

@@ -12,6 +12,7 @@ import {
   stopList,
   trailUntil,
   weatherModel,
+  spaceWeatherModel,
 } from './sim.js'
 
 const out = (f) => JSON.parse(readFileSync(new URL(`../../../data/out/${f}`, import.meta.url), 'utf8'))
@@ -196,4 +197,19 @@ test('weather picks the hour and tolerates missing columns', () => {
 test('local clock wraps past midnight', () => {
   assert.equal(localClock(0), '09:00')
   assert.equal(localClock(15 * 60 + 30), '00:30')
+})
+
+test('space weather: picks the fastest event that reaches Mars', () => {
+  const csv = [
+    'event_id,type,start_utc,detail,mars_impact,mars_arrival_utc,link',
+    'a,CME,2025-06-01T18:00Z,609 km/s,False,,http://x/a',
+    'b,CME,2025-06-05T08:12Z,1033 km/s,True,2025-06-07T20:00Z,http://x/b',
+    'c,CME,2025-06-06T11:12Z,758 km/s,True,2025-06-09T22:00Z,http://x/c',
+  ].join('\n')
+  const m = spaceWeatherModel(csv)
+  assert.equal(m.total, 3)
+  assert.equal(m.hits, 2)
+  assert.equal(m.fastest.kms, 1033)
+  assert.equal(spaceWeatherModel('event_id,type\n'), null)
+  assert.equal(spaceWeatherModel(''), null)
 })

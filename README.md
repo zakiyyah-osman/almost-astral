@@ -68,6 +68,11 @@ How we used AI tools is written up in [docs/ai-use.md](docs/ai-use.md). NASA dat
 
 Every layer must name the mission and instrument it comes from. Keep this table up to date.
 
-| Layer | Mission / instrument |
-| --- | --- |
-| *(add each real dataset here as it is used)* | |
+| Layer | Mission / instrument | Status |
+| --- | --- | --- |
+| Terrain, relief, slope | HiRISE terrain model, Mars Reconnaissance Orbiter (MRO) | Fake until real file is loaded |
+| Minerals | CRISM, MRO | Fake until real file is loaded |
+| Thermal inertia | THEMIS, Mars Odyssey | Fake until real file is loaded |
+| Weather | MEDA, Perseverance (Jezero) | Fake until real file is loaded |
+| Radiation | Modelled estimate from published Curiosity RAD dose rates: Perseverance has no dose instrument | Estimate, labelled on screen |
+| Solar storms | DONKI, NASA CCMC space weather database | **Real** (`data/out/space_weather.csv`) |

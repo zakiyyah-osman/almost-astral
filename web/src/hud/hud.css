@@ -138,3 +138,7 @@
 .hud.large .hud-compass { max-width: 200px; }
 .hud.large .hud-mini { max-width: 230px; }
 .hud.large .hud-note { display: none; }
+
+.hud-realstorm { display: grid; gap: 2px; margin: 10px 0 0; padding: 7px 9px; border-radius: 6px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid var(--hud-warn); font-size: 0.8em; }
+.hud-realstorm span:last-child { color: var(--hud-dim); }
+.hud-realstorm a { color: var(--hud-warn); }

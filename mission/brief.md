@@ -4,13 +4,14 @@ DRAFT. Items marked **(check)** are from memory and need a source before we say 
 
 ## Science goal
 
-Where in this walkable area did groundwater once flow, and which stops give a two-person crew the most evidence of it in one safe outing?
+Where did a river once flow into this lake, and which stops give a two-person crew the most evidence of that water in one safe outing?
 
 ## Site
 
-- **Mount Sharp (Aeolis Mons), Gale Crater**, the challenge's own example area, with the boxwork ridges. **(check: exact boxwork location and which unit it sits in)**
-- Why: a crew could study ancient water here in one place. Boxwork ridges are thought to be rock cracks that groundwater once cemented. Curiosity has ground-level photos of nearby terrain. **(check)**
-- Data: HiRISE terrain (MRO), CRISM minerals (MRO), THEMIS thermal (Mars Odyssey), Curiosity weather (REMS) and radiation (RAD). Which of these cover our 2 km square is confirmed on Saturday when the official data arrives.
+- **Jezero Crater, delta area**, where Perseverance works. Crater centre about 18.38°N, 77.58°E; the landing site (Octavia E. Butler Landing) is about 18.44°N, 77.45°E. **(check: these come from Wikipedia, confirm on a NASA page; the exact 2 km square is still to choose)**
+- Why: Jezero held a lake and a river delta billions of years ago. NASA/JPL and Mars 2020 papers describe thin Fe/Mg clay-bearing layers along the delta front, and carbonate-rich rock in the Margin Unit along the crater's western rim, so one crew could read the history of the water in one place. **(source: NASA/JPL news and Mars 2020 abstracts; where the unit sits relative to our 2 km square is still to check)**
+- Data: HiRISE terrain (MRO), CRISM minerals (MRO), THEMIS thermal (Mars Odyssey), Perseverance weather (MEDA). Which of these cover our 2 km square is confirmed once the official data arrives.
+- **Radiation is modelled, not measured here.** Curiosity's RAD instrument measures the dose at Gale; Perseverance carries no equivalent. We estimate the surface dose from published Curiosity figures and say so on screen. Perseverance's MEDA measures solar radiation (UV, visible, infrared), not ionizing dose. **(checked in a web search 13 Nov: no Perseverance dose instrument found. Still worth asking the mentor)**
 - Local grid: 2000 m x 2000 m, 5 m per cell (see `CONTRACT.md`).
 
 ## Crew setup
@@ -27,7 +28,7 @@ All **(assumption)** until the team agrees them. They sit in `plan.json` under `
 | --- | --- | --- |
 | Total outing | 360 min | `eva_max_min` |
 | Planned walk plus sampling | about 165 min with 3 stops | leaves a large safety margin |
-| Radiation dose for the outing | 1000 µSv | `radiation_limit_usv`; baseline surface rate in our data is about 27 µSv/h |
+| Radiation dose for the outing | 1000 µSv | `radiation_limit_usv`. Dose rate is a modelled estimate at Jezero (see Site); the fake data currently uses about 27 µSv/h |
 | Slope | set in `terrain/thresholds.toml` | Nahla owns this |
 | Distance from the rover | the whole site, 2 km square | worst case about 1.5 km from shelter |
 | Gravity used in maths | 3.71 m/s² | Mars value |
@@ -37,7 +38,7 @@ Oxygen and battery are not in the data. The HUD simulates them from the 360 min 
 
 ## What could go wrong
 
-- **Solar storm:** the dose rate jumps. The crew stops sampling and takes the shorter way back to the rover along the planned route, which already avoids the hazards. The HUD shows a red alert and the new dose.
+- **Solar storm:** the dose rate jumps. The crew stops sampling and takes the shorter way back to the rover along the planned route, which already avoids the hazards. The HUD shows a red alert and the new dose. The real DONKI storm data in `space_weather.csv` is about the Sun, so it applies at Jezero as it did at Gale.
 - **Dust:** visibility and solar power drop. The route stays on the planned path and the crew turns back early if the time limit gets close. **(assumption)**
 - **Suit fault or injury:** the crew turns back at once. The "time back to shelter" number is always on screen so they know how long it takes.
-- **Hazard on the route:** red cells (too steep, loose sand or rock) are never on the route. If the real data shows one on the path, Tushaar re-plans.
+- **Hazard on the route:** red cells (too steep, loose sand or rock) are never on the route. Jezero has boulder fields and steep delta scarps, so check them on the real data. If one lands on the path, Tushaar re-plans. **(check)**

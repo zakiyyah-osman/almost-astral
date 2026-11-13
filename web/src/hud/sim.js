@@ -272,3 +272,21 @@ export function clock(totalMin) {
 export function localClock(t) {
   return clock((START_LOCAL_HOUR * 60 + t) % (24 * 60))
 }
+
+// Real solar events from NASA DONKI (space_weather.csv). Text columns, so it has its own parser.
+// Returns the events DONKI says reach Mars and the fastest of them, or null if there are none.
+export function spaceWeatherModel(text) {
+  const lines = String(text ?? '').trim().split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length < 2) return null
+  const head = lines[0].split(',').map((h) => h.trim())
+  const rows = lines.slice(1).map((line) => {
+    const cells = line.split(',')
+    return Object.fromEntries(head.map((h, i) => [h, (cells[i] ?? '').trim()]))
+  })
+  const hits = rows
+    .filter((r) => r.mars_impact === 'True' && r.mars_arrival_utc)
+    .map((r) => ({ ...r, kms: parseFloat(r.detail) || 0 }))
+  if (!hits.length) return null
+  const fastest = hits.reduce((a, b) => (b.kms > a.kms ? b : a))
+  return { total: rows.length, hits: hits.length, fastest }
+}
