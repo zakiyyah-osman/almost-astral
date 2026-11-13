@@ -20,7 +20,9 @@ import {
   spaceWeatherModel,
   radiationModel,
   stateAt,
+  startStorm,
   stopList,
+  trackAt,
   trailUntil,
   weatherModel,
   START_LOCAL_HOUR,
@@ -73,7 +75,27 @@ function Gauge({ label, pct, value, low }) {
   )
 }
 
-function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm }) {
+const GROUND = ['Go', 'Careful', 'No-go']
+
+// Height along the whole route with a dot where the crew is (from the planner's track).
+function ElevationProfile({ track, d }) {
+  const w = 300
+  const h = 56
+  const d1 = track[track.length - 1].distance_m || 1
+  const lo = Math.min(...track.map((r) => r.elev_m))
+  const hi = Math.max(...track.map((r) => r.elev_m))
+  const x = (m) => (m / d1) * w
+  const y = (e) => h - 6 - ((e - lo) / (hi - lo || 1)) * (h - 12)
+  const here = trackAt({ track }, d)
+  return (
+    <svg className="hud-profile" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Height along the route">
+      <polyline points={track.map((r) => `${x(r.distance_m).toFixed(1)},${y(r.elev_m).toFixed(1)}`).join(' ')} />
+      <circle cx={x(d)} cy={y(here.elev)} r="4" />
+    </svg>
+  )
+}
+
+function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm, stormPath }) {
   const [w, h] = extent
   const pt = (c) => `${c[0]},${h - c[1]}`
   const stopNumber = {}
@@ -88,6 +110,7 @@ function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm }) {
         </g>
       ))}
       <polyline points={tl.pts.map(pt).join(' ')} className="route" />
+      {stormPath && <polyline points={stormPath.map(pt).join(' ')} className="stormpath" />}
       <polyline points={trail.map(pt).join(' ')} className={storm ? 'trail storm' : 'trail'} />
       {waypoints.features.map((f) => {
         const [x, y] = f.geometry.coordinates
@@ -161,7 +184,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
   }, [phase])
 
   const triggerStorm = () => {
-    if (tl && !storm && phase !== 'done') setStorm({ t, d: s.d })
+    if (tl && !storm && phase !== 'done') setStorm(startStorm(tl, t, s.d))
   }
   const reset = () => {
     setPlaying(false)
@@ -219,6 +242,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
   const limit = plan.budgets?.radiation_limit_usv
   const stormNow = !!storm && phase !== 'done'
   const cond = wx ? wx.at(START_LOCAL_HOUR + t / 60) : null
+  const ground = storm?.ret ? null : trackAt(tl, s.d) // off the route during a planned storm return
 
   // Stop status: sampled once its time has passed, unless a storm cut the outing short.
   const cutoff = storm ? storm.t : t
@@ -265,7 +289,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
         <>
           <div className="hud-row">
             <Compass heading={s.heading} />
-            <MiniMap tl={tl} extent={data.site.extent_m} pos={s} waypoints={waypoints} trail={trail} nextId={nextId} storm={!!storm} />
+            <MiniMap tl={tl} extent={data.site.extent_m} pos={s} waypoints={waypoints} trail={trail} nextId={nextId} storm={!!storm} stormPath={storm?.ret?.pts} />
           </div>
         </>
       )}
@@ -308,6 +332,26 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
           value={limit ? `${Math.round(dose)} / ${limit} µSv` : `${Math.round(dose)} µSv`}
           low={rate > rad.baseline * 2}
         />
+      )}
+
+      {ground && (
+        <>
+          <div className="hud-weather" aria-label="Ground under the crew">
+            <div>
+              <span className="hud-small">Slope</span>
+              <b>{Math.round(ground.slope)}°</b>
+            </div>
+            <div>
+              <span className="hud-small">Height</span>
+              <b>{Math.round(ground.elev)} m</b>
+            </div>
+            <div>
+              <span className="hud-small">Ground</span>
+              <b>{GROUND[ground.hazard] ?? 'Go'}</b>
+            </div>
+          </div>
+          <ElevationProfile track={tl.track} d={s.d} />
+        </>
       )}
 
       {cond && (
@@ -405,7 +449,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
         onChange={(e) => scrub(e.target.value)}
         aria-label="EVA time"
       />
-      <p className="hud-note">Keys: space play, S storm, R reset, L large text, V visor. Oxygen and battery are simulated from the EVA time limit. Radiation is an estimate, not a Jezero measurement.</p>
+      <p className="hud-note">Keys: space play, S storm, R reset, L large text, V visor. {tl.track && 'Slope, height, time back and the storm return come from the route planner. '}Oxygen and battery are simulated from the EVA time limit. Radiation is an estimate, not a Jezero measurement.</p>
       </div>
     </section>
   )

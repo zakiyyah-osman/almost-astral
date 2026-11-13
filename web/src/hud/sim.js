@@ -2,8 +2,9 @@
 //
 // The astronaut follows the planned route. Time comes from plan.json: each leg
 // takes walk_min, then the crew samples at the stop. A solar storm can be
-// triggered at any moment; the astronaut then takes the shorter way back to the
-// rover along the planned route, which is already known to avoid the hazards.
+// triggered at any moment; the astronaut then heads back to the rover: along the
+// storm return path in plan.json when the planner gave one, otherwise the shorter
+// way back along the planned route, which is already known to avoid the hazards.
 //
 // Written to cope with real data: a route with hundreds of points, a route that
 // passes near (not exactly through) the stops, tables with several sols, missing
@@ -77,6 +78,69 @@ function routePoints(route) {
   return clean.length >= 2 ? clean : null
 }
 
+// ---- real route data from the route planner (plan.json: track and storm_replan) ----
+// Both are optional. Without them the HUD falls back to straight distance over walking pace.
+
+const isNum = (v) => Number.isFinite(v)
+const isPoint = (p) => Array.isArray(p) && isNum(p[0]) && isNum(p[1])
+
+// The planner's samples along the route: elevation, slope, ground class and minutes back to shelter.
+function trackModel(rows) {
+  if (!Array.isArray(rows)) return null
+  const good = rows
+    .filter((r) => isNum(r?.distance_m) && isNum(r.elev_m) && isNum(r.slope_deg) && isNum(r.shelter_min))
+    .sort((a, b) => a.distance_m - b.distance_m)
+  return good.length >= 2 ? good : null
+}
+
+// The planner's storm return from points along the route: the fastest way home and how long it takes.
+function stormModel(replan) {
+  if (!Array.isArray(replan?.points)) return null
+  const good = replan.points
+    .filter((p) => isNum(p?.route_distance_m) && isNum(p.return_min) && isNum(p.return_distance_m) && Array.isArray(p.path) && p.path.length >= 1 && p.path.every(isPoint))
+    .sort((a, b) => a.route_distance_m - b.route_distance_m)
+  return good.length ? good : null
+}
+
+// Elevation, slope, ground class (0 go, 1 careful, 2 no-go) and minutes back to shelter at distance d
+// along the route, or null when the plan has no track.
+export function trackAt(tl, d) {
+  const tr = tl?.track
+  if (!tr) return null
+  const dd = Math.min(Math.max(d, tr[0].distance_m), tr[tr.length - 1].distance_m)
+  let lo = 1
+  let hi = tr.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (tr[mid].distance_m < dd) lo = mid + 1
+    else hi = mid
+  }
+  const a = tr[lo - 1]
+  const b = tr[lo]
+  const span = b.distance_m - a.distance_m
+  const f = span > 0 ? (dd - a.distance_m) / span : 0
+  const mix = (k) => a[k] + (b[k] - a[k]) * f
+  return { elev: mix('elev_m'), slope: mix('slope_deg'), shelter: mix('shelter_min'), hazard: Math.max(a.hazard ?? 0, b.hazard ?? 0) }
+}
+
+// A solar storm that starts at EVA minute t, when the crew is d metres along the route.
+// If the plan has a storm return for this part of the route, the crew follows that path home at the
+// planner's pace (its minutes include getting inside); otherwise stateAt turns round on the route.
+export function startStorm(tl, t, d) {
+  const storm = { t, d }
+  if (!tl.stormPts) return storm
+  let best = tl.stormPts[0]
+  for (const p of tl.stormPts) if (Math.abs(p.route_distance_m - d) < Math.abs(best.route_distance_m - d)) best = p
+  const here = pointAt(tl.pts, tl.cum, d, 1)
+  const [px, py] = best.path[0]
+  if (Math.hypot(here.x - px, here.y - py) > 150) return storm // the plan does not match this route
+  const pts = [[here.x, here.y], ...best.path]
+  const cum = pathLength(pts)
+  const walkMin = best.return_min - tl.ingressMin
+  const speed = best.return_distance_m > 0 && walkMin > 0.5 ? best.return_distance_m / walkMin : tl.speed
+  return { ...storm, ret: { pts, cum, len: cum[cum.length - 1], speed, ingress: tl.ingressMin } }
+}
+
 export function buildTimeline(plan, waypoints, route) {
   if (!plan?.legs?.length || !waypoints?.features?.length) return null
   const byId = {}
@@ -117,12 +181,36 @@ export function buildTimeline(plan, waypoints, route) {
   })
 
   const walkMin = plan.legs.reduce((s, l) => s + l.walk_min, 0) || 1
-  return { pts, cum, routeLen, segments, totalMin: t, speed: routeLen / walkMin, name, roverId, roverName: name(roverId) }
+  // Use the planner's track only if it describes this route (about the same length).
+  let track = trackModel(plan.track)
+  if (track && Math.abs(track[track.length - 1].distance_m - routeLen) > routeLen * 0.05) track = null
+  return {
+    pts, cum, routeLen, segments, totalMin: t, speed: routeLen / walkMin, name, roverId, roverName: name(roverId),
+    track,
+    stormPts: track ? stormModel(plan.storm_replan) : null,
+    ingressMin: plan.totals?.ingress_min ?? 0,
+  }
 }
 
 // Everything the HUD shows at time t (minutes since the EVA began).
 // storm is null, or { t, d } for the minute the storm hit and how far along the route the astronaut was.
 export function stateAt(tl, t, storm) {
+  if (storm?.ret && t >= storm.t) {
+    // The planner's way home: it may leave the route when that is quicker.
+    const r = storm.ret
+    const moved = Math.min((t - storm.t) * r.speed, r.len)
+    const left = r.len - moved
+    return {
+      phase: left <= 0 ? 'done' : 'return',
+      d: storm.d,
+      ...pointAt(r.pts, r.cum, moved, 1),
+      nextId: tl.roverId,
+      nextName: tl.roverName,
+      nextDist: left,
+      shelterMin: left <= 0 ? 0 : left / r.speed + r.ingress,
+      pace: left <= 0 ? 0 : r.speed,
+    }
+  }
   if (storm && t >= storm.t) {
     // Shorter way home: back the way we came, or on along the route to the rover.
     const back = storm.d <= tl.routeLen - storm.d
@@ -157,7 +245,8 @@ export function stateAt(tl, t, storm) {
     nextId: target.to,
     nextName: target.toName,
     nextDist: seg.type === 'stop' ? target.d1 - target.d0 : Math.max(seg.d1 - d, 0),
-    shelterMin: Math.min(d, tl.routeLen - d) / tl.speed,
+    // The planner's minutes back to shelter when it gave us a track, else distance over pace.
+    shelterMin: done ? 0 : tl.track ? trackAt(tl, d).shelter : Math.min(d, tl.routeLen - d) / tl.speed,
     // Metres per minute on the ground right now: the leg's distance over its walking time (0 when stopped).
     pace: seg.type === 'walk' && !done ? (seg.d1 - seg.d0) / (seg.t1 - seg.t0 || 1) : 0,
   }

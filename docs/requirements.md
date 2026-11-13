@@ -36,7 +36,7 @@ Last updated: 12 Nov 2026 (before the official data arrives).
 
 ## Open decisions
 
-- The site: **Jezero crater** (team decision, 12 Nov). Radiation there is modelled, not measured, because Perseverance has no RAD equivalent: say so on screen. Yaj's `data/site.json` still points at Gale and needs the Jezero centre point.
+- The site: **Jezero crater** (team decision, 12 Nov). Radiation there is modelled, not measured, because Perseverance has no RAD equivalent: say so on screen.  Yaj's `data/site.json` now points at the Jezero delta front.
 - The time frame, or "none".
 - The limits in `mission/brief.md` (360 min outing, 1000 µSv dose): they are our assumptions.
 
