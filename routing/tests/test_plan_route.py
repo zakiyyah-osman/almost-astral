@@ -176,7 +176,6 @@ def test_bad_config_exits_non_zero(tmp_path, capsys):
 
 
 # ---- the script and validate.py ----------------------------------------------
-@pytest.mark.xfail(strict=False, reason="data layers still fake (e.g. weather.csv)")
 def test_script_runs_and_validate_passes_without_warnings(tmp_path):
     site = make_site(tmp_path / "site")
     run = subprocess.run([sys.executable, "-B", str(SCRIPT), "--in", str(site)], capture_output=True, text=True)
