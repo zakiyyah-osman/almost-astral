@@ -1,1 +1,0 @@
-{"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[100.0, 640.0], [600.0, 640.0]]}, "properties": {"name": "test route through coverage gap"}}]}
