@@ -203,9 +203,7 @@ export default function App() {
                       )}
                     </figcaption>
                   </figure>
-                ) : (
-                  <div className="photo">Photo to add (mission/photos/)</div>
-                )}
+                ) : null}
               </div>
             ) : (
               <p className="muted">Click a numbered stop on the map to see what is there.</p>
