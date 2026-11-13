@@ -2,8 +2,9 @@
 //
 // The astronaut follows the planned route. Time comes from plan.json: each leg
 // takes walk_min, then the crew samples at the stop. A solar storm can be
-// triggered at any moment; the astronaut then takes the shorter way back to the
-// rover along the planned route, which is already known to avoid the hazards.
+// triggered at any moment; the astronaut then heads back to the rover: along the
+// storm return path in plan.json when the planner gave one, otherwise the shorter
+// way back along the planned route, which is already known to avoid the hazards.
 //
 // Written to cope with real data: a route with hundreds of points, a route that
 // passes near (not exactly through) the stops, tables with several sols, missing

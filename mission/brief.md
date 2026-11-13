@@ -38,7 +38,7 @@ Oxygen and battery are not in the data. The HUD simulates them from the 360 min 
 
 ## What could go wrong
 
-- **Solar storm:** the dose rate jumps. The crew stops sampling and takes the shorter way back to the rover along the planned route, which already avoids the hazards. The HUD shows a red alert and the new dose. The real DONKI storm data in `space_weather.csv` is about the Sun, so it applies at Jezero as it did at Gale.
+- **Solar storm:** the dose rate jumps. The crew stops sampling and takes the fastest way back to the rover. The route planner computes that path from every point on the route (`storm_replan` in `plan.json`) over ground that avoids the hazards, and the HUD follows it with the planner's minutes. Without that data the HUD turns round on the planned route. The HUD shows a red alert and the new dose. The real DONKI storm data in `space_weather.csv` is about the Sun, so it applies at Jezero as it does anywhere on Mars.
 - **Dust:** visibility and solar power drop. The route stays on the planned path and the crew turns back early if the time limit gets close. **(assumption)**
 - **Suit fault or injury:** the crew turns back at once. The "time back to shelter" number is always on screen so they know how long it takes.
 - **Hazard on the route:** red cells (too steep, loose sand or rock) are never on the route. Jezero has boulder fields and steep delta scarps, so check them on the real data. If one lands on the path, Tushaar re-plans. **(check)**
