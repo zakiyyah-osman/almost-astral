@@ -26,8 +26,13 @@ def sample_line(coords: np.ndarray, step_m: float) -> np.ndarray:
     return np.asarray(pts)
 
 
-def check_tracks(tracks: dict, grid, classes, reasons, slope, max_red_fraction: float) -> dict:
-    """Sample every track at grid resolution and report what it crosses."""
+def check_tracks(tracks: dict, grid, classes, reasons, slope, max_red_fraction: float,
+                 fail_on_unknown: bool = False) -> dict:
+    """Sample every line at grid resolution and report what it crosses.
+
+    Rover tracks (past drives) validate the thresholds: only red counts.
+    Planned routes (fail_on_unknown=True) also fail if they enter cells with no
+    terrain data, and are reported as 'Unknown terrain coverage'."""
     report = {"tracks": [], "passed": True}
     rows, cols = classes.shape
     for name, coords in _lines(tracks):
@@ -48,7 +53,10 @@ def check_tracks(tracks: dict, grid, classes, reasons, slope, max_red_fraction: 
             for k, v in REASON_BITS.items():
                 if bits & v:
                     why[k] = why.get(k, 0) + 1
-        ok = red_frac_known <= max_red_fraction
+        unknown_frac = float(np.mean(cls == UNKNOWN)) if n else 0.0
+        ok = red_frac_known <= max_red_fraction and not (fail_on_unknown and unknown_frac > 0)
+        status = "PASS" if ok else ("Unknown terrain coverage" if fail_on_unknown and unknown_frac > 0
+                                    and red_frac_known <= max_red_fraction else "FAIL")
         report["passed"] &= ok
         report["tracks"].append({
             "name": name,
@@ -61,6 +69,7 @@ def check_tracks(tracks: dict, grid, classes, reasons, slope, max_red_fraction: 
             "max_slope_deg": float(np.nanmax(slope[r[inside], c[inside]])) if n else None,
             "first_red_points_en": pts[inside][red_idx[:10]].round(1).tolist(),
             "passed": ok,
+            "status": status,
         })
     if not report["tracks"]:
         report["passed"] = None

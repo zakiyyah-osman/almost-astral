@@ -19,15 +19,16 @@ ROOT = Path(__file__).resolve().parent.parent
 @pytest.fixture(scope="module")
 def mock(tmp_path_factory):
     d = tmp_path_factory.mktemp("mock")
-    subprocess.run([sys.executable, str(ROOT / "tools" / "make_mock_data.py"), "--out", str(d), "--size", "400"],
+    subprocess.run([sys.executable, str(ROOT / "tools" / "make_mock_data.py"), "--out", str(d), "--size", "200"],
                    check=True, cwd=ROOT, capture_output=True)
     return d
 
 
-def fake_orbital_product(mock: Path, dest: Path, err_e=0.0, err_n=0.0, pad=60, cell=1.0):
+def fake_orbital_product(mock: Path, dest: Path, err_e=0.0, err_n=0.0, pad=30, cell=None):
     """A 'HiRISE-like' image of the mock site in source-projection metres, larger than
     the site, lit from a different sun, with a world file that is wrong by (err_e, err_n)."""
     L = Layers(mock / "layers.json")
+    cell = cell or L.grid.cell_m
     dtm, _ = fill_gaps(L.raster("dtm"))
     big = np.pad(dtm, pad, mode="reflect")
     img = hillshade(big, cell, azimuth_deg=250, altitude_deg=30)
@@ -63,9 +64,9 @@ def test_resample_correct_georef_is_aligned(mock, tmp_path):
     shutil.copytree(mock, d)
     fake_orbital_product(d, tmp_path / "hirise.tif")
     imagery.main(["resample", str(tmp_path / "hirise.tif"), "--layers", str(d / "layers.json"),
-                  "--out", str(d / "ortho.tif"), "--id", "ortho", "--source", "test"])
+                  "--out", str(d / "hirise.png"), "--id", "hirise", "--source", "test"])
     rep = align.run(d / "layers.json", tmp_path / "o", quiet=True)
-    assert rep["layers"]["ortho"]["offset_m"] < 0.5
+    assert rep["layers"]["hirise"]["offset_m"] < 0.5 * 5
     assert rep["passed"]
     assert (tmp_path / "o" / "landmark_chips.png").exists()
 
@@ -73,26 +74,43 @@ def test_resample_correct_georef_is_aligned(mock, tmp_path):
 def test_misregistration_is_measured(mock, tmp_path):
     d = tmp_path / "data"
     shutil.copytree(mock, d)
-    fake_orbital_product(d, tmp_path / "hirise.tif", err_e=3.0, err_n=2.0)
+    fake_orbital_product(d, tmp_path / "hirise.tif", err_e=15.0, err_n=10.0)  # 3 and 2 cells of 5 m
     imagery.main(["resample", str(tmp_path / "hirise.tif"), "--layers", str(d / "layers.json"),
-                  "--out", str(d / "ortho.tif"), "--id", "ortho"])
+                  "--out", str(d / "hirise.png"), "--id", "hirise"])
     rep = align.run(d / "layers.json", tmp_path / "o", quiet=True)
-    o = rep["layers"]["ortho"]
-    # features drawn 3 m east / 2 m north of truth -> move the layer 3 m west, 2 m south
-    assert o["shift_to_apply_east_m"] == pytest.approx(-3.0, abs=0.3)
-    assert o["shift_to_apply_north_m"] == pytest.approx(-2.0, abs=0.3)
+    o = rep["layers"]["hirise"]
+    # features drawn 15 m east / 10 m north of truth -> move the layer 15 m west, 10 m south
+    assert o["shift_to_apply_east_m"] == pytest.approx(-15.0, abs=1.5)
+    assert o["shift_to_apply_north_m"] == pytest.approx(-10.0, abs=1.5)
     assert not rep["passed"]
 
 
-def test_define_site(tmp_path):
+def test_define_site_keeps_team_grid(tmp_path):
     lj = tmp_path / "layers.json"
-    imagery.main(["define-site", "--layers", str(lj), "--center-xy", "8144000", "-278000", "--size", "2000", "1000"])
+    shutil.copyfile(ROOT / "tests" / "fixtures" / "team_layers.json", lj)
+    imagery.main(["define-site", "--layers", str(lj)])
     s = json.loads(lj.read_text())["site"]
-    assert s["origin_source_xy"] == [8143000.0, -278500.0]
-    assert s["width_m"] == 2000 and s["height_m"] == 1000
-    lat, lon = s["origin_latlon"]
-    assert lat == pytest.approx(np.degrees(-278500 / imagery.MARS_R), abs=1e-6)
-    assert lon == pytest.approx(np.degrees(8143000 / imagery.MARS_R), abs=1e-6)
+    assert s["grid"] == {"width": 400, "height": 400, "cell_m": 5.0} and s["extent_m"] == [2000.0, 2000.0]
+    x0, y0 = s["origin_source_xy"]
+    assert x0 == pytest.approx(imagery.MARS_R * np.radians(77.4) - 1000, abs=1e-3)
+    assert y0 == pytest.approx(imagery.MARS_R * np.radians(18.46) - 1000, abs=1e-3)
+
+
+def test_hirise_finer_than_grid_is_averaged(mock, tmp_path):
+    """A 1.25 m product (4x finer) lands on the 5 m grid in the right place."""
+    d = tmp_path / "data"
+    shutil.copytree(mock, d)
+    fake_orbital_product(d, tmp_path / "coarse.tif")
+    img = tifffile.imread(tmp_path / "coarse.tif")
+    fine = np.kron(img, np.ones((4, 4), np.float32))
+    tifffile.imwrite(tmp_path / "fine.tif", fine)
+    a, _, _, e, c, f = [float(x) for x in (tmp_path / "coarse.tfw").read_text().split()]
+    # centre of the first fine pixel = coarse corner + half a fine pixel
+    (tmp_path / "fine.tfw").write_text(f"{a/4}\n0\n0\n{e/4}\n{c - a/2 + a/8}\n{f - e/2 + e/8}\n")
+    imagery.main(["resample", str(tmp_path / "fine.tif"), "--layers", str(d / "layers.json"),
+                  "--out", str(d / "hirise.png"), "--id", "hirise"])
+    rep = align.run(d / "layers.json", tmp_path / "o", quiet=True)
+    assert rep["layers"]["hirise"]["offset_m"] < 1.0
 
 
 def test_build_and_viewer(mock, tmp_path):
@@ -103,9 +121,10 @@ def test_build_and_viewer(mock, tmp_path):
     cfg = build_config(mock / "layers.json", out, out)
     build_viewer(cfg, out)
     assert cfg["simulated"] is True
+    assert cfg["title"] == "Interplanetary Survival Guide: Martial Map"
     ids = [l["id"] for l in cfg["layers"]]
-    assert ids[0] == "imagery" and "hazards" in ids and "landmarks" in ids
-    assert cfg["projection"]["leaflet_crs_simple_bounds"] == [[0, 0], [400.0, 400.0]]
+    assert ids[0] == "relief" and "hazard" in ids and "coverage" in ids and "route" in ids and "landmarks" in ids
+    assert cfg["projection"]["leaflet_crs_simple_bounds"] == [[0, 0], [1000.0, 1000.0]]
     html = (out / "martial_map.html").read_text()
     assert "window.MM_CONFIG" in html and "data:image/png;base64," in html and "<!--JS-->" not in html
 

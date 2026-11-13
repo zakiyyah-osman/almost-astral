@@ -1,20 +1,23 @@
 """Dataset day: put real map products on the shared site grid.
 
-1) Define the site once (who: Person 2), from the real imagery's projection:
+1) Pin the site grid to the real imagery's projection (who: Person 2). Keeps the team's
+   grid/extent_m/center; adds source_crs + origin_source_xy so products can be placed:
 
     python -m basemap.imagery define-site --layers data/layers.json \
-        --center-xy 8143850 -278210 --size 1000 1000 --cell 1 \
-        --clon 0 --lat-ts 0 --crs "Mars 2000 equirectangular (from the product label)"
+        --center-lat 18.46 --center-lon 77.4 --clon 0 --lat-ts 0 \
+        --crs "Mars equirectangular, lat_ts 0, lon_0 0 (from the product label)"
 
-   This writes width/height/cell, origin_source_xy (SW corner) and origin_latlon into
-   layers.json -> site. Share map_config.json afterwards (python -m basemap.build).
+   (--size / --cell are optional and only needed to change the grid.)
+   Share map_config.json afterwards (python -m basemap.build).
 
 2) Resample any georeferenced product onto the grid:
 
-    python -m basemap.imagery resample ESP_xxx_RED.tif --layers data/layers.json \
-        --out data/ortho.tif --id ortho --units DN --source "HiRISE ESP_xxx RED, PDS"
-    python -m basemap.imagery resample DTEEC_xxx.tif --layers data/layers.json \
-        --out data/dtm.tif --id dtm --units m --nodata -3.4028227e+38
+    # data raster (written next to layers.json, noted in sources_notes)
+    python -m basemap.imagery resample JEZ_hirise_..._DTM_...tif --layers data/layers.json \
+        --out data/dem.tif --nodata -3.4028227e+38 --source "HiRISE DTM, USGS Mars 2020 TRN"
+    # display image (PNG, registered as a layer in layers.json)
+    python -m basemap.imagery resample PSP_003798_1985_..._25cm_...tif --layers data/layers.json \
+        --out data/hirise.png --id hirise --title "HiRISE image" --source "HiRISE (MRO) ..."
 
 Georeferencing is read from (in order): a world file next to the image
 (.tfw/.pgw/.jgw/.wld), GeoTIFF ModelTransformation, or GeoTIFF PixelScale+Tiepoint.
@@ -119,50 +122,83 @@ def native_cell_m(A) -> float:
 
 
 # ---- CLI ------------------------------------------------------------------------------
+def _site(meta):
+    from hazards.io import site_grid
+    g = site_grid(meta["site"])
+    return {"width_m": g.width_m, "height_m": g.height_m, "cell_m": g.cell_m,
+            "origin_source_xy": meta["site"].get("origin_source_xy")}
+
+
 def cmd_resample(a):
     lj = Path(a.layers)
     meta = json.loads(lj.read_text())
-    site = meta["site"]
-    if not site.get("origin_source_xy"):
+    site = _site(meta)
+    if not site["origin_source_xy"]:
         raise SystemExit("site.origin_source_xy is not set - run `define-site` first.")
     A = read_affine(Path(a.image))
     arr = load_image(Path(a.image))
-    out = resample_to_site(arr, A, site, order=1, nodata=a.nodata)
-    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-    tifffile.imwrite(a.out, out, compression="zlib")
-    cover = float(np.isfinite(out).mean())
     nat = native_cell_m(A)
-    print(f"{a.image}: native {nat:.2f} m/px -> site grid {site['cell_m']} m; covers {cover:.1%} of the site -> {a.out}")
+    # average down first when the product is much finer than the grid (e.g. 25 cm HiRISE -> 5 m)
+    f = int(site["cell_m"] // nat) if nat < site["cell_m"] / 1.5 else 1
+    if f > 1:
+        h, w = (arr.shape[0] // f) * f, (arr.shape[1] // f) * f
+        arr = np.nanmean(arr[:h, :w].reshape(h // f, f, w // f, f), axis=(1, 3))
+        A = A.copy()
+        A[:, 2] = A @ np.array([(f - 1) / 2, (f - 1) / 2, 1.0])
+        A[:, :2] *= f
+    out = resample_to_site(arr, A, site, order=1, nodata=a.nodata)
+    outp = Path(a.out)
+    outp.parent.mkdir(parents=True, exist_ok=True)
+    if outp.suffix.lower() == ".png":
+        ok = np.isfinite(out)
+        lo, hi = np.percentile(out[ok], [0.5, 99.5]) if ok.any() else (0, 1)
+        g8 = (np.clip((np.nan_to_num(out) - lo) / max(hi - lo, 1e-9), 0, 1) * 255).astype(np.uint8)
+        Image.fromarray(np.dstack([g8, g8, g8, (ok * 255).astype(np.uint8)]), "RGBA").save(outp, optimize=True)
+    else:
+        tifffile.imwrite(outp, out, compression="zlib")
+    cover = float(np.isfinite(out).mean())
+    print(f"{a.image}: native {nat:.2f} m/px -> grid {site['cell_m']} m; covers {cover:.1%} of the site -> {outp}")
     if nat > 1.5 * site["cell_m"]:
-        print(f"  note: product is coarser than the grid ({nat:.1f} m vs {site['cell_m']} m) - it will look blocky, that's honest")
+        print(f"  note: product is coarser than the grid ({nat:.1f} m vs {site['cell_m']} m) - soft edges are expected")
     if cover < 0.999:
         print("  note: part of the site has no data here - it will show as a coverage gap")
+    rel = outp.resolve().relative_to(lj.parent.resolve()).as_posix() if outp.resolve().is_relative_to(lj.parent.resolve()) else str(outp)
+    if a.source:
+        meta.setdefault("sources_notes", {})[rel] = a.source
     if a.id:
-        rel = Path(a.out).resolve().relative_to(lj.parent.resolve()).as_posix()
-        layers = [l for l in meta["layers"] if l["id"] != a.id]
-        layers.append({"id": a.id, "kind": "raster", "units": a.units, "file": rel,
-                       "source": a.source or Path(a.image).name, "native_cell_m": round(nat, 3),
-                       "coverage": round(cover, 4)})
-        meta["layers"] = layers
+        entry = {"id": a.id, "title": a.title or a.id, "file": rel, "source": a.source or Path(a.image).name,
+                 "default": False, "opacity": 1.0, "native_resolution_m": round(nat, 3)}
+        old = next((l for l in meta["layers"] if l["id"] == a.id), None)
+        if old:
+            entry = {**old, **{k: v for k, v in entry.items() if k in ("file", "source", "native_resolution_m")}}
+            meta["layers"][meta["layers"].index(old)] = entry
+        else:
+            meta["layers"].append(entry)
+    if a.id or a.source:
         lj.write_text(json.dumps(meta, indent=2))
-        print(f"  layers.json updated: layer '{a.id}'")
+        print("  layers.json updated")
 
 
 def cmd_define_site(a):
     lj = Path(a.layers)
     meta = json.loads(lj.read_text()) if lj.exists() else {"site": {}, "layers": []}
-    W, H = a.size
-    cx, cy = a.center_xy
-    x0, y0 = cx - W / 2, cy - H / 2
-    lat0 = np.degrees(y0 / MARS_R)
-    lon0 = a.clon + np.degrees(x0 / (MARS_R * np.cos(np.radians(a.lat_ts))))
-    site = meta.get("site", {})
-    site.update({"width_m": W, "height_m": H, "cell_m": a.cell, "crs": "local_meters",
-                 "source_crs": a.crs, "origin_source_xy": [round(x0, 3), round(y0, 3)],
-                 "origin_latlon": [round(float(lat0), 6), round(float(lon0), 6)], "simulated": False})
+    site = meta.setdefault("site", {})
+    if a.size or a.cell or "grid" not in site:
+        cell = a.cell or site.get("grid", {}).get("cell_m", 5.0)
+        W, H = a.size or site.get("extent_m", [2000.0, 2000.0])
+        site["grid"] = {"width": int(round(W / cell)), "height": int(round(H / cell)), "cell_m": cell}
+        site["extent_m"] = [float(W), float(H)]
+    W, H = site["extent_m"]
+    lat_c = a.center_lat if a.center_lat is not None else site["center_lat"]
+    lon_c = a.center_lon if a.center_lon is not None else site["center_lon_east"]
+    site["center_lat"], site["center_lon_east"] = lat_c, lon_c
+    k = np.cos(np.radians(a.lat_ts))
+    xc = MARS_R * np.radians(lon_c - a.clon) * k
+    yc = MARS_R * np.radians(lat_c)
+    site["source_crs"] = a.crs
+    site["origin_source_xy"] = [round(float(xc - W / 2), 3), round(float(yc - H / 2), 3)]
     if a.name:
         site["name"] = a.name
-    meta["site"] = site
     lj.parent.mkdir(parents=True, exist_ok=True)
     lj.write_text(json.dumps(meta, indent=2))
     print(json.dumps(site, indent=2))
@@ -175,19 +211,20 @@ def main(argv=None):
     r.add_argument("image")
     r.add_argument("--layers", required=True)
     r.add_argument("--out", required=True)
-    r.add_argument("--id", help="register as this layer id in layers.json (e.g. ortho, dtm)")
-    r.add_argument("--units", default="DN")
-    r.add_argument("--source")
+    r.add_argument("--id", help="register the output as a display layer with this id (for PNG outputs)")
+    r.add_argument("--title")
+    r.add_argument("--source", help="where it came from; written to layers.json")
     r.add_argument("--nodata", type=float)
     r.set_defaults(fn=cmd_resample)
     d = sub.add_parser("define-site", help="set the site grid, origin and projection in layers.json")
     d.add_argument("--layers", required=True)
-    d.add_argument("--center-xy", type=float, nargs=2, required=True, help="site centre in source projection metres")
-    d.add_argument("--size", type=float, nargs=2, default=[1000, 1000], metavar=("WIDTH_M", "HEIGHT_M"))
-    d.add_argument("--cell", type=float, default=1.0)
+    d.add_argument("--center-lat", type=float, help="default: site.center_lat")
+    d.add_argument("--center-lon", type=float, help="east-positive; default: site.center_lon_east")
+    d.add_argument("--size", type=float, nargs=2, metavar=("WIDTH_M", "HEIGHT_M"), help="only to change the grid")
+    d.add_argument("--cell", type=float, help="only to change the grid")
     d.add_argument("--clon", type=float, default=0.0, help="projection centre longitude (deg)")
     d.add_argument("--lat-ts", type=float, default=0.0, help="projection latitude of true scale (deg)")
-    d.add_argument("--crs", default="Mars 2000 equirectangular")
+    d.add_argument("--crs", default="Mars equirectangular, lat_ts 0, lon_0 0, R 3396190 m")
     d.add_argument("--name")
     d.set_defaults(fn=cmd_define_site)
     a = p.parse_args(argv)

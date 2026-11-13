@@ -1,163 +1,150 @@
-"""Stand-in inputs in the shared layers.json format, so Person 2's pipeline can run
-before Person 1's data/ folder is ready. NOT real Mars data - every file is labelled
-"SIMULATED" in its source field.
+"""Stand-in inputs in the TEAM's layers.json format (Jezero-style site, 2000 m at 5 m
+cells), so Person 2's code can be tested without the real files. NOT real Mars data:
+everything is labelled FAKE / SIMULATED.
 
-    python tools/make_mock_data.py --out data_mock --size 1000
+    python tools/make_mock_data.py --out data_mock            # 400 x 400 cells of 5 m
+    python tools/make_mock_data.py --out tiny --size 120      # quick test site
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import numpy as np
 import tifffile
-from scipy.ndimage import gaussian_filter, distance_transform_edt
+from scipy.ndimage import (binary_dilation, distance_transform_edt, gaussian_filter,
+                           maximum_filter, minimum_filter)
 from scipy.special import expit
 from skimage.graph import MCP_Geometric
 
+R = 3396190.0
 
-def synthetic_dtm(n, rng):
-    # Step 2 of the team plan, with one fix: weight by s**2 (not s). With s**1 the
-    # 4-cell noise is as tall as the 200-cell hills, so 1 m cells are ~50 deg steep.
-    z = sum(gaussian_filter(rng.normal(size=(n, n)), s) * s**2 for s in (4, 16, 64, 200))
-    z = (z - z.min()) / np.ptp(z) * 120
-    yy, xx = np.mgrid[0:n, 0:n]
+
+def terrain(n, cell, rng):
+    """Fractal hills + craters + boxwork-like ridges + a scarp with a ramp (metres)."""
+    # weight by s**2: with s**1 the smallest bumps are as tall as the hills (everything > 25 deg)
+    z = sum(gaussian_filter(rng.normal(size=(n, n)), s) * s**2 for s in (2, 6, 20, 60))
+    z = (z - z.min()) / np.ptp(z) * 90.0
+    yy, xx = np.mgrid[0:n, 0:n].astype(float)
     craters = []
-    for _ in range(25):
-        cx, cy, r = *rng.integers(0, n, 2).tolist(), int(rng.integers(5, 60))
+    for _ in range(18):
+        cx, cy = rng.uniform(0, n, 2)
+        r = rng.uniform(4, 22)                        # cells
         d = np.hypot(xx - cx, yy - cy) / r
-        z += np.where(d < 1, -0.2 * r * (1 - d**2), np.where(d < 1.5, 0.05 * r * (1.5 - d), 0))
+        depth = 0.2 * r * cell
+        z += np.where(d < 1, -depth * (1 - d**2), np.where(d < 1.6, 0.25 * depth * (1.6 - d) / 0.6, 0))
         craters.append((cx, cy, r))
-    return z, yy, xx, craters
-
-
-def add_boxwork(z, yy, xx, rng, centre, radius):
-    """Boxwork: a net of narrow resistant ridges ~1.5 m high around hollows."""
-    n = z.shape[0]
-    seeds = rng.uniform([centre[0] - radius, centre[1] - radius], [centre[0] + radius, centre[1] + radius], (60, 2))
-    lab = np.zeros(z.shape, int)
-    lab[np.clip(seeds[:, 0].astype(int), 0, n - 1), np.clip(seeds[:, 1].astype(int), 0, n - 1)] = np.arange(1, 61)
+    # ridge network (boxwork / fractured delta caprock): 4 m high narrow ridges
+    seeds = rng.uniform([0.2 * n, 0.2 * n], [0.5 * n, 0.5 * n], (40, 2)).astype(int)
+    lab = np.zeros((n, n), int)
+    lab[seeds[:, 0], seeds[:, 1]] = np.arange(1, 41)
     _, idx = distance_transform_edt(lab == 0, return_indices=True)
     cells = lab[idx[0], idx[1]]
-    edge = np.zeros(z.shape, bool)
+    edge = np.zeros((n, n), bool)
     edge[:-1] |= cells[:-1] != cells[1:]
     edge[:, :-1] |= cells[:, :-1] != cells[:, 1:]
-    ridge = gaussian_filter(edge.astype(float), 1.2)
-    ridge = ridge / ridge.max()
-    inside = np.clip(1.2 - np.hypot(yy - centre[0], xx - centre[1]) / radius, 0, 1)
-    return z + 1.5 * ridge * inside
-
-
-def add_scarp(z, yy, xx, height=6.0):
-    """A straight scarp (cliff) running SW-NE through the east half."""
-    n = z.shape[0]
-    d = (xx - 0.75 * n) - 0.4 * (yy - 0.5 * n)
-    # a ~40 m wide ramp (about 8 deg) breaks the cliff so rovers and crews can climb it
-    width = 0.6 + 9.4 * np.clip(1 - np.abs(yy - 0.55 * n) / (0.03 * n), 0, 1)
-    return z + height * expit(d / width)
+    inside = np.clip(1.3 - np.hypot(yy - 0.35 * n, xx - 0.35 * n) / (0.17 * n), 0, 1)
+    ridge = gaussian_filter(edge.astype(float), 0.6)
+    z += 4.0 * ridge / ridge.max() * inside
+    # delta-front scarp, 25 m high, with a gentle ramp near row 0.55 n
+    d = (xx - 0.72 * n) - 0.4 * (yy - 0.5 * n)
+    width = 0.8 + 11 * np.clip(1 - np.abs(yy - 0.55 * n) / (0.035 * n), 0, 1)
+    z += 25.0 * expit(d / width)
+    return z - 2500.0, craters  # Jezero floor is roughly -2.5 km
 
 
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="data_mock")
-    p.add_argument("--size", type=int, default=1000, help="cells per side (1 m cells)")
+    p.add_argument("--size", type=int, default=400, help="cells per side")
+    p.add_argument("--cell", type=float, default=5.0, help="cell size in m")
     p.add_argument("--seed", type=int, default=0)
     a = p.parse_args(argv)
     rng = np.random.default_rng(a.seed)
-    n, cell = a.size, 1.0
+    n, cell = a.size, a.cell
+    W = n * cell
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    z, yy, xx, craters = synthetic_dtm(n, rng)
-    z = add_boxwork(z, yy, xx, rng, centre=(0.35 * n, 0.35 * n), radius=0.18 * n)
-    z = add_scarp(z, yy, xx)
-    z = z - 4200.0  # Gale floor is roughly -4.2 km relative to the Mars datum
-    dtm = z.astype(np.float32)
-    dtm[int(0.62 * n):int(0.74 * n), int(0.10 * n):int(0.24 * n)] = np.nan  # coverage gap
-    tifffile.imwrite(out / "dtm.tif", dtm, compression="zlib")
+    z, craters = terrain(n, cell, rng)
+    dem = z.astype(np.float32)
+    dem[int(0.62 * n):int(0.74 * n), int(0.10 * n):int(0.24 * n)] = -3.4028227e38  # HiRISE-style nodata
+    tifffile.imwrite(out / "dem.tif", dem, compression="zlib")
 
-    # thermal inertia: bedrock high, a sand sheet in the south-west low
-    ti = 420 + 160 * gaussian_filter(rng.normal(size=(n, n)), 25) * 25
-    sand = np.exp(-(((yy - 0.85 * n) / (0.08 * n)) ** 2 + ((xx - 0.45 * n) / (0.20 * n)) ** 2))
+    yy, xx = np.mgrid[0:n, 0:n]
+    ti = 380 + 2500 * gaussian_filter(rng.normal(size=(n, n)), 12)
+    sand = np.exp(-(((yy - 0.85 * n) / (0.07 * n)) ** 2 + ((xx - 0.45 * n) / (0.2 * n)) ** 2))
     ti = np.clip(ti * (1 - 0.85 * sand), 40, 1200).astype(np.float32)
-    tifffile.imwrite(out / "ti.tif", ti, compression="zlib")
+    ti = gaussian_filter(ti, 4)  # THEMIS is ~100 m: soft edges
+    tifffile.imwrite(out / "thermal_inertia.tif", ti.astype(np.float32), compression="zlib")
 
-    # minerals: sulfate background, clays in the boxwork hollows, hematite patch, basaltic sand
-    m = np.ones((n, n), np.uint8)
-    m[np.hypot(yy - 0.35 * n, xx - 0.35 * n) < 0.15 * n] = 2
-    m[np.hypot(yy - 0.20 * n, xx - 0.70 * n) < 0.06 * n] = 3
-    m[sand > 0.5] = 4
-    m[gaussian_filter(rng.normal(size=(n, n)), 8) > 0.03] = 0
-    tifffile.imwrite(out / "minerals.tif", m, compression="zlib")
+    en = lambda col, row: [round((col + 0.5) * cell, 1), round(W - (row + 0.5) * cell, 1)]
+    rocks = []
+    for k, (e0, e1, n0, n1, scale) in enumerate([(0, W, 0, W, 0.2), (0.78 * W, 0.92 * W, 0.15 * W, 0.40 * W, 0.5)]):
+        cnt = 3000 if k else 2500
+        rocks += [(float(rng.uniform(e0, e1)), float(rng.uniform(n0, n1)), float(rng.pareto(2.5) * scale + 0.3)) for _ in range(cnt)]
+    fc = lambda feats: {"type": "FeatureCollection", "features": feats}
+    pt = lambda c, props: {"type": "Feature", "geometry": {"type": "Point", "coordinates": c}, "properties": props}
+    (out / "rocks.geojson").write_text(json.dumps(fc([pt([round(e, 1), round(nn, 1)], {"diameter_m": round(d, 2)}) for e, nn, d in rocks])))
 
-    # rocks: background scatter + a dense blocky field below the scarp
-    def rocks_in(k, e0, e1, n0, n1, scale):
-        return [(float(rng.uniform(e0, e1)), float(rng.uniform(n0, n1)), float(rng.pareto(2.5) * scale + 0.2))
-                for _ in range(k)]
-    W = n * cell
-    rocks = rocks_in(1500, 0, W, 0, W, 0.15) + rocks_in(3000, 0.78 * W, 0.92 * W, 0.15 * W, 0.40 * W, 0.4)
-    feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [round(e, 2), round(nn, 2)]},
-              "properties": {"diameter_m": round(d, 2)}} for e, nn, d in rocks]
-    (out / "rocks.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}))
-
-    # a plausible rover track: a drive that avoids steep ground (rovers keep < ~20 deg)
-    gy, gx = np.gradient(np.nan_to_num(z, nan=np.nanmean(z)), cell)
+    # a plausible rover drive that keeps off steep ground and scarps
+    zf = np.nan_to_num(np.where(dem < -1e30, np.nan, dem), nan=float(np.nanmean(z)))
+    gy, gx = np.gradient(zf, cell)
     slope = np.degrees(np.arctan(np.hypot(gx, gy)))
-    from scipy.ndimage import binary_dilation, maximum_filter, minimum_filter
-    relief = maximum_filter(z, 3) - minimum_filter(z, 3)
-    blocked = binary_dilation((slope > 18) | (relief > 1.2) | np.isnan(dtm), iterations=4)
+    rel = maximum_filter(zf, 3) - minimum_filter(zf, 3)
+    blocked = binary_dilation((slope > 16) | (rel > 6) | (dem < -1e30), iterations=2)
     cost = 1 + (slope / 8) ** 4
     cost[blocked] = 1e6
-    rr = lambda e, nn: (int(n - nn / cell), int(e / cell))  # [east,north] -> (row,col)
+    rc = lambda e, nn: (int((W - nn) / cell), int(e / cell))
     stops = [(0.08 * W, 0.08 * W), (0.30 * W, 0.40 * W), (0.55 * W, 0.62 * W), (0.62 * W, 0.90 * W)]
     path = []
     for (e0, n0), (e1, n1) in zip(stops[:-1], stops[1:]):
-        mcp = MCP_Geometric(cost)
-        mcp.find_costs([rr(e0, n0)], [rr(e1, n1)])
-        path += mcp.traceback(rr(e1, n1))
-    coords = [[round((c + 0.5) * cell, 1), round(W - (r + 0.5) * cell, 1)] for r, c in path[::5]]
-    tracks = {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": {"type": "LineString", "coordinates": coords},
-         "properties": {"name": "simulated rover drive"}},
-        {"type": "Feature", "properties": {"name": "deliberately bad line (should FAIL)"},
-         "geometry": {"type": "LineString", "coordinates": [[0.70 * W, 0.30 * W], [0.95 * W, 0.40 * W]]}},
-    ]}
-    (out / "rover_tracks.geojson").write_text(json.dumps(tracks))
+        m = MCP_Geometric(cost)
+        m.find_costs([rc(e0, n0)], [rc(e1, n1)])
+        path += m.traceback(rc(e1, n1))
+    drive = [en(c, r) for r, c in path[::2]]
+    line = lambda coords, name: {"type": "Feature", "geometry": {"type": "LineString", "coordinates": coords}, "properties": {"name": name}}
+    (out / "rover_tracks.geojson").write_text(json.dumps(fc([
+        line(drive, "simulated rover drive"),
+        line([[0.70 * W, 0.30 * W], [0.95 * W, 0.40 * W]], "deliberately bad line (should FAIL)"),
+    ])))
+    # a route straight through the coverage gap: must report Unknown terrain coverage
+    (out / "route.geojson").write_text(json.dumps(fc([line([[0.05 * W, 0.32 * W], [0.30 * W, 0.32 * W]], "test route through coverage gap")])))
 
-    # landmarks: features anyone can find on every layer, used to check alignment
-    def en(col, row):
-        return [round((col + 0.5) * cell, 1), round(W - (row + 0.5) * cell, 1)]
-    marks = [("Crater %s (r=%d m)" % (chr(65 + i), r), "crater_centre", en(cx, cy))
-             for i, (cx, cy, r) in enumerate(sorted([c for c in craters if 0.1 * n < c[0] < 0.9 * n and 0.1 * n < c[1] < 0.9 * n],
-                                                    key=lambda c: -c[2])[:4])]
-    marks += [("Boxwork network centre", "boxwork", en(0.35 * n, 0.35 * n)),
-              ("Scarp ramp", "ramp", en(0.75 * n + 0.4 * 0.05 * n, 0.55 * n)),
-              ("Coverage gap NE corner", "gap_corner", en(0.24 * n, 0.62 * n))]
-    lm = {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": {"type": "Point", "coordinates": c}, "properties": {"name": nm, "kind": k}}
-        for nm, k, c in marks]}
-    (out / "landmarks.geojson").write_text(json.dumps(lm, indent=2))
+    big = sorted([c for c in craters if 0.1 * n < c[0] < 0.9 * n and 0.1 * n < c[1] < 0.9 * n], key=lambda c: -c[2])[:4]
+    marks = [pt(en(cx, cy), {"name": f"Crater {chr(65 + i)} (r={r * cell:.0f} m)", "kind": "crater_centre"}) for i, (cx, cy, r) in enumerate(big)]
+    marks += [pt(en(0.35 * n, 0.35 * n), {"name": "Ridge network centre", "kind": "ridges"}),
+              pt(en(0.72 * n + 0.4 * 0.05 * n, 0.55 * n), {"name": "Scarp ramp", "kind": "ramp"}),
+              pt(en(0.24 * n, 0.62 * n), {"name": "Coverage gap NE corner", "kind": "gap_corner"})]
+    (out / "landmarks.geojson").write_text(json.dumps(fc(marks), indent=1))
 
-    src = "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    lat_c, lon_c = 18.46, 77.4
+    x_c = R * math.radians(lon_c)  # equirectangular, lat_ts 0, lon0 0 (as the HiRISE Jezero mosaics)
+    y_c = R * math.radians(lat_c)
+    fake = "FAKE (SIMULATED stand-in from tools/make_mock_data.py)"
     layers = {
-        "site": {"name": "Gale - Boxwork (SIMULATED)", "crs": "local_meters", "origin_latlon": [-4.7, 137.4],
-                 "width_m": W, "height_m": W, "cell_m": cell, "simulated": True,
-                 # SW corner of the grid in the source map projection (metres). Person 2 fills
-                 # this in on dataset day from the real imagery's georeferencing.
-                 "source_crs": "Mars 2000 equirectangular, centre lon 0, lat_ts 0, R=3396190 m (placeholder)",
-                 "origin_source_xy": [round(3396190 * np.radians(137.4), 1), round(3396190 * np.radians(-4.7), 1)]},
+        "site": {
+            "name": "Jezero crater (SIMULATED test site)",
+            "grid": {"width": n, "height": n, "cell_m": cell},
+            "extent_m": [W, W],
+            "center_lat": lat_c,
+            "center_lon_east": lon_c,
+            "source_crs": "Mars equirectangular, lat_ts 0, lon_0 0, R 3396190 m",
+            "origin_source_xy": [round(x_c - W / 2, 1), round(y_c - W / 2, 1)],
+        },
         "layers": [
-            {"id": "dtm", "kind": "raster", "units": "m", "file": "dtm.tif", "source": src},
-            {"id": "thermal_inertia", "kind": "raster", "units": "TIU", "file": "ti.tif", "source": src},
-            {"id": "minerals", "kind": "raster", "units": "class", "file": "minerals.tif", "source": src},
-            {"id": "rocks", "kind": "vector", "file": "rocks.geojson", "source": src},
-            {"id": "rover_tracks", "kind": "vector", "file": "rover_tracks.geojson", "source": src},
-            {"id": "landmarks", "kind": "vector", "file": "landmarks.geojson", "source": src},
+            {"id": "relief", "title": "Shaded relief", "file": "relief.png", "source": fake, "default": True, "opacity": 1.0},
+            {"id": "slope", "title": "Slope", "file": "slope.png", "source": fake, "default": False, "opacity": 0.6},
+            {"id": "hazard", "title": "Hazards", "file": "hazard.png", "source": fake, "default": True, "opacity": 0.7},
         ],
+        "vectors": {"route": "route.geojson", "rocks": "rocks.geojson",
+                    "rover_tracks": "rover_tracks.geojson", "landmarks": "landmarks.geojson"},
+        "sources_notes": {"dem.tif": fake, "thermal_inertia.tif": fake},
     }
     (out / "layers.json").write_text(json.dumps(layers, indent=2))
-    print(f"Wrote stand-in data to {out}/")
+    print(f"Wrote stand-in data to {out}/ ({n}x{n} cells of {cell} m)")
 
 
 if __name__ == "__main__":

@@ -1,60 +1,57 @@
 {
   "site": {
-    "name": "Gale - Boxwork (SIMULATED)",
-    "crs": "local_meters",
-    "origin_latlon": [
-      -4.7,
-      137.4
+    "name": "Jezero crater (SIMULATED test site)",
+    "grid": {
+      "width": 400,
+      "height": 400,
+      "cell_m": 5.0
+    },
+    "extent_m": [
+      2000.0,
+      2000.0
     ],
-    "width_m": 1000.0,
-    "height_m": 1000.0,
-    "cell_m": 1.0,
-    "simulated": true,
-    "source_crs": "Mars 2000 equirectangular, centre lon 0, lat_ts 0, R=3396190 m (placeholder)",
+    "center_lat": 18.46,
+    "center_lon_east": 77.4,
+    "source_crs": "Mars equirectangular, lat_ts 0, lon_0 0, R 3396190 m",
     "origin_source_xy": [
-      8144343.4,
-      -278591.1
+      4586861.6,
+      1093210.9
     ]
   },
   "layers": [
     {
-      "id": "dtm",
-      "kind": "raster",
-      "units": "m",
-      "file": "dtm.tif",
-      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+      "id": "relief",
+      "title": "Shaded relief",
+      "file": "relief.png",
+      "source": "FAKE (SIMULATED stand-in from tools/make_mock_data.py)",
+      "default": true,
+      "opacity": 1.0
     },
     {
-      "id": "thermal_inertia",
-      "kind": "raster",
-      "units": "TIU",
-      "file": "ti.tif",
-      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+      "id": "slope",
+      "title": "Slope",
+      "file": "slope.png",
+      "source": "FAKE (SIMULATED stand-in from tools/make_mock_data.py)",
+      "default": false,
+      "opacity": 0.6
     },
     {
-      "id": "minerals",
-      "kind": "raster",
-      "units": "class",
-      "file": "minerals.tif",
-      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
-    },
-    {
-      "id": "rocks",
-      "kind": "vector",
-      "file": "rocks.geojson",
-      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
-    },
-    {
-      "id": "rover_tracks",
-      "kind": "vector",
-      "file": "rover_tracks.geojson",
-      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
-    },
-    {
-      "id": "landmarks",
-      "kind": "vector",
-      "file": "landmarks.geojson",
-      "source": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+      "id": "hazard",
+      "title": "Hazards",
+      "file": "hazard.png",
+      "source": "FAKE (SIMULATED stand-in from tools/make_mock_data.py)",
+      "default": true,
+      "opacity": 0.7
     }
-  ]
+  ],
+  "vectors": {
+    "route": "route.geojson",
+    "rocks": "rocks.geojson",
+    "rover_tracks": "rover_tracks.geojson",
+    "landmarks": "landmarks.geojson"
+  },
+  "sources_notes": {
+    "dem.tif": "FAKE (SIMULATED stand-in from tools/make_mock_data.py)",
+    "thermal_inertia.tif": "FAKE (SIMULATED stand-in from tools/make_mock_data.py)"
+  }
 }

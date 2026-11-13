@@ -1,7 +1,7 @@
 {
-  "tolerance_m": 1.5,
+  "tolerance_m": 7.5,
   "layers": {
-    "thermal_inertia": {
+    "thermal": {
       "note": "visual check only (landmark_chips.png)"
     },
     "minerals": {

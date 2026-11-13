@@ -24,19 +24,21 @@
       cv.width = img.naturalWidth; cv.height = img.naturalHeight;
       const ctx = cv.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
-      const items = L.legend.items.map((it) => ({ ...it, rgb: hexRgb(it.color) }));
+      const items = L.legend.items.filter((it) => /^#[0-9a-f]{6}/i.test(it.color)).map((it) => ({ ...it, rgb: hexRgb(it.color) }));
+      const single = L.legend.items.length === 1 ? L.legend.items[0].name : null;
       samplers[L.id] = (en) => {
         const px = Math.floor((en[0] / site.width_m) * cv.width);
         const py = Math.floor(((site.height_m - en[1]) / site.height_m) * cv.height);
         if (px < 0 || py < 0 || px >= cv.width || py >= cv.height) return null;
         const d = ctx.getImageData(px, py, 1, 1).data;
-        if (d[3] < 20) return null;
+        if (d[3] < 20) return L.legend.transparent_as || null;
+        if (single) return single;
         let best = null, bd = Infinity;
         for (const it of items) {
           const dist = (it.rgb[0] - d[0]) ** 2 + (it.rgb[1] - d[1]) ** 2 + (it.rgb[2] - d[2]) ** 2;
           if (dist < bd) { bd = dist; best = it; }
         }
-        return bd < 60 ** 2 ? best.name : (L.id === "hazards" ? "Unknown terrain coverage" : null);
+        return bd < 60 ** 2 ? best.name : null;
       };
     };
     img.src = L.href;
@@ -73,7 +75,7 @@
   const B = window.MartialBaseMap.overlays;
   for (const L of config.layers) {
     if (L.kind === "grid") map.addOverlay(L.id, B.grid(site));
-    if (L.kind === "lines") map.addOverlay(L.id, B.lines(L.features));
+    if (L.kind === "lines") map.addOverlay(L.id, B.lines(L.features, L.id === "route" ? "mm-route" : "mm-track"));
     if (L.kind === "landmarks") map.addOverlay(L.id, B.landmarks(L.features));
   }
 
@@ -87,7 +89,8 @@
       <label class="mm-toggle" for="${id}"><input id="${id}" type="checkbox" ${L.visible ? "checked" : ""}> ${L.title}</label>
       ${L.kind === "image" ? `<div class="mm-opacity">Opacity <input type="range" min="0" max="1" step="0.05" value="${L.opacity ?? 1}" aria-label="${L.title} opacity"></div>` : ""}
       ${legendHtml(L.legend, L.units)}
-      ${L.source ? `<div class="mm-source">Source: ${escapeHtml(L.source)}</div>` : ""}`;
+      ${L.source ? `<div class="mm-source">Source: ${escapeHtml(L.source)}</div>` : ""}
+      ${L.note ? `<div class="mm-source">${escapeHtml(L.note)}</div>` : ""}`;
     box.querySelector("input[type=checkbox]").addEventListener("change", (e) => map.setLayerVisible(L.id, e.target.checked));
     box.querySelector("input[type=range]")?.addEventListener("input", (e) => map.setLayerOpacity(L.id, +e.target.value));
     list.appendChild(box);
@@ -96,7 +99,7 @@
   function legendHtml(lg, units) {
     if (!lg) return "";
     if (lg.type === "classes") {
-      return `<div class="mm-legend">${lg.items.map((it) => `<span><i class="sw" style="background:${it.color}"></i>${escapeHtml(it.name)}</span>`).join("")}</div>`;
+      return `<div class="mm-legend">${lg.items.map((it) => `<span><i class="sw${it.color === "transparent" ? " sw-clear" : ""}" style="background:${it.color}"></i>${escapeHtml(it.name)}</span>`).join("")}</div>`;
     }
     if (lg.type === "ramp") {
       const stops = (lg.css_stops || []).join(",");
@@ -112,7 +115,7 @@
 
   // ---- landmarks ------------------------------------------------------------
   const lmBox = $("#mm-landmarks");
-  const lm = config.layers.find((l) => l.kind === "landmarks");
+  const lm = config.layers.find((l) => l.id === "landmarks") || config.layers.find((l) => l.kind === "landmarks");
   if (lm) {
     for (const f of lm.features) {
       const b = document.createElement("button");

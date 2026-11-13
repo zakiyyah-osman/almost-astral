@@ -116,6 +116,11 @@ def test_track_check_flags_red_crossing():
     c, r = _classes(z)
     s = slope_deg(z, 1.0)
     good = {"features": [{"geometry": {"type": "LineString", "coordinates": [[5, 5], [5, 55]]}, "properties": {"name": "g"}}]}
+    z2 = z.copy(); z2[:, 50:] = np.nan
+    c2, r2 = _classes(z2)
+    gapline = {"features": [{"geometry": {"type": "LineString", "coordinates": [[5, 30], [58, 30]]}, "properties": {"name": "x"}}]}
+    assert check_tracks(gapline, g, c2, r2, s, 1.0, fail_on_unknown=True)["tracks"][0]["status"] == "Unknown terrain coverage"
+    assert check_tracks(gapline, g, c2, r2, s, 1.0, fail_on_unknown=False)["passed"] is True
     bad = {"features": [{"geometry": {"type": "LineString", "coordinates": [[5, 30], [55, 30]]}, "properties": {"name": "b"}}]}
     assert check_tracks(good, g, c, r, s, 0.01)["passed"] is True
     assert check_tracks(bad, g, c, r, s, 0.01)["passed"] is False
@@ -129,14 +134,61 @@ def test_coordinate_convention():
     assert (r, c) == (49, 99)
 
 
-def test_end_to_end(tmp_path):
+def test_team_layers_json_parses():
+    from hazards.io import Layers
+    L = Layers(ROOT / "tests" / "fixtures" / "team_layers.json")
+    assert L.grid.shape == (400, 400) and L.grid.cell_m == 5.0 and L.grid.width_m == 2000.0
+    lat0, lon0 = L.origin_latlon  # SW corner is 1 km south and 1 km west of the centre
+    assert lat0 == pytest.approx(18.46 - np.degrees(1000 / 3396190), abs=1e-6)
+    assert lon0 < 77.4 and L.simulated
+    assert L.vectors_map["route"] == "route.geojson"
+
+
+def test_inconsistent_grid_is_rejected():
+    from hazards.io import site_grid
+    with pytest.raises(ValueError):
+        site_grid({"grid": {"width": 400, "height": 400, "cell_m": 5.0}, "extent_m": [1000, 2000]})
+
+
+def test_coarse_grid_cliff_and_buffer():
+    """5 m cells: a gentle 10 deg slope is not a cliff, a 30 m wall is, and the buffer is >= 1 cell."""
+    yy, xx = np.mgrid[0:60, 0:60] * 5.0
+    z = np.tan(np.radians(10)) * xx
+    z[:, 30:] += 30.0
+    f, gap = fill_gaps(z)
+    c, r = classify(slope=slope_deg(f, 5.0), rough=roughness_m(f, 5.0, 5), relief=local_relief_m(f, 5.0, 3),
+                    gap=gap, cfg=CFG, cell_m=5.0)
+    assert (c[:, 5:20] == GREEN).all()
+    assert (c[:, 29:31] == RED).all() and ((r & REASON_BITS["cliff_edge"]) > 0)[:, 30].all()
+    assert ((r & REASON_BITS["safety_buffer"]) > 0).any()
+
+
+def test_end_to_end_contract(tmp_path):
     import subprocess, sys
-    subprocess.run([sys.executable, str(ROOT / "tools" / "make_mock_data.py"), "--out", str(tmp_path / "d"), "--size", "300"],
-                   check=True, cwd=ROOT)
+    from PIL import Image
+    import tifffile
+    subprocess.run([sys.executable, str(ROOT / "tools" / "make_mock_data.py"), "--out", str(tmp_path / "d")],
+                   check=True, cwd=ROOT, capture_output=True)
     from hazards.run import run
     m = run(tmp_path / "d" / "layers.json", tmp_path / "o", quiet=True)
-    for f in ["hazard.tif", "reasons.tif", "slope.tif", "roughness.tif", "hazards.png", "slope.png",
-              "shaded_relief.png", "thermal.png", "minerals.png", "hazards_manifest.json"]:
-        assert (tmp_path / "o" / f).exists(), f
-    assert abs(sum(m["area_share"].values()) - 1) < 1e-9
-    json.loads((tmp_path / "o" / "hazards_manifest.json").read_text())
+    o = tmp_path / "o"
+    for f in ["hazard.tif", "hazard.png", "coverage.tif", "coverage.png", "relief.png", "slope.png",
+              "reasons.tif", "slope.tif", "roughness.tif", "hazards_manifest.json", "track_check.json"]:
+        assert (o / f).exists(), f
+    # --- the team contract ---
+    hz = tifffile.imread(o / "hazard.tif")
+    assert hz.dtype == np.uint8 and hz.shape == (400, 400)
+    assert set(np.unique(hz).tolist()) <= {0, 1, 2}
+    png = np.asarray(Image.open(o / "hazard.png").convert("RGBA"))
+    colours = {tuple(c) for c in np.unique(png.reshape(-1, 4), axis=0).tolist()}
+    assert colours <= {(0, 0, 0, 0), (240, 190, 40, 255), (220, 50, 50, 255)}
+    lut = {(0, 0, 0, 0): 0, (240, 190, 40, 255): 1, (220, 50, 50, 255): 2}
+    assert all(lut[tuple(png[r, c])] == hz[r, c] for r in range(0, 400, 7) for c in range(0, 400, 7))
+    cov = tifffile.imread(o / "coverage.tif")
+    assert (cov == 0).any() and (hz[cov == 0] == 2).all()  # no data -> no-go, never go
+    # route through the gap is reported, not passed
+    t = json.loads((o / "track_check.json").read_text())["tracks"]
+    route = next(x for x in t if x["kind"] == "route")
+    assert route["status"] == "Unknown terrain coverage" and not route["passed"]
+    drive = next(x for x in t if "simulated rover drive" in x["name"])
+    assert drive["passed"]

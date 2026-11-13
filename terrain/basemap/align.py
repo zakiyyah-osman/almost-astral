@@ -27,9 +27,27 @@ from skimage.registration import phase_cross_correlation
 from hazards.io import Layers
 from hazards.terrain import fill_gaps, hillshade
 
-# layers too coarse or too unlike surface shading for a meaningful offset
-# (THEMIS ~100 m, CRISM ~18 m, class maps): only the visual chips apply.
-CORRELATE_KINDS = {"ortho", "imagery", "ctx", "hirise"}
+# Only orbital images are compared numerically with the terrain. Thermal (THEMIS ~100 m),
+# minerals (CRISM ~18 m, class colours) and derived layers get the visual chips only.
+CORRELATE_IDS = {"hirise", "ortho", "imagery", "ctx"}
+SKIP_IDS = {"relief", "slope", "hazard", "coverage", "shelter_time"}  # derived from the DEM itself
+
+
+def _on_grid(path: Path, shape) -> np.ndarray:
+    """Display PNG -> grey float array on the grid (block-averaged if finer)."""
+    from PIL import Image
+    im = Image.open(path).convert("LA")
+    a = np.asarray(im, float)
+    g, alpha = a[..., 0], a[..., 1]
+    g[alpha < 10] = np.nan
+    if g.shape != shape:
+        fy, fx = g.shape[0] / shape[0], g.shape[1] / shape[1]
+        if abs(fy - round(fy)) < 1e-6 and abs(fx - round(fx)) < 1e-6 and fy >= 1:
+            fy, fx = int(round(fy)), int(round(fx))
+            g = np.nanmean(g.reshape(shape[0], fy, shape[1], fx), axis=(1, 3))
+        else:
+            g = np.asarray(Image.fromarray(np.nan_to_num(g).astype(np.float32)).resize(shape[::-1], Image.BILINEAR), float)
+    return g
 
 
 
@@ -84,9 +102,7 @@ def chips(L: Layers, rasters: dict, landmarks: list, out: Path, half_m=60):
             a = rasters[name]
             r0, r1, c0, c1 = max(0, r - hc), min(a.shape[0], r + hc), max(0, c - hc), min(a.shape[1], c + hc)
             crop = a[r0:r1, c0:c1]
-            cls = name == "minerals"
-            ax.imshow(crop, cmap="tab10" if cls else "gray", vmin=0 if cls else None, vmax=9 if cls else None,
-                      interpolation="nearest",
+            ax.imshow(crop, cmap="gray", interpolation="nearest",
                       extent=[(c0 - c) * g.cell_m, (c1 - c) * g.cell_m, (r - r1) * g.cell_m, (r - r0) * g.cell_m])
             for lw, col in ((2.4, "black"), (1.1, "#ff7a2f")):
                 ax.axhline(0, color=col, lw=lw)
@@ -114,28 +130,39 @@ def run(layers_json, out_dir, tolerance_cells=1.5, quiet=False):
     rasters = {"terrain (shaded)": shade}
     report = {"tolerance_m": tolerance_cells * L.grid.cell_m, "layers": {}, "passed": True}
 
-    for lid, meta in L.by_id.items():
-        if meta.get("kind") != "raster" or lid == "dtm" or not L.has(lid):
+    if L.has("thermal_inertia"):
+        rasters["thermal_inertia"] = L.raster("thermal_inertia")
+        report["layers"]["thermal_inertia"] = {"note": "visual check only (landmark_chips.png)"}
+    for lid, meta in L.display.items():
+        if lid in SKIP_IDS or lid == "thermal" and "thermal_inertia" in rasters:
             continue
-        arr = L.raster(lid)
+        f = L.root / meta["file"]
+        if not f.exists():
+            continue
+        arr = _on_grid(f, L.grid.shape)
         rasters[lid] = arr
-        if lid in CORRELATE_KINDS or meta.get("check_alignment"):
+        if lid in CORRELATE_IDS or meta.get("check_alignment"):
             de, dn, err = measure_offset(dtm, arr, L.grid.cell_m)
             off = float(np.hypot(de, dn))
             ok = off <= tolerance_cells * L.grid.cell_m
             report["layers"][lid] = {"shift_to_apply_east_m": round(de, 2), "shift_to_apply_north_m": round(dn, 2),
                                      "offset_m": round(off, 2), "match_error": round(err, 3), "passed": ok}
             report["passed"] &= ok
-            log(f"{lid:>16}: offset {off:5.2f} m (move it E {de:+.2f} m, N {dn:+.2f} m) -> {'OK' if ok else 'MISALIGNED'}")
+            log(f"{lid:>16}: offset {off:6.2f} m (move it E {de:+.2f} m, N {dn:+.2f} m) -> {'OK' if ok else 'MISALIGNED'}")
         else:
             report["layers"][lid] = {"note": "visual check only (landmark_chips.png)"}
 
-    lms = L.vector("landmarks")["features"] if L.has("landmarks") else []
+    lms = []
+    for name in ("landmarks", "waypoints"):
+        if L.has_vector(name):
+            lms += [f for f in L.vector(name)["features"] if (f.get("geometry") or {}).get("type") == "Point"]
+    for f in lms:
+        f.setdefault("properties", {}).setdefault("name", f["properties"].get("title") or f["properties"].get("id") or "point")
     if lms:
-        chips(L, rasters, lms[:8], out)
+        chips(L, rasters, lms[:8], out, half_m=max(60, 12 * L.grid.cell_m))
         log(f"landmark chips -> {out / 'landmark_chips.png'}")
     else:
-        log("no 'landmarks' layer - add a few named points (crater centres, rover sites) to get chips")
+        log("no landmarks/waypoints - add vectors.landmarks (crater centres, rover sites) to get chips")
     (out / "alignment_report.json").write_text(json.dumps(report, indent=2))
     return report
 

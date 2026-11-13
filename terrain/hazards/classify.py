@@ -39,7 +39,11 @@ def classify(
     flag(slope >= s["red"], "slope_nogo")
     flag(rough >= r["yellow"], "rough_caution")
     flag(rough >= r["red"], "rough_nogo")
-    flag(relief >= cfg["cliff"]["drop_m"], "cliff_edge")
+    # A cliff is a big drop over a short distance. On coarse grids the 3-cell window is
+    # wider than cliff.window_m, so scale the drop with it (keeps the same steepness).
+    win_cells = max(3, int(round(cfg["cliff"]["window_m"] / cell_m)) | 1)
+    drop = cfg["cliff"]["drop_m"] * max(1.0, win_cells * cell_m / cfg["cliff"]["window_m"])
+    flag(relief >= drop, "cliff_edge")
 
     if thermal is not None:
         t = cfg["thermal_inertia_tiu"]
@@ -58,6 +62,8 @@ def classify(
 
     red = (reasons & red_bits) > 0
     buf = cfg.get("safety_buffer_m", 0) / cell_m
+    if buf > 0:
+        buf = max(buf, 1.0)  # never less than one cell: a buffer smaller than a cell would vanish
     if buf > 0 and red.any():
         grown = ndimage.binary_dilation(red, structure=_disk(buf).astype(bool))
         flag(grown & ~red, "safety_buffer")

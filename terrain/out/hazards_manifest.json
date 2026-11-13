@@ -1,30 +1,22 @@
 {
   "generated_by": "hazards.run (Person 2)",
-  "generated_at": "2026-11-13T12:05:41+0400",
+  "generated_at": "2026-11-13T21:42:12+0400",
   "site": {
-    "name": "Gale - Boxwork (SIMULATED)",
-    "crs": "local_meters",
-    "origin_latlon": [
-      -4.7,
-      137.4
+    "name": "Mount Sharp boxwork region, Gale crater (placeholder: confirm with Zakiyyah)",
+    "grid": {
+      "width": 400,
+      "height": 400,
+      "cell_m": 5.0
+    },
+    "extent_m": [
+      2000.0,
+      2000.0
     ],
-    "width_m": 1000.0,
-    "height_m": 1000.0,
-    "cell_m": 1.0,
-    "simulated": true,
-    "source_crs": "Mars 2000 equirectangular, centre lon 0, lat_ts 0, R=3396190 m (placeholder)",
-    "origin_source_xy": [
-      8144343.4,
-      -278591.1
-    ]
+    "center_lat": -4.78,
+    "center_lon_east": 137.38
   },
   "inputs": {
-    "dtm": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data",
-    "thermal_inertia": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data",
-    "minerals": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data",
-    "rocks": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data",
-    "rover_tracks": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data",
-    "landmarks": "SIMULATED stand-in (tools/make_mock_data.py) - replace with Person 1's data"
+    "dtm": "dem.tif"
   },
   "config": {
     "slope_deg": {
@@ -94,28 +86,26 @@
       0
     ],
     [
-      1000.0,
-      1000.0
+      2000.0,
+      2000.0
     ]
   ],
   "png_layers": [
     {
-      "id": "shaded_relief",
-      "file": "shaded_relief.png",
+      "id": "relief",
+      "file": "relief.png",
       "title": "Shaded relief",
-      "units": null,
       "bounds": [
         [
           0,
           0
         ],
         [
-          1000.0,
-          1000.0
+          2000.0,
+          2000.0
         ]
       ],
-      "legend": null,
-      "source": "Computed from DTM, sun az 315\u00b0, alt 45\u00b0"
+      "source": "Computed from the terrain model, sun az 315\u00b0, alt 45\u00b0"
     },
     {
       "id": "slope",
@@ -128,8 +118,8 @@
           0
         ],
         [
-          1000.0,
-          1000.0
+          2000.0,
+          2000.0
         ]
       ],
       "legend": {
@@ -142,21 +132,20 @@
           25
         ]
       },
-      "source": "Computed from DTM"
+      "source": "Computed from the terrain model"
     },
     {
-      "id": "hazards",
-      "file": "hazards.png",
-      "title": "EVA hazard classes",
-      "units": "class",
+      "id": "hazard",
+      "file": "hazard.png",
+      "title": "Hazards",
       "bounds": [
         [
           0,
           0
         ],
         [
-          1000.0,
-          1000.0
+          2000.0,
+          2000.0
         ]
       ],
       "legend": {
@@ -165,108 +154,55 @@
           {
             "value": 0,
             "name": "Go",
-            "color": "#3fae5a"
+            "color": "transparent"
           },
           {
             "value": 1,
             "name": "Caution",
-            "color": "#f2c230"
+            "color": "#f0be28"
           },
           {
             "value": 2,
             "name": "No-go",
-            "color": "#d63a2f"
-          },
-          {
-            "value": 3,
-            "name": "Unknown terrain coverage",
-            "color": "#8a8a8a"
+            "color": "#dc3232"
           }
         ]
       },
-      "source": "Slope + roughness + cliff + rocks + thermal inertia; thresholds in config/hazards.yaml"
+      "source": "Slope, roughness, cliffs, rocks and thermal inertia; thresholds in config/hazards.yaml"
     },
     {
-      "id": "thermal_inertia",
-      "file": "thermal.png",
-      "title": "Thermal inertia (low = loose sand)",
-      "units": "TIU",
+      "id": "coverage",
+      "file": "coverage.png",
+      "title": "Unknown terrain coverage",
       "bounds": [
         [
           0,
           0
         ],
         [
-          1000.0,
-          1000.0
-        ]
-      ],
-      "legend": {
-        "type": "ramp",
-        "min": 50,
-        "max": 800,
-        "cmap": "inferno",
-        "marks": [
-          100,
-          200
-        ]
-      },
-      "source": "thermal_inertia layer from layers.json"
-    },
-    {
-      "id": "minerals",
-      "file": "minerals.png",
-      "title": "Mineral map",
-      "units": "class",
-      "bounds": [
-        [
-          0,
-          0
-        ],
-        [
-          1000.0,
-          1000.0
+          2000.0,
+          2000.0
         ]
       ],
       "legend": {
         "type": "classes",
         "items": [
           {
-            "value": 1,
-            "name": "Sulfates",
-            "color": "#e8c547"
-          },
-          {
-            "value": 2,
-            "name": "Clays (Fe/Mg smectite)",
-            "color": "#4aa3a2"
-          },
-          {
-            "value": 3,
-            "name": "Hematite",
-            "color": "#b5483b"
-          },
-          {
-            "value": 4,
-            "name": "Olivine/pyroxene (basaltic sand)",
-            "color": "#5b6b3a"
+            "value": 0,
+            "name": "No terrain data",
+            "color": "#8a8a8a"
           }
         ]
       },
-      "source": "minerals layer from layers.json"
+      "source": "Cells where the terrain model has no data (also no-go in hazard.tif)"
     }
   ],
   "rasters": {
-    "hazard.tif": "uint8 classes: 0=Go, 1=Caution, 2=No-go, 3=Unknown terrain coverage",
+    "hazard.tif": "uint8 0 = go, 1 = caution, 2 = no-go (no terrain data is also 2)",
+    "coverage.tif": "uint8 1 = terrain data, 0 = no data (shown as 'Unknown terrain coverage')",
     "reasons.tif": "uint16 bitmask, see reason_bits",
     "slope.tif": "float32 degrees, NaN = no data",
     "roughness.tif": "float32 metres, NaN = no data"
-  },
-  "class_names": {
-    "0": "Go",
-    "1": "Caution",
-    "2": "No-go",
-    "3": "Unknown terrain coverage"
   },
   "reason_bits": {
     "no_data": 1,
@@ -283,24 +219,24 @@
     "safety_buffer": 2048
   },
   "area_share": {
-    "Go": 0.805554,
-    "Caution": 0.120397,
-    "No-go": 0.057249,
-    "Unknown terrain coverage": 0.0168
+    "Go": 0.5762125,
+    "Caution": 0.3694,
+    "No-go": 0.0543875,
+    "Unknown terrain coverage (no-go in hazard.tif)": 0.0
   },
   "reason_share": {
-    "no_data": 0.0168,
-    "slope_caution": 0.128247,
-    "slope_nogo": 0.020695,
-    "rough_caution": 0.037014,
-    "rough_nogo": 0.010736,
-    "loose_ground": 0.024805,
-    "very_loose_ground": 0.005067,
-    "rock_density_caution": 0.013164,
-    "rock_density_nogo": 5e-06,
-    "large_rock": 0.002455,
-    "cliff_edge": 0.006514,
-    "safety_buffer": 0.024544
+    "no_data": 0.0,
+    "slope_caution": 0.09379375,
+    "slope_nogo": 0.0408375,
+    "rough_caution": 0.385025,
+    "rough_nogo": 0.000125,
+    "loose_ground": 0.0,
+    "very_loose_ground": 0.0,
+    "rock_density_caution": 0.0,
+    "rock_density_nogo": 0.0,
+    "large_rock": 0.0,
+    "cliff_edge": 0.00068125,
+    "safety_buffer": 0.013425
   },
   "track_check": {
     "passed": false,

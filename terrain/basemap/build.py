@@ -1,10 +1,16 @@
-"""Build map_config.json (the shared map contract) and the base-map viewer.
+"""Build map_config.json (the shared map contract) and the base-map viewer from the
+team's layers.json.
 
     python -m basemap.build --layers data/layers.json --hazards out --out out
 
+Display layers come from layers.json "layers" in their order (default -> visible).
+Each PNG is taken from --hazards (files Person 2 generates: relief, slope, hazard,
+coverage) or else from next to layers.json (hirise, thermal, minerals, shelter_time...).
+Missing files are skipped with a warning. Vectors: route, rover_tracks (lines),
+waypoints and landmarks (markers).
+
 Writes to --out:
-  map_config.json      projection, origin, bounds, layer list - the file teammates read
-  imagery.png          base imagery on the site grid (real orthoimage, or a placeholder)
+  map_config.json      site, projection, origin, bounds, layer list - what teammates read
   index.html + js/css  viewer that loads map_config.json (serve the folder over http)
   martial_map.html     the same viewer as ONE file with everything inlined (just open it)
 """
@@ -16,102 +22,105 @@ import io
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 
-import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import to_hex
 from PIL import Image
 
-from hazards.io import Layers, read_raster
+from hazards.io import Layers
 
 WEB = Path(__file__).resolve().parent / "web"
 TITLE = "Interplanetary Survival Guide: Martial Map"
+GENERATED = {"relief", "slope", "hazard", "coverage"}
 
 
 def _ramp_css(cmap: str, n=7):
     return [to_hex(colormaps[cmap](i / (n - 1))) for i in range(n)]
 
 
-def imagery_png(L: Layers, hz_dir: Path, out: Path) -> dict:
-    """Real orthoimage if layers.json has one, else the shaded relief as a placeholder."""
-    if L.has("ortho"):
-        arr = read_raster(L.file("ortho")).astype(float)
-        if arr.shape[:2] != L.grid.shape:
-            raise ValueError(f"ortho is {arr.shape[:2]}, grid is {L.grid.shape}; run basemap.prepare_imagery first")
-        valid = np.isfinite(arr) & (arr > 0)
-        lo, hi = np.percentile(arr[valid], [0.5, 99.5]) if valid.any() else (0, 1)
-        g = np.clip((np.nan_to_num(arr) - lo) / max(hi - lo, 1e-9), 0, 1)
-        rgba = np.dstack([g, g, g, valid.astype(float)])
-        Image.fromarray((rgba * 255).astype(np.uint8), "RGBA").save(out / "imagery.png", optimize=True)
-        return {"title": "Orbital imagery", "source": L.by_id["ortho"].get("source", "ortho layer"), "placeholder": False}
-    shutil.copyfile(hz_dir / "shaded_relief.png", out / "imagery.png")
-    return {"title": "Placeholder imagery (shaded relief from terrain)",
-            "source": "Computed from the terrain model until real orbital imagery is loaded", "placeholder": True}
-
-
-def build_config(layers_json: Path, hz_dir: Path, out: Path, title=TITLE) -> dict:
+def build_config(layers_json: Path, hz_dir: Path, out: Path, title=TITLE, warn=print) -> dict:
     L = Layers(layers_json)
-    site = dict(L.meta["site"])
-    manifest = json.loads((hz_dir / "hazards_manifest.json").read_text())
-    pngs = {p["id"]: p for p in manifest["png_layers"]}
-    im = imagery_png(L, hz_dir, out)
+    g = L.grid
+    manifest_p = hz_dir / "hazards_manifest.json"
+    generated = {p["id"]: p for p in json.loads(manifest_p.read_text())["png_layers"]} if manifest_p.exists() else {}
 
-    def img(id_, title_, file, visible, opacity, legend=None, units=None, source=None):
-        return {"id": id_, "kind": "image", "title": title_, "file": file, "visible": visible,
-                "opacity": opacity, "legend": legend, "units": units, "source": source}
+    team_layers = list(L.meta.get("layers", []))
+    if not any(l["id"] == "coverage" for l in team_layers) and "coverage" in generated:
+        at = next((i + 1 for i, l in enumerate(team_layers) if l["id"] == "hazard"), len(team_layers))
+        team_layers.insert(at, {"id": "coverage", "title": "Unknown terrain coverage", "file": "coverage.png",
+                                "default": True, "opacity": 0.9, "source": generated["coverage"]["source"]})
 
-    layers = [img("imagery", im["title"], "imagery.png", True, 1.0, source=im["source"])]
-    if not im["placeholder"]:
-        layers.append(img("shaded_relief", "Shaded relief", "shaded_relief.png", False, 0.5, source=pngs["shaded_relief"]["source"]))
-    for id_, vis, op in (("slope", False, 0.8), ("thermal_inertia", False, 0.7), ("minerals", False, 0.65), ("hazards", True, 0.45)):
-        if id_ not in pngs:
+    layers = []
+    for tl in team_layers:
+        src = None
+        for folder in ((hz_dir, L.root) if tl["id"] in GENERATED else (L.root, hz_dir)):
+            if (folder / tl["file"]).exists():
+                src = folder / tl["file"]
+                break
+        if src is None:
+            warn(f"  skip layer '{tl['id']}': {tl['file']} not found")
             continue
-        p = pngs[id_]
-        lg = dict(p["legend"]) if p["legend"] else None
-        if lg and lg.get("type") == "ramp":
-            lg["css_stops"] = _ramp_css(lg["cmap"])
-        layers.append(img(id_, p["title"], p["file"], vis, op, lg, p["units"], p["source"]))
-    for f in ("shaded_relief.png", "slope.png", "thermal.png", "minerals.png", "hazards.png"):
-        if (hz_dir / f).exists() and hz_dir.resolve() != out.resolve():
-            shutil.copyfile(hz_dir / f, out / f)
+        if src.resolve() != (out / tl["file"]).resolve():
+            shutil.copyfile(src, out / tl["file"])
+        gen = generated.get(tl["id"], {})
+        legend = None
+        if tl.get("legend"):  # team legend: [{label, color, ...}]
+            legend = {"type": "classes", "items": [{"name": i["label"], "color": i["color"]} for i in tl["legend"]]}
+        elif gen.get("legend"):
+            legend = dict(gen["legend"])
+            if legend["type"] == "ramp":
+                legend["css_stops"] = _ramp_css(legend["cmap"])
+        if tl["id"] == "hazard":
+            legend = {"type": "classes", "transparent_as": "Go",
+                      "items": [{"name": "Go (clear)", "color": "transparent"},
+                                {"name": "Caution", "color": "#f0be28"}, {"name": "No-go", "color": "#dc3232"}]}
+        source = tl.get("source", "")
+        if tl["id"] in GENERATED and gen:
+            source = gen["source"] + (" — on SIMULATED terrain" if L.simulated else "")
+        layers.append({"id": tl["id"], "kind": "image", "title": tl.get("title", tl["id"]), "file": tl["file"],
+                       "visible": bool(tl.get("default")), "opacity": tl.get("opacity", 1.0),
+                       "legend": legend, "units": gen.get("units"), "source": source, "note": tl.get("note")})
 
     layers.append({"id": "grid", "kind": "grid", "title": "Coordinate grid (m)", "visible": False})
-    if L.has("rover_tracks"):
-        layers.append({"id": "rover_tracks", "kind": "lines", "title": "Rover tracks", "visible": True,
-                       "features": L.vector("rover_tracks")["features"], "source": L.by_id["rover_tracks"].get("source")})
-    if L.has("landmarks"):
-        layers.append({"id": "landmarks", "kind": "landmarks", "title": "Landmarks", "visible": True,
-                       "features": L.vector("landmarks")["features"], "source": L.by_id["landmarks"].get("source")})
+    for name, kind, vtitle, vis in (("rover_tracks", "lines", "Rover tracks", True), ("route", "lines", "Planned route", True),
+                                   ("waypoints", "landmarks", "Science stops", True), ("landmarks", "landmarks", "Landmarks", True)):
+        if L.has_vector(name):
+            layers.append({"id": name, "kind": kind, "title": vtitle, "visible": vis,
+                           "features": [f for f in L.vector(name)["features"]
+                                        if (f.get("geometry") or {}).get("type") in
+                                        (("LineString", "MultiLineString") if kind == "lines" else ("Point",))],
+                           "source": L.vectors_map[name]})
+            for f in layers[-1]["features"]:
+                f.setdefault("properties", {})
+                f["properties"].setdefault("name", f["properties"].get("title") or f["properties"].get("id") or vtitle)
 
-    sources = " ".join(str(l.get("source", "")) for l in L.meta["layers"])
-    simulated = bool(site.get("simulated")) or "SIMULATED" in sources.upper() or im["placeholder"]
     config = {
         "title": title,
-        "simulated": simulated,
-        "simulated_note": ("SIMULATED DATA — stand-in terrain, imagery and layers for testing. "
-                           "Not real Mars measurements; replaced when the NASA dataset arrives.") if simulated else None,
-        "site": {k: site[k] for k in ("name", "width_m", "height_m", "cell_m", "origin_latlon") if k in site}
-                | {"origin_source_xy": site.get("origin_source_xy")},
+        "simulated": L.simulated,
+        "simulated_note": ("SIMULATED DATA — some layers are stand-ins (marked FAKE). "
+                           "Not real Mars measurements until the NASA dataset replaces them.") if L.simulated else None,
+        "site": {"name": L.site.get("name", "Site"), "width_m": g.width_m, "height_m": g.height_m, "cell_m": g.cell_m,
+                 "origin_latlon": L.origin_latlon, "origin_source_xy": L.site.get("origin_source_xy"),
+                 "center_latlon": [L.site.get("center_lat"), L.site.get("center_lon_east")]},
         "projection": {
             "map_coordinates": "[east, north] metres from the SW corner of the site grid",
             "raster_rows": "row 0 = north edge, col 0 = west edge",
-            "source_crs": site.get("source_crs"),
-            "origin_source_xy": site.get("origin_source_xy"),
-            "leaflet_crs_simple_bounds": [[0, 0], [site["height_m"], site["width_m"]]],
+            "source_crs": L.site.get("source_crs"),
+            "origin_source_xy": L.site.get("origin_source_xy"),
+            "leaflet_crs_simple_bounds": g.leaflet_bounds,
         },
         "max_px_per_m": 24,
         "layers": layers,
     }
-    (out / "map_config.json").write_text(json.dumps(config, indent=2))
     return config
 
 
 def _data_uri(path: Path, max_px=2048) -> str:
     im = Image.open(path)
     if max(im.size) > max_px:
-        im.thumbnail((max_px, max_px), Image.Resampling.NEAREST if "hazard" in path.name or "minerals" in path.name
-                     else Image.Resampling.LANCZOS)
+        im.thumbnail((max_px, max_px), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
     im.save(buf, "PNG", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
@@ -120,14 +129,12 @@ def _data_uri(path: Path, max_px=2048) -> str:
 def build_viewer(config: dict, out: Path):
     for f in ("index.html", "viewer.css", "coords.js", "basemap.js", "app.js"):
         shutil.copyfile(WEB / f, out / f)
-    # dev viewer: files reference each other; needs `python -m http.server` in out/
     cfg_files = json.loads(json.dumps(config))
     for l in cfg_files["layers"]:
         if l["kind"] == "image":
             l["href"] = l["file"]
     (out / "map_config.json").write_text(json.dumps(cfg_files, indent=2))
 
-    # single file: inline everything
     cfg_inline = json.loads(json.dumps(config))
     for l in cfg_inline["layers"]:
         if l["kind"] == "image":
@@ -138,7 +145,7 @@ def build_viewer(config: dict, out: Path):
     html = re.sub(r"<!--CSS-->.*?<!--/CSS-->", lambda m: f"<style>\n{css}\n</style>", html, flags=re.S)
     cfg_js = json.dumps(cfg_inline).replace("</", "<\\/")
     html = re.sub(r"<!--CONFIG-->.*?<!--/CONFIG-->", lambda m: f"<script>window.MM_CONFIG = {cfg_js};</script>", html, flags=re.S)
-    html = re.sub(r"<!--JS-->.*?<!--/JS-->", lambda m: f"<script>\n{js.replace('</script', '<\\/script')}\n</script>", html, flags=re.S)
+    html = re.sub(r"<!--JS-->.*?<!--/JS-->", lambda m: f"<script>\n{js.replace('</script', '<' + chr(92) + '/script')}\n</script>", html, flags=re.S)
     (out / "martial_map.html").write_text(html)
 
 
@@ -151,7 +158,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    cfg = build_config(Path(a.layers), Path(a.hazards), out, a.title)
+    cfg = build_config(Path(a.layers), Path(a.hazards), out, a.title, warn=lambda m: print(m, file=sys.stderr))
     build_viewer(cfg, out)
     size = (out / "martial_map.html").stat().st_size / 1e6
     print(f"map_config.json + viewer written to {out}/  (martial_map.html {size:.1f} MB)")

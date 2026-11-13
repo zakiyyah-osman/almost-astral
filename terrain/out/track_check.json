@@ -1,124 +1,69 @@
 {
   "tracks": [
     {
-      "name": "simulated rover drive",
-      "length_m": 2099.9058248833053,
-      "samples": 2273,
+      "name": "route: route",
+      "length_m": 3714.712571679258,
+      "samples": 747,
       "outside_grid": 0,
       "fraction_by_class": {
-        "Go": 0.9960404751429829,
-        "Caution": 0.0004399472063352398,
-        "No-go": 0.0035195776506819184,
+        "Go": 0.5381526104417671,
+        "Caution": 0.41365461847389556,
+        "No-go": 0.04819277108433735,
         "Unknown terrain coverage": 0.0
       },
-      "red_fraction_of_known": 0.0035195776506819184,
+      "red_fraction_of_known": 0.04819277108433735,
       "red_reasons": {
-        "safety_buffer": 4,
-        "large_rock": 4
+        "slope_caution": 36,
+        "slope_nogo": 27,
+        "rough_caution": 15,
+        "safety_buffer": 9
       },
-      "max_slope_deg": 15.340572822391934,
+      "max_slope_deg": 35.28796243513024,
       "first_red_points_en": [
         [
-          173.5,
-          118.5
+          1407.0,
+          1715.7
         ],
         [
-          174.3,
-          118.7
+          1407.8,
+          1710.8
         ],
         [
-          175.2,
-          118.8
+          1408.6,
+          1705.9
         ],
         [
-          176.0,
-          119.0
+          1416.4,
+          1656.6
         ],
         [
-          176.8,
-          119.2
+          1417.2,
+          1651.7
         ],
         [
-          177.7,
-          119.3
+          1418.0,
+          1646.8
         ],
         [
-          178.5,
-          119.5
+          1418.8,
+          1641.9
         ],
         [
-          179.3,
-          119.8
+          1419.5,
+          1637.0
+        ],
+        [
+          1420.3,
+          1632.0
+        ],
+        [
+          1421.1,
+          1627.1
         ]
       ],
-      "passed": true
-    },
-    {
-      "name": "deliberately bad line (should FAIL)",
-      "length_m": 269.2582403567252,
-      "samples": 271,
-      "outside_grid": 0,
-      "fraction_by_class": {
-        "Go": 0.7933579335793358,
-        "Caution": 0.11070110701107011,
-        "No-go": 0.0959409594095941,
-        "Unknown terrain coverage": 0.0
-      },
-      "red_fraction_of_known": 0.0959409594095941,
-      "red_reasons": {
-        "safety_buffer": 16,
-        "rock_density_caution": 13,
-        "rough_caution": 10,
-        "rough_nogo": 8,
-        "slope_caution": 5,
-        "slope_nogo": 4,
-        "cliff_edge": 4,
-        "large_rock": 2
-      },
-      "max_slope_deg": 65.62888236082979,
-      "first_red_points_en": [
-        [
-          782.4,
-          333.0
-        ],
-        [
-          783.3,
-          333.3
-        ],
-        [
-          784.3,
-          333.7
-        ],
-        [
-          785.2,
-          334.1
-        ],
-        [
-          786.1,
-          334.4
-        ],
-        [
-          804.6,
-          341.9
-        ],
-        [
-          805.6,
-          342.2
-        ],
-        [
-          806.5,
-          342.6
-        ],
-        [
-          807.4,
-          343.0
-        ],
-        [
-          808.3,
-          343.3
-        ]
-      ],
-      "passed": false
+      "passed": false,
+      "status": "FAIL",
+      "kind": "route"
     }
   ],
   "passed": false
