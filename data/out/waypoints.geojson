@@ -8,7 +8,9 @@
         "name": "Rover",
         "kind": "rover",
         "why": "Start and safe haven.",
-        "photo": null
+        "photo": null,
+        "lat": 18.45831,
+        "lon_east": 77.4
       },
       "geometry": {
         "type": "Point",
@@ -22,19 +24,23 @@
       "type": "Feature",
       "properties": {
         "id": "stop1",
-        "name": "Clay-bearing outcrop",
+        "name": "Clay-rich delta top",
         "kind": "stop",
-        "why": "Clay minerals form in the presence of water and can preserve traces of it.",
+        "why": "Sample clay-bearing rock on top of the delta, where clay minerals point to rock that sat in water.",
         "photo": "stop1-clay-search-jigging-cove.jpg",
         "photo_caption": "Example from Jezero: rock slabs at \"Jigging Cove\", where Perseverance searched for clay-bearing rocks.",
         "photo_credit": "NASA/JPL-Caltech/ASU",
-        "photo_source": "https://science.nasa.gov/solar-system/continuing-the-quest-for-clays/"
+        "photo_source": "https://science.nasa.gov/solar-system/continuing-the-quest-for-clays/",
+        "geology": "Flat, firm ground on the delta top (slope 3\u00b0, thermal inertia 354, so consolidated rock rather than sand). CRISM D2300 (Fe/Mg clay) passes our threshold in 58% of cells within 50 m and in every cell within 25 m: the strongest clay patch in the square.",
+        "lat": 18.46519,
+        "lon_east": 77.41,
+        "position_source": "Chosen 14 Nov from our real layers: CRISM minerals.png, THEMIS thermal_inertia.tif and the HiRISE hazard map (green cell). Lat/lon planetocentric, from the site grid (data/grid.py)."
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          500,
-          1500
+          1562.5,
+          1307.5
         ]
       }
     },
@@ -42,19 +48,23 @@
       "type": "Feature",
       "properties": {
         "id": "stop2",
-        "name": "Delta front layers",
+        "name": "Delta front scarp",
         "kind": "stop",
-        "why": "Tilted layers of sand and mud laid down where a river entered the lake show where and how the water moved.",
+        "why": "Read and sample the layers exposed where the delta front drops toward the crater floor.",
         "photo": "stop2-kodiak-delta.jpg",
         "photo_caption": "Example from Jezero: Kodiak, a butte of layered rock left from the river delta.",
         "photo_credit": "NASA/JPL-Caltech/ASU/MSSS",
-        "photo_source": "https://photojournal.jpl.nasa.gov/catalog/PIA24802"
+        "photo_source": "https://photojournal.jpl.nasa.gov/catalog/PIA24802",
+        "geology": "Edge of the delta front: the ground falls about 30 m within 50 m, with slopes up to 25\u00b0 nearby (stay on the green ledge; red cells within 50 m). Thermal inertia 344, among the rockiest on the site, so bedrock is exposed here. CRISM shows no strong mineral signal at this spot.",
+        "lat": 18.45954,
+        "lon_east": 77.41543,
+        "position_source": "Chosen 14 Nov from our real layers: CRISM minerals.png, THEMIS thermal_inertia.tif and the HiRISE hazard map (green cell). Lat/lon planetocentric, from the site grid (data/grid.py)."
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          1400,
-          1760
+          1867.5,
+          972.5
         ]
       }
     },
@@ -62,19 +72,23 @@
       "type": "Feature",
       "properties": {
         "id": "stop3",
-        "name": "Carbonate margin",
+        "name": "Olivine-rich crater floor",
         "kind": "stop",
-        "why": "Carbonates form when carbon-dioxide-rich water reacts with rock and can trap evidence of past conditions.",
+        "why": "Sample olivine-rich rock on the crater floor, the rock that turns into carbonate when it reacts with carbon-dioxide-rich water.",
         "photo": "stop3-margin-core-turquoise-bay.jpg",
         "photo_caption": "Example from Jezero: a rock core drilled in the Margin Unit, which NASA says may contain carbonate minerals.",
         "photo_credit": "NASA/JPL-Caltech/ASU",
-        "photo_source": "https://science.nasa.gov/missions/mars-2020-perseverance/a-tale-of-turquoise-bay-sampling-unique-bedrock-at-the-margin-unit/"
+        "photo_source": "https://science.nasa.gov/missions/mars-2020-perseverance/a-tale-of-turquoise-bay-sampling-unique-bedrock-at-the-margin-unit/",
+        "geology": "Flat crater floor south of the delta (slope 4\u00b0, elevation range 4 m within 50 m). CRISM OLINDEX3 (olivine) passes in 18% of cells within 50 m, the strongest olivine patch away from the site edge. Carbonate (MIN2295_2480) passes in only 13 scattered cells in the whole square, so no carbonate stop is supported by our data.",
+        "lat": 18.44663,
+        "lon_east": 77.39987,
+        "position_source": "Chosen 14 Nov from our real layers: CRISM minerals.png, THEMIS thermal_inertia.tif and the HiRISE hazard map (green cell). Lat/lon planetocentric, from the site grid (data/grid.py)."
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          1600,
-          500
+          992.5,
+          207.5
         ]
       }
     }

@@ -18,7 +18,7 @@
       "id": "relief",
       "title": "Shaded relief",
       "file": "relief.png",
-      "source": "FAKE (real: HiRISE terrain model, MRO)",
+      "source": "Derived from HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif: hillshade, sun azimuth 315\u00b0, altitude 45\u00b0",
       "default": true,
       "opacity": 1.0
     },
@@ -35,7 +35,7 @@
       "id": "slope",
       "title": "Slope",
       "file": "slope.png",
-      "source": "FAKE (real: derived from HiRISE terrain model)",
+      "source": "Derived from HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif: slope in degrees (central differences on the 5 m grid)",
       "default": false,
       "opacity": 0.6
     },
@@ -82,7 +82,7 @@
       "id": "hazard",
       "title": "Hazards",
       "file": "hazard.png",
-      "source": "FAKE (real: slope, rocks and thermal inertia)",
+      "source": "Derived from HiRISE (MRO) slope and roughness and THEMIS (Mars Odyssey) thermal inertia, thresholds in terrain/thresholds.toml",
       "default": true,
       "opacity": 0.7
     },
@@ -90,7 +90,7 @@
       "id": "shelter_time",
       "title": "Minutes back to rover",
       "file": "shelter_time.png",
-      "source": "FAKE (real: routing model)",
+      "source": "Derived from the routing model (routing/plan_route.py) on the HiRISE (MRO) terrain model and the real hazard map",
       "default": false,
       "opacity": 0.7
     }
@@ -109,6 +109,14 @@
     "space_weather.csv": "NASA DONKI (CCMC space weather database), 2025-06-01 to 2025-12-31. mars_impact comes from DONKI's own model runs and instrument lists.",
     "radiation.csv": "ESTIMATE, not a measurement at this site: Curiosity RAD surface average at Gale, 0.64 mSv/day (Hassler et al. 2014, Science 343). Applied unchanged at Jezero, which sits about 2 km higher than Gale crater's floor under a thinner atmosphere, so the real dose is probably somewhat higher.",
     "dem.tif": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "weather.csv": "MEDA (Perseverance): 2 file(s), sols 420-420, hourly means of air temperature and pressure. dust_tau is an estimate (0.6), not a MEDA measurement.",
+    "relief.png": "Derived from HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif: hillshade, sun azimuth 315\u00b0, altitude 45\u00b0. Built 2026-11-14 by terrain/hazards.py. Confidence: high (direct from the DTM).",
+    "slope.png": "Derived from HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif: slope in degrees (central differences on the 5 m grid). Built 2026-11-14 by terrain/hazards.py. Confidence: high at 5 m scale; slopes shorter than one cell (5 m) are smoothed out.",
+    "hazard.tif": "Derived from HiRISE (MRO) slope and roughness and THEMIS (Mars Odyssey) thermal inertia, thresholds in terrain/thresholds.toml. Built 2026-11-14 by terrain/hazards.py. Careful over 10\u00b0, no-go over 20\u00b0 (cliffs included); roughness over 0.5 / 1.0 m RMS from a local plane (3 x 3 cells); thermal inertia under 250 / 150 SI (THEMIS 100 m pixels, coarse); cells without height data are no-go. Confidence: medium. The thresholds are starting values, and boulders smaller than the 5 m grid are not visible.",
+    "shelter_time.png": "Derived from the routing model (routing/plan_route.py) on the HiRISE (MRO) terrain model and the real hazard map. Built 2026-11-14. Minutes back to the rover from every cell, walking model and limits in routing/config.toml. Confidence: medium (walking speed and limits are scenario assumptions).",
+    "route.geojson": "Calculated 2026-11-14 by routing/plan_route.py (balanced profile) on the real hazard map and HiRISE terrain. Confidence: medium (same assumptions as plan.json).",
+    "plan.json": "Calculated 2026-11-14 by routing/plan_route.py. Times use the walking model in routing/config.toml (scenario values); dose uses the radiation.csv estimate.",
+    "waypoints.geojson": "Stop positions chosen 2026-11-14 from our real layers: CRISM (MRO) minerals, THEMIS (Mars Odyssey) thermal inertia and the HiRISE-derived hazard map. Confidence: medium (CRISM thresholds are relative, tuned by eye; minerals.png keeps only pass/fail, not strength).",
     "crater/dem.tif": "USGS Mars 2020 CTX DEM mosaic, 20 m: M20_JezeroCrater_CTXDEM_20m.tif, resampled to 40 m cells (average of the 20 m pixels). Built 2026-11-14. Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show.",
     "crater/hazard.tif": "Derived from USGS Mars 2020 CTX DEM mosaic, 20 m (M20_JezeroCrater_CTXDEM_20m.tif): slope only, rover-scale, 40 m from CTX DEM, misses boulders/small ledges. Built 2026-11-14. Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show."
   },
