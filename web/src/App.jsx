@@ -15,6 +15,7 @@ import { buildTimeline, doseTotal, parseTable, radiationModel } from './hud/sim.
 import { useTerrain, mineralAt } from './lib/useTerrain.js'
 import { PROFILES, timeField } from './lib/pathfind.js'
 import { planOuting, waypointsFor } from './lib/outing.js'
+import { hudPlan } from './lib/hudPlan.js'
 import { missionPoints, detourCosts, bestOrder, mineralTargets } from './lib/mission.js'
 import { recommendLanding, judgeSpot, LANDING_RULES } from './lib/landing.js'
 import { cellOf } from './lib/terrain.js'
@@ -233,6 +234,13 @@ export default function App() {
   // What the rest of the app reads: the active route when there is one, else the team's files.
   const activeWaypoints = useMemo(() => (points ? waypointsFor(points) : data?.waypoints), [points, data])
   const shown = ok ? { ...data, plan: active.plan, route: active.route, waypoints: activeWaypoints } : data
+  // The HUD walks the same route: the team outing or my mission, on the picked mode. Its slope,
+  // height, time back and storm return are worked out from the terrain for this route.
+  const hudData = useMemo(
+    () => (ok ? { ...data, plan: hudPlan(active.plan, active.track, back, cost, ingress), route: active.route, waypoints: activeWaypoints } : data),
+    [ok, data, active, back, cost, ingress, activeWaypoints],
+  )
+  const hudKey = ok ? `${mode}-${profile}-${active.route.features[0].geometry.coordinates.length}-${active.plan.totals.total_min}` : 'files'
   const arrivals = useMemo(() => {
     if (!ok) return {}
     const tl = buildTimeline(active.plan, activeWaypoints, active.route)
@@ -857,9 +865,9 @@ export default function App() {
             data={data}
             extraLayers={extraLayers}
             layerState={layerState}
-            route={view === 'hud' ? data.route : shown.route}
+            route={view === 'hud' ? hudData.route : shown.route}
             refRoute={view !== 'hud' && ok && mode === 'outing' ? data.route : null}
-            waypoints={view === 'hud' ? data.waypoints : mapWaypoints}
+            waypoints={view === 'hud' ? hudData.waypoints : mapWaypoints}
             arrivals={view === 'hud' || mode !== 'outing' ? null : arrivals}
             landing={view === 'hud' ? [] : landing.map((s) => ({ ...s, title: `${s.label}: recommended landing spot` }))}
             missionPins={view !== 'hud' ? missionPins : null}
@@ -1017,7 +1025,7 @@ export default function App() {
             )}
           </div>
         </div>
-        {view === 'hud' && <HudView data={data} onPosition={setAstronaut} large={large} onLarge={setLarge} visor={visor} onVisor={setVisor} />}
+        {view === 'hud' && <HudView key={hudKey} data={hudData} onPosition={setAstronaut} large={large} onLarge={setLarge} visor={visor} onVisor={setVisor} />}
       </main>
     </div>
   )
