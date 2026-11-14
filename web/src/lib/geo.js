@@ -1,8 +1,6 @@
 // Between the local site grid (metres east and north of the south-west corner) and Mars
-// latitude / longitude (degrees, longitude east 0-360). This is exactly the projection the data
-// build uses (data/grid.py site_proj4): equirectangular on a sphere of radius 3,396,190 m, with
-// lat_ts = lat_0 = the site centre in layers.json. On a sphere that projection is linear, so the
-// formulas below are exact, not an approximation (geo.test.js checks them against rasterio).
+// latitude / longitude (degrees, longitude east 0-360). A local flat approximation around the
+// site centre in layers.json, using the Mars radius from the project rules (3,396,190 m); good to metres over 2 km.
 export const MARS_RADIUS_M = 3396190
 const DEG = Math.PI / 180
 

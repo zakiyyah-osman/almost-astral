@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/hud/sim.test.js src/lib/routeCheck.test.js src/lib/profile.test.js src/lib/pathfind.test.js src/lib/geo.test.js"
+    "test": "node --test src/hud/sim.test.js src/lib/routeCheck.test.js src/lib/profile.test.js src/lib/pathfind.test.js src/lib/mission.test.js src/lib/geo.test.js src/lib/photos.test.js"
   },
   "dependencies": {
     "leaflet": "1.9.4",
