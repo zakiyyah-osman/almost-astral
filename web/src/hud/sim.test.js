@@ -320,3 +320,31 @@ test('a planned storm path that starts far from the crew is not used', () => {
   const far = { ...p, storm_replan: { points: p.storm_replan.points.map((q) => ({ ...q, path: q.path.map(([x, y]) => [x + 900, y]) })) } }
   assert.equal(startStorm(buildTimeline(far, waypoints, route), 30, here.d).ret, undefined)
 })
+
+// ---- walking-only plans (routing/plan_route.py since the landing rework) and one-way missions ----
+
+const swapId = (legs, from, to) => legs.map((l) => ({ ...l, from: l.from === from ? to : l.from, to: l.to === from ? to : l.to }))
+
+test('a plan that starts and ends at "start" has 3 stops, not a 4th called start', () => {
+  const p = { ...plan, legs: swapId(plan.legs, 'rover', 'start'), start: { id: 'start', name: 'Demo start' } }
+  const tl = buildTimeline(p, waypoints, route)
+  assert.deepEqual(stopList(tl).map((s) => s.to), ['stop1', 'stop2', 'stop3'])
+  assert.equal(tl.totalMin, plan.totals.total_min)
+  assert.equal(stateAt(tl, tl.totalMin, null).phase, 'done')
+})
+
+test('without a rover waypoint, home is the plan start and keeps its name', () => {
+  const p = { ...plan, legs: swapId(plan.legs, 'rover', 'start'), start: { id: 'start', name: 'Demo start' } }
+  const noRover = { ...waypoints, features: waypoints.features.filter((f) => f.properties.kind !== 'rover') }
+  const tl = buildTimeline(p, noRover, route)
+  assert.equal(tl.roverId, 'start')
+  assert.equal(tl.roverName, 'Demo start')
+  assert.equal(stopList(tl).length, 3)
+})
+
+test('a one-way outing ends at its destination without a sampling stop there', () => {
+  const p = { ...plan, legs: plan.legs.slice(0, -1) } // rover -> stop1 -> stop2 -> stop3, no way back
+  const tl = buildTimeline(p, waypoints, route)
+  assert.deepEqual(stopList(tl).map((s) => s.to), ['stop1', 'stop2'])
+  assert.equal(stateAt(tl, tl.totalMin, null).phase, 'done')
+})
