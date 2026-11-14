@@ -5,8 +5,9 @@
 - Never edit CONTRACT.md, requirements.txt, or other people's folders/outputs. If a change is needed there, stop and tell me.
 - Write to data/out/ only: route.geojson, shelter_time.png, plan.json (exactly per CONTRACT.md),
   plus new files route_fastest.geojson and route_safest.geojson, and the folder data/out/landing/
-  (export_landing.py: manifest.json, golden_cases.json and tiles/<ti>_<tj>/ binary grids: landing safety,
-  warnings, nearest safe cell and the cost surface; Tushaar commits it, not the scripts).
+  (export_landing.py: manifest.json, golden_cases.json, landing_zones.png and tiles/<ti>_<tj>/ binary grids:
+  landing safety, warnings, nearest safe cell, the measured pad values and the cost surface; Tushaar commits
+  it, not the scripts).
   data/out/reach/ is gone (the old per-start export); do not recreate it.
 - plan.json: add fields freely, never rename or remove contract fields.
 

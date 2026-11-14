@@ -27,7 +27,7 @@ Writes to `data/out/`:
 | `shelter_time.png` | contract file |
 | `plan.json` | contract file, with added fields (section 9) |
 | `route_fastest.geojson`, `route_safest.geojson` | new files, same format as `route.geojson` |
-| `landing/` (`manifest.json`, `golden_cases.json`, `tiles/<ti>_<tj>/` grids) | new folder, written by `export_landing.py` (sections 14 to 16) |
+| `landing/` (`manifest.json`, `golden_cases.json`, `landing_zones.png`, `tiles/<ti>_<tj>/` grids) | new folder, written by `export_landing.py` (sections 14 to 16) |
 
 Writes inside `routing/` only: `reports/sweep.csv`, `reports/sensitivity.csv`, `reports/validation.csv`. These come from `analysis.py`, which never writes to `data/out/`.
 
@@ -690,6 +690,19 @@ value = 5120
 unit = "m (square tiles; whole cells; edge tiles are smaller)"
 type = "scenario"
 source = "Team choice: 1024 cells at 5 m, so the current 2 km site is one tile and a 9,000 x 9,000 cell grid would be 9 x 9 tiles"
+
+# Display: the colours of landing_zones.png (export_landing.py). Every other cell is fully transparent.
+[landing.display_safe_rgba]
+value = [46, 160, 67, 140]
+unit = "[red, green, blue, alpha], each 0 to 255"
+type = "scenario"
+source = "Team display choice (Tushaar): semi-transparent green for safe landing cells (code 0) in landing_zones.png"
+
+[landing.display_marginal_rgba]
+value = [240, 170, 30, 140]
+unit = "[red, green, blue, alpha], each 0 to 255"
+type = "scenario"
+source = "Team display choice (Tushaar): semi-transparent amber for marginal landing cells (code 1) in landing_zones.png"
 ```
 
 Not in the config, because `CONTRACT.md` fixes them: file names, hazard codes (0, 1, 2), and the grid (always read from `layers.json`).
@@ -862,6 +875,39 @@ All seven are team assumptions pending Nahla (type `assumption` in `config.toml`
 - any other cell: `status` "moved", `chosen_xy_m` = the centre of the nearest safe cell, `moved_m` = the straight-line distance from the click to it (a lander comes down from above, so no walking path is needed). The move target is the nearest safe cell to the clicked cell's centre, so it can be up to half a cell diagonal from the true nearest to the click.
 - outside the grid: `status` "outside", nothing chosen.
 
+### 14.5 Measured values, the zones image and the messages
+
+**Measured grids** (per tile, float32, the values `landing.measure` computes and `failures` compares with the limits; nothing is recomputed for the export):
+
+| File | Value (14.1) | Unit | Limit (`[landing]`) | Fails when |
+| --- | --- | --- | --- | --- |
+| `pad_slope_deg.f32` | tilt of the best-fit plane | deg | `max_pad_slope_deg` | value > limit |
+| `pad_roughness_m.f32` | roughness | m | `max_roughness_m` | value > limit |
+| `pad_height_range_m.f32` | height range about the plane | m | `max_height_range_m` | value > limit |
+| `hazard_dist_m.f32` | clearance: cell centre to the nearest red, over-limit-slope or cliff-buffer cell | m | `hazard_clearance_m` | value < limit |
+
+- **NaN** in the first three means not computed: the pad or its clearance circle does not fit inside the site grid (code 2) or a pad cell has no DEM or slope value (code 3).
+- `hazard_dist_m` is computed for every cell and is **never NaN**. It is **+Infinity** when the site grid has no red, over-limit-slope or cliff-buffer cell at all; a `Float32Array` reads it as `Infinity`, and no message shows a distance then. NaN is kept for "no data" only.
+- The codes are decided on the float64 values, so a stored float32 value can sit exactly on a limit that its code says it crossed.
+- The manifest's `grids` entry of each carries `unit`, `limit_key`, `limit`, `fails_when` and `decimals`; `measured_note` repeats the NaN and Infinity rules.
+
+**`landing_zones.png`**: one RGBA image for the whole window (not per tile), one pixel per cell, row 0 = north. It covers `origin_m` to `origin_m + extent_m`, so with the default window it has the size and placement of `hazard.png`. Safe cells (code 0) are `landing.display_safe_rgba`, marginal cells (code 1) `landing.display_marginal_rgba` (semi-transparent green and amber, team display choices in `config.toml`); every other cell is `[0, 0, 0, 0]`. The manifest's `zones_png` holds the file, size, placement and the legend (code, name, rgba, label).
+
+**`landing_check` additions.** The result also has:
+
+- `measured`: the four values at the clicked cell, `chosen_measured`: at the chosen cell. Keys are the grid names; a NaN is `None`, the float32 value otherwise (so `math.inf` is possible for `hazard_dist_m`). Both are `None` for a click outside the grid, or on a folder written before these grids.
+- `messages`: one `{reason, code, title, detail, moved_m}` per entry of `reasons`, in that order. A safe point gets the one `safe` message, a marginal point with no `near_*` reason the one `marginal` message, a click outside the data the one `outside` message.
+- `moved_text`: "Landing spot moved 113.9 m to the nearest safe spot." when the click was moved, else `None`.
+- `reasons` for a failing cell now always includes the stored code's own name.
+
+**Templates.** The text lives once, in `landing.MESSAGE_TEMPLATES`, and is copied to the manifest as `message_templates`: `templates` (per reason: `code`, `measure`, `title`, `detail`, sometimes `detail_no_value`, and for a measured reason `limit_key`, `limit`, `decimals`), `moved`, `moved_decimals`, `fields` (`pad_radius_m`, `marginal_pct`, `reach_m`), `rules` and `reasons`. There is a template for every code 0 to 7, for the four `near_*` reasons and for `outside`. To fill one:
+
+- `{value}` is the template's `measure` grid at the **clicked** cell, with `decimals` fixed decimals, halves rounded up (JavaScript `toFixed`; `landing.fixed` does the same). `{moved_m}` has 1 decimal the same way.
+- `{limit}`, `{pad_radius_m}`, `{marginal_pct}`, `{reach_m}` are written in their shortest form (`String(number)`).
+- Use `detail_no_value` instead of `detail` when the template has one and the value is missing, NaN or Infinity, or, for `hazard_or_clearance` only, when the value is not below the limit: the pad then fails on one of its own cells, not on the distance, so no distance is shown.
+
+**Reasons from the files.** The browser has the code and the four values: a failing cell's reasons are its stored code, plus `too_steep` / `height_range` / `too_rough` where the value is above its limit and `hazard_or_clearance` where `hazard_dist_m` is below its limit, lowest code first; a marginal cell's are the `near_*` tests of 14.2. This is what `Landing.load(...).landing_check` does, and it equals the computed map except under codes 2 and 3, where a pad-cell hazard is not in the files (`test_messages_from_the_manifest_match_landing_check_everywhere`).
+
 ## 15. The cost surface and the browser's search (`export_landing.py`)
 
 The browser runs the search from any landing spot, so it gets exactly what the Python search uses, and the exact rule.
@@ -918,8 +964,10 @@ One way only: no return walk is counted. A destination is over budget when `need
 data/out/landing/
   manifest.json
   golden_cases.json
+  landing_zones.png
   tiles/<ti>_<tj>/landing_safety.u8  landing_warn.u8  nearest_safe.u16  nearest_safe_dist.f32
                   time_rate.f64  risk_rate.f64  mask.u8
+                  pad_slope_deg.f32  pad_roughness_m.f32  pad_height_range_m.f32  hazard_dist_m.f32
 ```
 
 | File | Type | Values per cell |
@@ -930,6 +978,9 @@ data/out/landing/
 | `nearest_safe_dist.f32` | float32 | metres, cell centre to cell centre |
 | `time_rate.f64`, `risk_rate.f64` | float64 | 15.1 |
 | `mask.u8` | uint8 | 15.1 |
+| `pad_slope_deg.f32`, `pad_roughness_m.f32`, `pad_height_range_m.f32` | float32 | the measured pad values of 14.5; NaN where not computed |
+| `hazard_dist_m.f32` | float32 | metres to the nearest hazard cell (14.5); never NaN, +Infinity when there is none |
+| `landing_zones.png` (one for the window) | RGBA PNG | safe and marginal cells in colour, the rest transparent (14.5) |
 
 Raw values, no header, little-endian, row-major inside each tile, row 0 = the tile's north edge. The u16 limits a window to 65,536 cells a side, enough for a 9,000 x 9,000 cell crater grid.
 
@@ -937,6 +988,6 @@ Raw values, no header, little-endian, row-major inside each tile, row 0 = the ti
 
 **Tiles.** `landing.tile_size_m` (5120 m) must be a whole number of cells (1024 at 5 m); the window is cut into square tiles from its north-west corner, and the tiles on the south and east edges are smaller. With the defaults the current 400 x 400 site is one tile; a 9,000 x 9,000 grid at 5 m would be 9 x 9 tiles. Crater-scale processing is not built: the whole site grid is still loaded in memory. Only the formats and the functions are ready for it.
 
-**Manifest** (`manifest.json`): `format_version` (1), `site`, `fake` (same rule as `plan.json` `inputs_fake`); `grid` (`width`, `height`, `cell_m`, `origin_m` = the south-west corner of the window in site metres, `extent_m`, `row0` "north edge", `window` and `site_grid`); `layout` (cell formulas, tile lookup, the `nearest_safe` layout, the search bound); `byte_order` "little"; `grids` (file, dtype, values per cell, meaning); `tile_size_m`, `tile_cells`; `tiles` (per tile: `index` [ti, tj], `row0`, `col0`, `shape` [rows, cols], `origin_m`, `files`); `safety_codes`, `safety_order`, `safety_counts`, `warning_bits`, `landing_rule`; `thresholds` (the `[landing]` entries of the config with value, unit, type and source); `roughness_source`, `roughness_note` (the scale caveat), `height_range_note` (a team assumption); `thermal_inertia` (checked or not, and why); `mask_codes`; `profiles` (w); `search` (connectivity and the edge rule of 15.2–15.3); `budget` (15.5); `golden_cases`; `config_sha256`; `inputs_sha256` (`dem.tif`, `hazard.tif`, and `thermal_inertia.tif` when used); `files` (bytes and SHA-256 of every file); `warnings`. There is no timestamp: the same inputs give the same bytes.
+**Manifest** (`manifest.json`): `format_version` (1), `site`, `fake` (same rule as `plan.json` `inputs_fake`); `grid` (`width`, `height`, `cell_m`, `origin_m` = the south-west corner of the window in site metres, `extent_m`, `row0` "north edge", `window` and `site_grid`); `layout` (cell formulas, tile lookup, the `nearest_safe` layout, the search bound); `byte_order` "little"; `grids` (file, dtype, values per cell, meaning, and for the measured grids unit, limit and `fails_when`); `measured_note`; `zones_png` (file, size, placement, legend); `message_templates` (14.5); `tile_size_m`, `tile_cells`; `tiles` (per tile: `index` [ti, tj], `row0`, `col0`, `shape` [rows, cols], `origin_m`, `files`); `safety_codes`, `safety_order`, `safety_counts`, `warning_bits`, `landing_rule`; `thresholds` (the `[landing]` entries of the config with value, unit, type and source); `roughness_source`, `roughness_note` (the scale caveat), `height_range_note` (a team assumption); `thermal_inertia` (checked or not, and why); `mask_codes`; `profiles` (w); `search` (connectivity and the edge rule of 15.2–15.3); `budget` (15.5); `golden_cases`; `config_sha256`; `inputs_sha256` (`dem.tif`, `hazard.tif`, and `thermal_inertia.tif` when used); `files` (bytes and SHA-256 of every file); `warnings`. There is no timestamp: the same inputs give the same bytes.
 
-**Size on the current site:** 160,000 bytes for each u8 grid, 640,000 for `nearest_safe.u16` and `nearest_safe_dist.f32`, 1,280,000 for each f64 grid, plus 174,508 bytes of golden cases and 11,974 of manifest: **4,506,482 bytes (4.51 MB) in 9 files**, against 19.2 MB for the old reach export. The grids scale with the number of cells: 25 bytes per cell.
+**Size on the current site:** 160,000 bytes for each u8 grid, 640,000 for `nearest_safe.u16` and `nearest_safe_dist.f32`, 1,280,000 for each f64 grid, plus 174,508 bytes of golden cases and 11,974 of manifest: 4,506,482 bytes in 9 files before the measured grids. The four measured f32 grids add 640,000 bytes each and `landing_zones.png` 18,577; the manifest is now 21,943 bytes: **7,095,045 bytes (7.10 MB) in 14 files**, against 19.2 MB for the old reach export. The grids scale with the number of cells: 41 bytes per cell. `format_version` stays 1: the change only adds files and fields.

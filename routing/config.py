@@ -41,12 +41,16 @@ EXPECTED_PARAMS = (
     "landing.pad_radius_m", "landing.max_pad_slope_deg", "landing.max_roughness_m",
     "landing.max_height_range_m", "landing.hazard_clearance_m", "landing.marginal_pct",
     "landing.ti_warn_below", "landing.window_centre_m", "landing.window_size_m", "landing.tile_size_m",
+    "landing.display_safe_rgba", "landing.display_marginal_rgba",
 )
 
 # Parameters whose value is not a single number.
 LIST_PARAMS = {
     "profiles.sweep_w", "sensitivity.v_flat_kmh", "sensitivity.slope_max_deg", "sensitivity.w",
 }
+# Display colours: [red, green, blue, alpha], four whole numbers from 0 to 255.
+ZONE_COLOURS = {"safe": "landing.display_safe_rgba", "marginal": "landing.display_marginal_rgba"}
+RGBA_PARAMS = tuple(ZONE_COLOURS.values())
 STRING_PARAMS = {"timeline.stop_order": ("as_listed", "optimise")}
 BOOL_PARAMS = {"budget.destination_stop"}
 WINDOW_CENTRE = "landing.window_centre_m"   # "site", or [x, y] in metres
@@ -54,7 +58,7 @@ WINDOW_SIZE = "landing.window_size_m"       # "full", or [width, height] in metr
 SITE_CENTRE = "site"
 FULL_WINDOW = "full"
 # Parameters whose value is not a number or a list of numbers.
-NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, WINDOW_CENTRE, WINDOW_SIZE)
+NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, WINDOW_CENTRE, WINDOW_SIZE, *RGBA_PARAMS)
 INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity"}
 ALLOWED_VALUES = {"search.connectivity": (4, 8)}
 
@@ -238,6 +242,11 @@ class Config:
             cls._check_pair(label, value, SITE_CENTRE, positive=False)
         elif label == WINDOW_SIZE:
             cls._check_pair(label, value, FULL_WINDOW, positive=True)
+        elif label in RGBA_PARAMS:
+            ok = isinstance(value, list) and len(value) == 4 and all(
+                isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 255 for v in value)
+            if not ok:
+                raise ConfigError(f"{label}: must be four whole numbers from 0 to 255 [r, g, b, a], got {value!r}")
         elif label in STRING_PARAMS:
             allowed = STRING_PARAMS[label]
             if value not in allowed:

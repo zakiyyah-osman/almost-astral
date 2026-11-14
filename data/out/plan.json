@@ -2989,6 +2989,18 @@
       "unit": "m (square tiles; whole cells; edge tiles are smaller)",
       "type": "scenario",
       "source": "Team choice: 1024 cells at 5 m, so the current 2 km site is one tile and a 9,000 x 9,000 cell grid would be 9 x 9 tiles"
+    },
+    "landing.display_safe_rgba": {
+      "value": [46, 160, 67, 140],
+      "unit": "[red, green, blue, alpha], each 0 to 255",
+      "type": "scenario",
+      "source": "Team display choice (Tushaar): semi-transparent green for safe landing cells (code 0) in landing_zones.png"
+    },
+    "landing.display_marginal_rgba": {
+      "value": [240, 170, 30, 140],
+      "unit": "[red, green, blue, alpha], each 0 to 255",
+      "type": "scenario",
+      "source": "Team display choice (Tushaar): semi-transparent amber for marginal landing cells (code 1) in landing_zones.png"
     }
   },
   "start": {

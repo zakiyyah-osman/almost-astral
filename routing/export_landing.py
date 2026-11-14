@@ -18,6 +18,11 @@ surface for three profiles (fastest, balanced, safest). Exported, for one window
     tiles/<ti>_<tj>/time_rate.f64          physical minutes per metre, -1 where blocked (cost.build)
     tiles/<ti>_<tj>/risk_rate.f64          risk-minutes per minute walked, 0 where blocked (cost.build)
     tiles/<ti>_<tj>/mask.u8                0 passable, else the blocked reason 1-5 (start.py)
+    tiles/<ti>_<tj>/pad_slope_deg.f32      measured pad values, exactly what landing.py checks:
+    tiles/<ti>_<tj>/pad_roughness_m.f32      tilt of the best-fit plane, roughness, height range
+    tiles/<ti>_<tj>/pad_height_range_m.f32   about that plane (NaN where not computed) and the
+    tiles/<ti>_<tj>/hazard_dist_m.f32        distance to the nearest hazard cell (+inf when none)
+    landing_zones.png                      safe / marginal cells of the whole window, RGBA
     golden_cases.json                      reference paths and totals for the browser's tests
     manifest.json                          the grid, tiles, encodings, rules, budget and hashes
 
@@ -30,6 +35,7 @@ nothing. There is no timestamp: the same inputs give the same bytes.
 """
 import argparse
 import hashlib
+import io
 import json
 import math
 import sys
@@ -37,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 from skimage.graph import MCP_Geometric
 
 import config as config_mod
@@ -54,6 +61,7 @@ LANDING_DIR = "landing"
 FORMAT_VERSION = 1
 MANIFEST_FILE = "manifest.json"
 GOLDEN_FILE = "golden_cases.json"
+ZONES_FILE = "landing_zones.png"
 TILES_DIR = "tiles"
 BYTE_ORDER = "little"
 OUTSIDE = "outside"
@@ -68,7 +76,24 @@ GRIDS = {
     "time_rate": ("time_rate.f64", np.dtype("<f8"), 1, "min/m, -1 where blocked"),
     "risk_rate": ("risk_rate.f64", np.dtype("<f8"), 1, "risk-min per min walked, 0 where blocked"),
     "mask": ("mask.u8", np.dtype("u1"), 1, "0 passable, else the blocked reason (mask_codes)"),
+    "pad_slope_deg": ("pad_slope_deg.f32", np.dtype("<f4"), 1,
+                      "deg, tilt of the least-squares plane through the pad's DEM cells; NaN where not computed"),
+    "pad_roughness_m": ("pad_roughness_m.f32", np.dtype("<f4"), 1,
+                        "m, pad roughness (roughness_source); NaN where not computed"),
+    "pad_height_range_m": ("pad_height_range_m.f32", np.dtype("<f4"), 1,
+                           "m, highest minus lowest pad cell after removing the plane; NaN where not computed"),
+    "hazard_dist_m": ("hazard_dist_m.f32", np.dtype("<f4"), 1,
+                      "m, from the cell centre to the centre of the nearest red, over-limit-slope or "
+                      "cliff-buffer cell; never NaN, +Infinity when there is none"),
 }
+MEASURED_NOTE = (
+    "The four measured grids are the values landing.py compares with the limits, stored as float32. NaN means "
+    "not computed: the pad or its clearance circle does not fit inside the site grid (code 2), or a pad cell "
+    "has no DEM or slope value (code 3). hazard_dist_m is computed for every cell and is never NaN; "
+    "+Infinity (IEEE 754, read by a Float32Array as Infinity) means there is no red, over-limit-slope or "
+    "cliff-buffer cell anywhere on the site grid, so there is no distance to show. The codes were decided "
+    "on the float64 values, so a float32 value can sit exactly on a limit that the code says it crossed."
+)
 U16_MAX = np.iinfo(np.uint16).max
 
 EDGE_RULE = {
@@ -154,6 +179,66 @@ def crop_cost(model: cost_mod.Cost, box):
         risk_parts={k: v[sl] for k, v in model.risk_parts.items()},
         risk_rate=model.risk_rate[sl],
     )
+
+
+# ---- measured values, the zones image and the messages ------------------------
+def measured_grids(cfg):
+    """The manifest entry of each measured grid: unit, the [landing] limit and how it fails."""
+    out = {}
+    for key, (_, unit, limit_name, fails_when, decimals) in landing_mod.MEASURES.items():
+        limit_key = landing_mod.Rules.KEYS[limit_name]
+        out[key] = {"unit": unit, "limit_key": limit_key, "limit": cfg.value(limit_key),
+                    "fails_when": f"value {fails_when} limit", "decimals": decimals}
+    return out
+
+
+def zone_colours(cfg):
+    """{safety code: [r, g, b, a]} for the cells drawn in landing_zones.png."""
+    return {landing_mod.SAFE: list(cfg.value(config_mod.ZONE_COLOURS["safe"])),
+            landing_mod.MARGINAL: list(cfg.value(config_mod.ZONE_COLOURS["marginal"]))}
+
+
+def zones_rgba(codes, colours):
+    """The window as an RGBA image (row 0 = north): each listed code in its colour, the rest transparent."""
+    rgba = np.zeros((*codes.shape, 4), dtype=np.uint8)
+    for code, colour in colours.items():
+        rgba[codes == code] = colour
+    return rgba
+
+
+def zones_png(codes, colours):
+    buf = io.BytesIO()
+    Image.fromarray(zones_rgba(codes, colours), mode="RGBA").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def message_templates(cfg, rules: landing_mod.Rules):
+    """landing.py's message templates with their limits, for the manifest: the front end fills the
+    same text that landing_check returns."""
+    grids = measured_grids(cfg)
+    templates = {}
+    for key, t in landing_mod.MESSAGE_TEMPLATES.items():
+        entry = dict(t)
+        if t["measure"] is not None:
+            entry.update({k: grids[t["measure"]][k] for k in ("limit_key", "limit", "decimals")})
+        templates[key] = entry
+    return {
+        "templates": templates,
+        "moved": landing_mod.MOVED_TEMPLATE,
+        "moved_decimals": landing_mod.MOVED_DECIMALS,
+        "fields": {"pad_radius_m": rules.pad_radius_m, "marginal_pct": rules.marginal_pct,
+                   "reach_m": max(rules.pad_radius_m, rules.hazard_clearance_m)},
+        "rules": landing_mod.MESSAGE_RULES,
+        "reasons": {
+            "failing codes 2-7": "every failure that holds at the clicked cell, lowest code first, by its code name; "
+                                 "the stored code is always one of them",
+            "marginal (1)": "near_too_steep, near_height_range, near_too_rough (value > (1 - marginal_pct/100) * limit) "
+                            "and near_hazard_or_clearance (value < (1 + marginal_pct/100) * limit), in that order",
+            "from_files": "from the files a failure is: the stored code, plus too_steep / height_range / too_rough "
+                          "where the measured value is above its limit and hazard_or_clearance where hazard_dist_m is "
+                          "below its limit. A pad-cell hazard under code 2 or 3 is not in the files.",
+        },
+    }
 
 
 # ---- budget ------------------------------------------------------------------
@@ -394,6 +479,7 @@ def run(in_dir, config_path=None):
         "risk_rate": surface.risk_rate,
         "mask": surface.mask,
     }
+    arrays.update({key: getattr(lm.measures, attr) for key, (attr, *_) in landing_mod.MEASURES.items()})
     n = tile_cells(cfg, win.cell_m)
     files, tiles = {}, []
     for ti, tj, r0, r1, c0, c1 in tile_layout(win.height, win.width, n):
@@ -408,6 +494,8 @@ def run(in_dir, config_path=None):
             "origin_m": [origin[0] + c0 * win.cell_m, origin[1] + (win.height - r1) * win.cell_m],
             "files": paths,
         })
+    colours = zone_colours(cfg)
+    files[ZONES_FILE] = zones_png(lm.codes, colours)
     cases, skipped = golden_cases(surface, lm, cfg)
     files[GOLDEN_FILE] = outputs.dumps({
         "format_version": FORMAT_VERSION,
@@ -425,7 +513,7 @@ def run(in_dir, config_path=None):
     if not notes["ti_checked"]:
         warnings.append(f"thermal inertia {notes['thermal_inertia']}; landing_warn.u8 is all zero")
     manifest = build_manifest(cfg, site, win, box, origin, n, tiles, lm, notes, weights, surface.budget,
-                              in_dir, files, warnings)
+                              in_dir, files, warnings, colours)
     files[MANIFEST_FILE] = outputs.dumps(manifest).encode("utf-8")
     return ExportResult(files, manifest, tuple(warnings))
 
@@ -443,8 +531,9 @@ HEIGHT_RANGE_NOTE = (
 )
 
 
-def build_manifest(cfg, site, win, box, origin, n, tiles, lm, notes, weights, budget_, in_dir, files, warnings):
+def build_manifest(cfg, site, win, box, origin, n, tiles, lm, notes, weights, budget_, in_dir, files, warnings, colours):
     rules = lm.rules
+    measured = measured_grids(cfg)
     inputs = {name: file_sha256(Path(in_dir) / name) for name in (grid_mod.DEM_FILE, grid_mod.HAZARD_FILE)}
     if notes["ti_checked"]:
         inputs[landing_mod.THERMAL_FILE] = file_sha256(Path(in_dir) / landing_mod.THERMAL_FILE)
@@ -476,8 +565,23 @@ def build_manifest(cfg, site, win, box, origin, n, tiles, lm, notes, weights, bu
             "search_bound": "paths never leave the window: the browser only searches inside it",
         },
         "byte_order": BYTE_ORDER,
-        "grids": {k: {"file": f, "dtype": str(d.name), "values_per_cell": v, "meaning": m}
+        "grids": {k: {"file": f, "dtype": str(d.name), "values_per_cell": v, "meaning": m, **measured.get(k, {})}
                   for k, (f, d, v, m) in GRIDS.items()},
+        "measured_note": MEASURED_NOTE,
+        "zones_png": {
+            "file": ZONES_FILE, "mode": "RGBA", "width": win.width, "height": win.height,
+            "cell_m": win.cell_m, "origin_m": [origin[0], origin[1]],
+            "extent_m": [win.width * win.cell_m, win.height * win.cell_m],
+            "placement": ("one pixel per cell of the window, row 0 = north edge; it covers origin_m to "
+                          "origin_m + extent_m in site metres, the same grid as hazard.png when the window is "
+                          "the whole site"),
+            "legend": [{"code": c, "name": landing_mod.CODE_NAMES[c], "rgba": rgba,
+                        "label": landing_mod.MESSAGE_TEMPLATES[landing_mod.CODE_NAMES[c]]["title"]}
+                       for c, rgba in colours.items()],
+            "other_codes": "fully transparent [0, 0, 0, 0]",
+            "colours_from": list(config_mod.ZONE_COLOURS.values()),
+        },
+        "message_templates": message_templates(cfg, rules),
         "tile_size_m": cfg.value("landing.tile_size_m"),
         "tile_cells": n,
         "tiles": tiles,
@@ -549,13 +653,19 @@ class Landing:
                     raise LandingFolderError(f"{path} has {arr.size} values, the manifest says {h} x {w} x {per}")
                 arr = arr.reshape((h, w, per) if per > 1 else (h, w))
                 full[key][t["row0"]:t["row0"] + h, t["col0"]:t["col0"] + w] = arr
+        zones = m.get("zones_png")
+        if zones is not None and not (folder / zones["file"]).exists():
+            raise LandingFolderError(f"{zones['file']} not found in {folder}")
         th = {k: v["value"] for k, v in m["thresholds"].items()}
         rules = landing_mod.Rules(**{k: float(v) for k, v in th.items()})
         grid = grid_mod.Grid(W, H, g["cell_m"])
+        measures = None                                     # a folder written before the measured grids
+        if all(k in m["grids"] for k in landing_mod.MEASURES):
+            measures = landing_mod.Measures.from_exported(full["landing_safety"], full)
         lmap = landing_mod.LandingMap(
             grid, tuple(g["origin_m"]), rules, full["landing_safety"], full["landing_warn"],
             full["nearest_safe"][..., 0].astype(int), full["nearest_safe"][..., 1].astype(int),
-            full["nearest_safe_dist"].astype(np.float64),
+            full["nearest_safe_dist"].astype(np.float64), measures,
         )
         MASK_TEXT.update({c["code"]: c["text"] for c in m["mask_codes"]})
         weights = {k: v["w"] for k, v in m["profiles"].items()}
