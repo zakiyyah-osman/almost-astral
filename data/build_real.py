@@ -3,6 +3,8 @@
     python data/build_real.py                 # every source set in data/site.json
     python data/build_real.py themis rems     # only these sources
     python data/build_real.py --list          # show what is set and what is still fake
+    python data/build_real.py terrain         # rebuild relief, slope and hazards from data/out/dem.tif
+    python data/build_real.py crater          # whole-crater terrain (40 m) from the CTX DEM into data/out/crater/
 
 Sources left unset (null) in site.json are skipped, so their fake files stay
 and nobody is blocked. Run `python data/make_fake.py` first if data/out/ is
@@ -11,12 +13,17 @@ empty, and `python data/validate.py` after.
 import json
 import sys
 import traceback
+from pathlib import Path
 
 import grid
-from adapters import crism, donki, hirise, meda, rad, rems, themis
+from adapters import crater, crism, donki, hirise, meda, rad, rems, themis
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "terrain"))
+import hazards as terrain  # noqa: E402  terrain/hazards.py (Person 2): needs only data/out/, no raw files
+
+# "terrain" runs last: it reads dem.tif and thermal_inertia.tif written by hirise and themis.
 SOURCES = {"hirise": hirise, "themis": themis, "crism": crism, "meda": meda, "rems": rems, "rad": rad,
-           "donki": donki}
+           "donki": donki, "terrain": terrain, "crater": crater}
 
 
 def is_set(site, name):
@@ -29,6 +36,8 @@ def is_set(site, name):
         "rems": bool(cfg.get("file")),
         "rad": bool(cfg.get("file") or cfg.get("estimate")),
         "donki": bool(cfg.get("start")),
+        "terrain": (grid.OUT / "dem.tif").is_file(),
+        "crater": bool(cfg.get("dem")),
     }[name]
 
 
@@ -76,8 +85,10 @@ def main():
                 traceback.print_exc()
 
     print("\nNext: python data/validate.py")
-    if "hirise" in chosen and is_set(site, "hirise"):
-        print("dem.tif changed: tell Nahla to rerun terrain/hazards.py (relief, slope, hazards).")
+    if "hirise" in chosen and is_set(site, "hirise") and "terrain" not in chosen:
+        print("dem.tif changed: run python data/build_real.py terrain (relief, slope, hazards).")
+    if "terrain" in chosen:
+        print("hazard.tif changed: run python routing/plan_route.py (routes, shelter map, plan).")
     return 1 if failed else 0
 
 

@@ -299,6 +299,16 @@ button, select, input { font: inherit; }
 .leaflet-bar a { background: var(--panel) !important; color: var(--text) !important; border-bottom-color: var(--border) !important; }
 .leaflet-bar a:hover { background: var(--panel-2) !important; }
 .leaflet-control-scale-line { background: rgba(19, 14, 12, 0.75) !important; color: var(--text) !important; border-color: var(--muted) !important; }
+
+/* Crater map (Mars Trek base): buttons, pointer coordinates, the site box and the credit line */
+.leaflet-container { background: var(--bg); }
+.map-btn { display: block; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(19, 14, 12, 0.88); color: var(--text); font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+.map-btn:hover { background: var(--panel-2); border-color: var(--accent); }
+.map-coords { padding: 3px 8px; border-radius: 6px; background: rgba(19, 14, 12, 0.8); color: var(--text); font-size: 0.75rem; font-variant-numeric: tabular-nums; pointer-events: none; }
+.leaflet-tooltip.site-box-label { padding: 2px 8px; background: rgba(19, 14, 12, 0.9); border-color: #ffd166; color: #ffd166; font-size: 0.78rem; }
+.leaflet-tooltip.site-box-label::before { display: none; }
+path.site-box { cursor: pointer; }
+.leaflet-control-attribution { background: rgba(19, 14, 12, 0.75) !important; color: var(--muted) !important; font-size: 0.68rem; }
 .leaflet-tooltip { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; box-shadow: none; font-weight: 600; }
 .leaflet-tooltip-top::before { border-top-color: var(--border); }
 
