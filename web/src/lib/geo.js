@@ -18,6 +18,17 @@ export function latLonToXY(lat, lon, site) {
   return { x, y }
 }
 
+// Longitude for maps that run from -180 to 180 (Mars Trek tiles, Leaflet): 350 E becomes -10.
+export const lon180 = (lon) => (lon > 180 ? lon - 360 : lon)
+
+// The site square as { south, west, north, east } in degrees (west/east from -180 to 180).
+export function siteBounds(site) {
+  const [w, h] = site.extent_m
+  const sw = xyToLatLon(0, 0, site)
+  const ne = xyToLatLon(w, h, site)
+  return { south: sw.lat, west: lon180(sw.lon), north: ne.lat, east: lon180(ne.lon) }
+}
+
 // Distance (m) and bearing (degrees clockwise from north) from one lat/lon to another, on the Mars sphere.
 export function distanceBearing(a, b) {
   const p1 = a.lat * DEG

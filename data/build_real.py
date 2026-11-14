@@ -19,7 +19,7 @@ import grid
 from adapters import crater, crism, donki, hirise, meda, rad, rems, themis
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "terrain"))
-import hazards as terrain  # noqa: E402  terrain/hazards.py (Person 2): needs only data/out/, no raw files
+import hazard_map as terrain  # noqa: E402  terrain/hazard_map.py (Person 2): needs only data/out/, no raw files
 
 # "terrain" runs last: it reads dem.tif and thermal_inertia.tif written by hirise and themis.
 SOURCES = {"hirise": hirise, "themis": themis, "crism": crism, "meda": meda, "rems": rems, "rad": rad,
