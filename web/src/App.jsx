@@ -107,7 +107,8 @@ export default function App() {
         setData(d)
         const ids = d.layers.map((l) => l.id)
         const start = presetIds(PRESETS[0], ids) // open on the Safety view
-        setLayerState(Object.fromEntries(d.layers.map((l) => [l.id, { on: start.includes(l.id), opacity: l.opacity ?? 1 }])))
+        // Crater-wide layers and photo pins start from their own default; the site layers from the Safety preset.
+        setLayerState(Object.fromEntries(d.layers.map((l) => [l.id, { on: l.scope ? !!l.default : start.includes(l.id), opacity: l.opacity ?? 1 }])))
         if (d.tables?.radiation) {
           fetch(`./${d.tables.radiation}`)
             .then((r) => (r.ok ? r.text() : ''))
@@ -287,13 +288,15 @@ export default function App() {
   const readout = useMemo(() => describe(hover), [describe, hover])
   const inspected = useMemo(() => describe(inspect), [describe, inspect])
 
+  // Presets set the site layers only; crater-wide layers and photo pins keep their own switches.
+  const craterIds = new Set((data?.layers ?? []).filter((l) => l.scope).map((l) => l.id))
   const applyPreset = (preset) =>
     setLayerState((s) => {
       const on = presetIds(preset, Object.keys(s))
-      return Object.fromEntries(Object.entries(s).map(([id, v]) => [id, { ...v, on: on.includes(id) }]))
+      return Object.fromEntries(Object.entries(s).map(([id, v]) => [id, craterIds.has(id) ? v : { ...v, on: on.includes(id) }]))
     })
   const isPreset = (preset) => {
-    const have = Object.keys(layerState)
+    const have = Object.keys(layerState).filter((id) => !craterIds.has(id))
     const on = presetIds(preset, have)
     return have.length > 0 && have.every((id) => !!layerState[id].on === on.includes(id))
   }
