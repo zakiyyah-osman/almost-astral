@@ -86,6 +86,32 @@ def check_raster(out, name, w, h, allowed=None):
                 err(f"{name}: values {sorted(values - allowed)} are not allowed (use {sorted(allowed)})")
 
 
+def check_crater_grids(out, header_file, w, h):
+    """The compact crater grids (grid.json + height.i16, hazard.u8, slope.u8): sizes, values, < 10 MB."""
+    header = load_json(out, header_file)
+    if not header:
+        return
+    if (header.get("cols"), header.get("rows")) != (w, h):
+        err(f"{header_file}: {header.get('cols')} x {header.get('rows')} cells, layers.json crater.grid says {w} x {h}")
+        return
+    for key, dtype in (("height", "<i2"), ("hazard", "u1"), ("slope", "u1")):
+        spec = header.get(key) or {}
+        path = out / spec.get("file", "")
+        if not spec.get("file") or not path.is_file():
+            err(f"{header_file}: the {key} grid file {spec.get('file')} does not exist")
+            continue
+        size = path.stat().st_size
+        if size != w * h * np.dtype(dtype).itemsize:
+            err(f"{spec['file']}: {size} bytes, expected {w * h * np.dtype(dtype).itemsize} for {w} x {h} {dtype}")
+            continue
+        if size > 10_000_000:
+            err(f"{spec['file']}: {size / 1e6:.1f} MB, over the 10 MB limit")
+        if key == "hazard":
+            bad = set(np.unique(np.fromfile(path, dtype=dtype)).tolist()) - {0, 1, 2}
+            if bad:
+                err(f"{spec['file']}: values {sorted(bad)} are not hazard classes (0, 1, 2)")
+
+
 def check_crater(out, index):
     """Optional whole-crater block (data/adapters/crater.py): its own grid, files and lat/lon bounds."""
     crater = index.get("crater")
@@ -101,11 +127,10 @@ def check_crater(out, index):
     b = crater.get("bounds_latlon", {})
     if not all(k in b for k in ("south", "west", "north", "east")) or not (b["south"] < b["north"] and b["west"] < b["east"]):
         err("layers.json: crater.bounds_latlon needs south < north and west < east")
-    for key in ("source", "dem", "hazard"):
+    for key in ("source", "grid_header"):
         if not crater.get(key):
             err(f"layers.json: crater has no '{key}'")
-    check_raster(out, crater.get("dem", "crater/dem.tif"), w, h)
-    check_raster(out, crater.get("hazard", "crater/hazard.tif"), w, h, allowed={0, 1, 2})
+    check_crater_grids(out, crater.get("grid_header", "crater/grid.json"), w, h)
     for layer in crater.get("layers", []):
         lid = layer.get("id", "?")
         for key in ("id", "title", "file", "source"):
@@ -175,11 +200,28 @@ def check_plan(out):
                 err(f"plan.json: leg {i} has no '{key}'")
 
 
+def check_big_files(limit_mb=50):
+    """No file Git could commit (tracked, or untracked and not ignored) may be over limit_mb."""
+    import subprocess
+    root = Path(__file__).resolve().parents[1]
+    try:
+        names = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+                               cwd=root, capture_output=True, check=True).stdout.decode("utf-8").split("\0")
+    except (OSError, subprocess.CalledProcessError):
+        return  # not a Git checkout: nothing to check
+    for name in filter(None, names):
+        path = root / name
+        if path.is_file() and path.stat().st_size > limit_mb * 1_000_000:
+            err(f"{name} is {path.stat().st_size / 1e6:.0f} MB: over {limit_mb} MB, too big for Git. "
+                "Put raw downloads in data/raw/ (ignored) or make the file smaller.")
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
     out = Path(args[0]) if args else Path(__file__).resolve().parent / "out"
 
+    check_big_files()
     index = load_json(out, "layers.json")
     grid = check_layers(out, index) if index else None
     if grid:
