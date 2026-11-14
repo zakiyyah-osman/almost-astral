@@ -1,9 +1,13 @@
 // The 3D Mars globe on the homepage: Viking colour mosaic from NASA Mars Trek, one pulsing marker at
-// the site centre, slow auto-rotation, drag to turn. If WebGL or the imagery fails, it degrades to a
+// the site centre, slow auto-rotation, drag to turn. It is lit by the real Sun: the light comes from
+// the subsolar point at this moment (Mars24, lib/marsClock.js), so the day side, the night side and
+// the terminator match the clock on the page. The light turns with the globe, because it is tied to
+// the planet's surface, not to the screen. If WebGL or the imagery fails, it degrades to a
 // plain rust sphere (or a CSS disc) instead of breaking the page.
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TREK_LAYERS } from '../lib/marsTrek.js'
+import { marsTime, subsolarPoint } from '../lib/marsClock.js'
 
 const DEG = Math.PI / 180
 const RUST = 0xa4472a
@@ -15,6 +19,13 @@ const ROWS = 4
 const TILE = 256
 const CAM_FAR = 4.2 // whole globe in view
 const CAM_NEAR = 3.8 // card open: closer to the site (any nearer and the globe's edge leaves the canvas)
+const NIGHT_LIGHT = 0.06 // faint ambient so the night side is very dark but its outline still shows (a display choice)
+
+// Unit vector from the planet centre to the Sun, in the globe's own frame, for Earth time millis.
+function sunDirection(millis) {
+  const { lat, lonEast } = subsolarPoint(marsTime(millis))
+  return surface(lat, lonEast, 1)
+}
 
 // Point on a radius-r sphere for three.js's SphereGeometry UV layout (lon 0 on +x, 90 E on -z).
 function surface(lat, lonEast, r) {
@@ -68,7 +79,7 @@ function glowTexture() {
 }
 
 // Soft orange rim of atmosphere: a slightly larger back-facing sphere, brighter towards the edge.
-function atmosphere() {
+function atmosphere(sunUniform) {
   return new THREE.Mesh(
     new THREE.SphereGeometry(1.06, 64, 48),
     new THREE.ShaderMaterial({
@@ -77,7 +88,9 @@ function atmosphere() {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       vertexShader: `varying vec3 vN; void main() { vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `varying vec3 vN; void main() { float i = pow(0.62 - dot(vN, vec3(0.0, 0.0, 1.0)), 3.0); gl_FragColor = vec4(0.95, 0.5, 0.32, 1.0) * i; }`,
+      uniforms: { sunDir: sunUniform },
+      // The rim only glows where sunlight reaches it, fading through the terminator.
+      fragmentShader: `uniform vec3 sunDir; varying vec3 vN; void main() { float i = pow(0.62 - dot(vN, vec3(0.0, 0.0, 1.0)), 3.0); float day = smoothstep(-0.35, 0.35, dot(vN, sunDir)); gl_FragColor = vec4(0.95, 0.5, 0.32, 1.0) * i * (0.08 + 0.92 * day); }`,
     }),
   )
 }
@@ -113,17 +126,21 @@ export default function Globe({ lat, lon, label, open, onSelect }) {
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100)
     camera.position.set(0, 0, CAM_FAR)
     // Stars come from the page's Starfield behind the transparent canvas, so the sky has no square edge.
-    scene.add(new THREE.AmbientLight(0xffffff, 1.1))
-    const sun = new THREE.DirectionalLight(0xfff1e6, 1.9)
-    sun.position.set(-3, 2, 4)
+    // The Sun is far away: one directional light, aimed from the subsolar point every frame.
+    scene.add(new THREE.AmbientLight(0xffffff, NIGHT_LIGHT))
+    const sun = new THREE.DirectionalLight(0xfff1e6, 3.2)
     scene.add(sun)
+    let sunLocal = sunDirection(Date.now())
+    let sunCheckedAt = performance.now()
+    const sunWorld = new THREE.Vector3()
+    const sunUniform = { value: new THREE.Vector3() }
 
     const globe = new THREE.Group()
     scene.add(globe)
     const material = new THREE.MeshPhongMaterial({ color: RUST, shininess: 4 })
     const planet = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), material)
     globe.add(planet)
-    scene.add(atmosphere())
+    scene.add(atmosphere(sunUniform))
 
     // The marker: a bright core plus a pulsing glow sprite, just above the surface.
     const markerPos = surface(lat, lon, 1.004)
@@ -254,6 +271,15 @@ export default function Globe({ lat, lon, label, open, onSelect }) {
       ring.scale.setScalar(0.08 + 0.22 * ringT)
       ring.material.opacity = 0.55 * (1 - ringT)
 
+      // Mars turns 0.004 degrees a second, so updating the Sun once a second is plenty.
+      if (now - sunCheckedAt > 1000) {
+        sunLocal = sunDirection(Date.now())
+        sunCheckedAt = now
+      }
+      sunWorld.copy(sunLocal).applyQuaternion(globe.quaternion)
+      sun.position.copy(sunWorld).multiplyScalar(10)
+      sunUniform.value.copy(sunWorld) // the camera is not rotated, so view space = world space here
+
       renderer.render(scene, camera)
 
       // Keep the HTML label next to the marker, hidden when the site is on the far side.
@@ -304,7 +330,7 @@ export default function Globe({ lat, lon, label, open, onSelect }) {
       <p className="globe-credit">
         {imagery === 'failed' || !webgl
           ? 'Globe imagery could not load: plain sphere shown.'
-          : 'Globe: Viking MDIM 2.1 colour mosaic (NASA/USGS), tiles from NASA Mars Trek. Drag to turn.'}
+          : 'Globe: Viking MDIM 2.1 colour mosaic (NASA/USGS), tiles from NASA Mars Trek. Sunlit side calculated for right now (Mars24). Drag to turn.'}
       </p>
     </div>
   )

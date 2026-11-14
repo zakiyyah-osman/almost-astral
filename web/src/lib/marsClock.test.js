@@ -2,7 +2,7 @@
 // (https://www.giss.nasa.gov/tools/mars24/help/algorithm.html, fetched 14 Nov 2026).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { hms, marsTime, season, ttMinusUtc } from './marsClock.js'
+import { hms, marsTime, season, subsolarPoint, ttMinusUtc } from './marsClock.js'
 
 const near = (got, want, tol, what) => assert.ok(Math.abs(got - want) <= tol, `${what}: got ${got}, want ${want}`)
 
@@ -51,4 +51,15 @@ test('seasons follow Ls, flipped in the south', () => {
   assert.equal(season(10, 18.46), 'Northern spring')
   assert.equal(season(277, 18.46), 'Northern winter')
   assert.equal(season(100, -5), 'Southern winter')
+})
+
+test('subsolar point: local true solar time there is noon, declination follows Ls', () => {
+  const ms = Date.UTC(2004, 0, 3, 13, 46, 31)
+  const { lat, lonEast } = subsolarPoint(marsTime(ms))
+  near(marsTime(ms, lonEast).ltst, 12, 1e-9, 'LTST at subsolar longitude')
+  near(lat, Math.asin(0.42565 * Math.sin((327.32416 * Math.PI) / 180)) * 180 / Math.PI + 0.25 * Math.sin((327.32416 * Math.PI) / 180), 1e-4, 'declination')
+  // Spirit landed at local midnight (LTST 00:00), so the Sun was overhead on the opposite meridian.
+  near(Math.abs(((lonEast - (360 - 184.702)) % 360 + 540) % 360 - 180), 180, 0.01, 'opposite meridian')
+  near(subsolarPoint({ ls: 90, mst: 0, eot: 0 }).lat, 25.44, 0.01, 'northern summer solstice')
+  near(subsolarPoint({ ls: 0, mst: 0, eot: 0 }).lat, 0, 1e-9, 'equinox')
 })
