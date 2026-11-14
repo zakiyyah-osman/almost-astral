@@ -1,8 +1,6 @@
 // Between the local site grid (metres east and north of the south-west corner) and Mars
-// latitude / longitude (degrees, longitude east 0-360). This is exactly the projection the data
-// build uses (data/grid.py site_proj4): equirectangular on a sphere of radius 3,396,190 m, with
-// lat_ts = lat_0 = the site centre in layers.json. On a sphere that projection is linear, so the
-// formulas below are exact, not an approximation (geo.test.js checks them against rasterio).
+// latitude / longitude (degrees, longitude east 0-360). A local flat approximation around the
+// site centre in layers.json, using the Mars radius from the project rules (3,396,190 m); good to metres over 2 km.
 export const MARS_RADIUS_M = 3396190
 const DEG = Math.PI / 180
 
@@ -18,17 +16,6 @@ export function latLonToXY(lat, lon, site) {
   const x = w / 2 + (lon - site.center_lon_east) * DEG * MARS_RADIUS_M * Math.cos(site.center_lat * DEG)
   const y = h / 2 + (lat - site.center_lat) * DEG * MARS_RADIUS_M
   return { x, y }
-}
-
-// Longitude for maps that run from -180 to 180 (Mars Trek tiles, Leaflet): 350 E becomes -10.
-export const lon180 = (lon) => (lon > 180 ? lon - 360 : lon)
-
-// The site square as { south, west, north, east } in degrees (west/east from -180 to 180).
-export function siteBounds(site) {
-  const [w, h] = site.extent_m
-  const sw = xyToLatLon(0, 0, site)
-  const ne = xyToLatLon(w, h, site)
-  return { south: sw.lat, west: lon180(sw.lon), north: ne.lat, east: lon180(ne.lon) }
 }
 
 // Distance (m) and bearing (degrees clockwise from north) from one lat/lon to another, on the Mars sphere.

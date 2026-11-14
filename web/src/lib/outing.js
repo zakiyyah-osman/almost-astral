@@ -2,8 +2,9 @@
 // part of the app (charts, timeline, map labels, mission card) follows the route the crew picked.
 import { planLeg } from './pathfind.js'
 
-// points: [{ id, name, x, y, kind }] in visiting order. stopMin: minutes spent at each point that is a
-// science stop (kind 'stop'); 0 for the start, the end and any rover or landing point.
+// points: [{ id, name, x, y, kind, stopMin? }] in visiting order. Minutes are spent at each point that
+// is a science stop (kind 'stop'): its own stopMin, else opts.stopMin, else the planner's default;
+// 0 for the start, the end and any rover or landing point. opts.cache: see cachedLeg.
 export function planOuting(cost, points, w, params, opts = {}) {
   const legs = []
   const coords = []
@@ -11,7 +12,7 @@ export function planOuting(cost, points, w, params, opts = {}) {
   for (let k = 0; k < points.length - 1; k++) {
     const A = points[k]
     const B = points[k + 1]
-    const leg = planLeg(cost, A, B, w)
+    const leg = cachedLeg(cost, A, B, w, opts.cache)
     if (!leg.ok) return { ok: false, reason: leg.reason, from: A, to: B }
     legs.push({ A, B, leg })
     const offset = tracks.length ? tracks[tracks.length - 1].d : 0
@@ -23,6 +24,19 @@ export function planOuting(cost, points, w, params, opts = {}) {
   return { ok: true, track: tracks, ...assemble(legs, coords, params, opts) }
 }
 
+// Legs are the slow part. A cache (a Map, one per terrain) lets the app re-plan a mission after a small
+// change, or plan it without one side quest, and only search the legs that are new.
+function cachedLeg(cost, A, B, w, cache) {
+  if (!cache) return planLeg(cost, A, B, w)
+  const key = `${Math.round(A.x)},${Math.round(A.y)}>${Math.round(B.x)},${Math.round(B.y)}|${w}`
+  let leg = cache.get(key)
+  if (!leg) {
+    leg = planLeg(cost, A, B, w)
+    cache.set(key, leg)
+  }
+  return leg
+}
+
 const r1 = (v) => Math.round(v * 10) / 10
 
 function assemble(legs, coords, params, opts) {
@@ -32,7 +46,7 @@ function assemble(legs, coords, params, opts) {
     to: B.id,
     distance_m: Math.round(leg.distance_m),
     walk_min: r1(leg.walk_min),
-    stop_min: B.kind === 'stop' ? stopMin : 0,
+    stop_min: B.kind === 'stop' ? (Number.isFinite(B.stopMin) ? B.stopMin : stopMin) : 0,
     risk_min: r1(leg.risk_min),
     ascent_m: Math.round(leg.ascent_m),
     descent_m: Math.round(leg.descent_m),

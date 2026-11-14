@@ -1,24 +1,35 @@
 # Hazard thresholds. Change them here; do not hard-code them in the scripts.
-# Starting values only: check them against real data and the literature.
-# Used by terrain/hazards.py. A cell takes the worst class any rule gives it.
+#
+# IMPORTANT: these are team assumptions, NOT sourced limits. They have not been
+# checked against NASA suit or rover documents. Say so in the pitch. Replace them
+# with sourced values if you find any, and write the source next to the number.
 
 [slope_deg]
-yellow = 10   # careful above this slope
-red = 20      # do not enter above this slope (cliffs are the steepest of these)
+yellow = 10   # careful above this slope (degrees)
+red = 20      # do not enter above this slope (degrees)
 
 [roughness]
-# Unit: metres, RMS height difference from a plane fitted to the 3 x 3 cells (15 m x 15 m)
-# around each cell of dem.tif. Values kept from the starting values above; on the real
-# HiRISE DTM (14 Nov) 0.5 m flags about 0.4% of cells and 1.0 m about 0.01%.
-# A 5 m grid cannot see single boulders smaller than a cell.
-yellow = 0.5
-red = 1.0
+# Roughness = RMS (metres) of how far each cell sits from the local mean height
+# in a square window of `window_cells` x `window_cells` cells. A smooth slope has
+# roughness 0, because slope is judged separately.
+# It is a stand-in for boulders and broken rock: the terrain model has no rock
+# layer, and a 5 m grid smooths out small boulders.
+window_cells = 5   # odd number; 5 cells = 25 m at 5 m per cell
+yellow = 0.5       # metres
+red = 1.0          # metres
 
 [thermal_inertia]
-# Low thermal inertia means loose sand or dust. Unit: J m^-2 K^-1 s^-1/2 (THEMIS, 100 m pixels).
-# yellow_below = 250: roughly fine-to-medium sand at Mars pressure (grain size vs thermal inertia,
-#   Presley and Christensen 1997, JGR 102; Fergason et al. 2006, JGR 111). Team choice from those;
-#   about 0.2% of the site on 14 Nov. THEMIS absolute accuracy is about 20%.
-# red_below = 150: dust-mantled ground (Putzig et al. 2005, Icarus 173). No cell in our site is this low.
-yellow_below = 250
-red_below = 150
+# THERMAL INERTIA UNITS: J m^-2 K^-1 s^-1/2 (SI), as in thermal_inertia.tif.
+# Low thermal inertia means loose sand or dust. Starting values only: not
+# checked against the real Jezero data. Absolute accuracy of THEMIS is about 20%,
+# and its pixels are 100 m wide, so one pixel covers about 20 grid cells.
+yellow_below = 150
+red_below = 100
+# Because of that coarse resolution, sand alone only ever gives yellow. A cell
+# turns red from sand only when slope or roughness is already yellow there.
+sand_red_needs_other_hazard = true
+
+[missing_data]
+# What to do where the terrain model has no value (NaN). Never green.
+# 2 = red (do not enter), 1 = yellow. Do not use 0.
+class = 2

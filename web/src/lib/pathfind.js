@@ -50,9 +50,9 @@ const KEYS = {
 }
 
 export const PROFILES = [
-  { id: 'fastest', label: 'Fastest', key: 'w_fastest' },
-  { id: 'balanced', label: 'Balanced', key: 'w_balanced' },
-  { id: 'safest', label: 'Safest', key: 'w_safest' },
+  { id: 'fastest', label: 'Efficient', key: 'w_fastest', aim: 'Shortest walking time' },
+  { id: 'balanced', label: 'Balanced', key: 'w_balanced', aim: 'A risky minute counts double' },
+  { id: 'safest', label: 'Safe', key: 'w_safest', aim: 'Avoids careful ground hardest' },
 ]
 
 // Parameters, taking each from plan.json's `assumptions` when present. `from` says where they came from.
@@ -300,14 +300,17 @@ export function searchPath(cost, a, b, w) {
 
 // Walking minutes from cell src to every cell (fastest physical time, no risk weighting).
 // Speeds are the same uphill and downhill, so this is also the time from every cell back to src.
+// src can also be a list of cells: the time is then to the nearest of them (used for detours off a route).
 export function timeField(cost, src) {
   const { width, height, cellM, blocked, timeRate } = cost
   const n = width * height
   const t = new Float64Array(n).fill(Infinity)
-  if (blocked[src]) return t
   const heap = new Heap()
-  t[src] = 0
-  heap.push(0, src)
+  for (const s of Array.isArray(src) ? src : [src]) {
+    if (s == null || blocked[s] || t[s] === 0) continue
+    t[s] = 0
+    heap.push(0, s)
+  }
   const done = new Uint8Array(n)
   while (heap.size) {
     const i = heap.pop()
