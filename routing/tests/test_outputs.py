@@ -9,7 +9,7 @@ import grid as g
 import outputs
 import plan_route
 from config import load_config
-from conftest import write_full_site
+from conftest import run_site, write_full_site
 
 CFG = load_config()
 SHAPE = (20, 30)
@@ -25,7 +25,7 @@ def make_site(folder, fake=False, hazard=None, dem=None):
     if dem is None:
         dem = (0.2 * np.arange(SHAPE[1])[None, :] + np.zeros((SHAPE[0], 1))).astype(np.float32)
     waypoints = [
-        ("rover", "Rover", "rover", *centre(10, 2)),
+        ("start", "Start", "start", *centre(10, 2)),
         ("stop1", "North stop", "stop", *centre(3, 20)),
         ("stop2", "South stop", "stop", *centre(17, 26)),
     ]
@@ -37,7 +37,7 @@ def make_site(folder, fake=False, hazard=None, dem=None):
 def result(tmp_path):
     hazard = np.zeros(SHAPE, np.uint8)
     hazard[3:17, 10:15] = 1
-    return plan_route.run(make_site(tmp_path / "site", hazard=hazard))
+    return run_site(make_site(tmp_path / "site", hazard=hazard))
 
 
 def load(result, name):
@@ -87,7 +87,7 @@ def test_single_linestring_inside_extent(result, name):
     assert len(coords) >= 2 and all(len(p) == 2 for p in coords)
     ex, ey = SHAPE[1] * CELL, SHAPE[0] * CELL
     assert all(0 <= x <= ex and 0 <= y <= ey for x, y in coords)
-    assert coords[0] == coords[-1] == list(centre(10, 2))              # rover to rover, [x, y] in metres
+    assert coords[0] == coords[-1] == list(centre(10, 2))              # start to start, [x, y] in metres
     for stop_cell in ((3, 20), (17, 26)):
         assert list(centre(*stop_cell)) in coords                        # through every stop
 
@@ -132,7 +132,7 @@ def test_all_contract_keys_present(result):
     assert {"eva_max_min", "radiation_limit_usv"} <= set(plan["budgets"])
     assert isinstance(plan["radiation_dose_usv"], int)
     assert [(l["from"], l["to"]) for l in plan["legs"]] == [
-        ("rover", "stop1"), ("stop1", "stop2"), ("stop2", "rover")]
+        ("start", "stop1"), ("stop1", "stop2"), ("stop2", "start")]
 
 
 def test_totals_add_up_and_include_ingress(result):
@@ -153,20 +153,21 @@ def test_added_fields_use_one_decimal(result):
 
 def test_assumptions_match_config(result):
     plan = load(result, "plan.json")
-    assert plan["assumptions"] == CFG.assumptions()
+    assert plan["assumptions"] == CFG.assumptions()          # the whole config, copied
+    assert not any(k.startswith(("start.", "starts.", "reach.")) for k in plan["assumptions"])
     assert plan["assumptions"]["walking.v_flat_kmh"] == {
         "value": 2.7, "unit": "km/h", "type": "scenario",
         "source": "NASA Apollo planning value for walkbacks over 1 hour",
     }
-    assert len(plan["assumptions"]) == len(CFG.assumptions())
+    assert plan["assumptions"]["landing.pad_radius_m"]["type"] == "assumption"
 
 
 def test_two_runs_identical(tmp_path):
     hazard = np.zeros(SHAPE, np.uint8)
     hazard[3:17, 10:15] = 1
-    a = plan_route.run(make_site(tmp_path / "a", hazard=hazard))
-    b = plan_route.run(make_site(tmp_path / "b", hazard=hazard))
-    again = plan_route.run(tmp_path / "a")
+    a = run_site(make_site(tmp_path / "a", hazard=hazard))
+    b = run_site(make_site(tmp_path / "b", hazard=hazard))
+    again = run_site(tmp_path / "a")
     assert a.files.keys() == b.files.keys()
     for name in a.files:
         assert a.files[name] == b.files[name], name
@@ -174,8 +175,8 @@ def test_two_runs_identical(tmp_path):
 
 
 def test_plan_has_no_top_level_fake_key_and_tracks_fake_inputs(tmp_path):
-    real = plan_route.run(make_site(tmp_path / "real"))
-    fake = plan_route.run(make_site(tmp_path / "fake", fake=True))
+    real = run_site(make_site(tmp_path / "real"))
+    fake = run_site(make_site(tmp_path / "fake", fake=True))
     for r, flag in ((real, False), (fake, True)):
         plan = json.loads(r.files["plan.json"])
         assert "fake" not in plan
@@ -186,7 +187,11 @@ def test_plan_has_no_top_level_fake_key_and_tracks_fake_inputs(tmp_path):
 
 def test_plan_sections(result):
     plan = load(result, "plan.json")
-    assert plan["status"] == "ok" and plan["warnings"] == []
+    assert plan["status"] == "ok"
+    # only the start and stop notes: the start waypoint is ignored, (10, 2) is too close to the edge
+    # for a lander pad, and the stops are unverified
+    expected = ("is not a safe landing spot", "it is ignored", "are unverified")
+    assert len(plan["warnings"]) == 3 and all(any(e in w for e in expected) for w in plan["warnings"])
     assert [c["id"] for c in plan["checks"]] == ["reserve", "abort", "radiation"]
     for c in plan["checks"]:
         assert set(c) == {"id", "ok", "value", "limit", "unit", "message"} and c["ok"] is True
@@ -207,7 +212,7 @@ def test_plan_sections(result):
     assert abs(plan["radiation_dose_usv"] - exact) <= 0.55 and isinstance(plan["radiation_dose_usv"], int)
 
 
-def test_track_storm_and_shelter_blocks(result):
+def test_track_storm_and_back_to_start_blocks(result):
     plan = load(result, "plan.json")
     track = plan["track"]
     assert track[0]["distance_m"] == 0 and track[0]["elapsed_min"] == 0
@@ -230,7 +235,7 @@ def test_track_storm_and_shelter_blocks(result):
 def test_a_blocked_start_of_storm_path_is_not_present_when_walls_exist(tmp_path):
     hazard = np.zeros(SHAPE, np.uint8)
     hazard[2:16, 12] = 2
-    res = plan_route.run(make_site(tmp_path / "wall", hazard=hazard))
+    res = run_site(make_site(tmp_path / "wall", hazard=hazard))
     plan = json.loads(res.files["plan.json"])
     for name in ("route.geojson", "route_fastest.geojson", "route_safest.geojson"):
         for x, y in json.loads(res.files[name])["features"][0]["geometry"]["coordinates"]:
@@ -242,7 +247,7 @@ def test_a_blocked_start_of_storm_path_is_not_present_when_walls_exist(tmp_path)
             assert hazard[r, c] != 2
 
 
-def test_shelter_png_bytes_are_a_grid_sized_rgba_image(result):
+def test_back_to_start_png_bytes_are_a_grid_sized_rgba_image(result):
     from io import BytesIO
     from PIL import Image
     img = Image.open(BytesIO(result.files["shelter_time.png"]))

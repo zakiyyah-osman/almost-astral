@@ -1,5 +1,5 @@
 # routing/config.toml
-# Every parameter: value, unit, type (observation / proxy / scenario), source.
+# Every parameter: value, unit, type (observation / proxy / scenario / assumption), source.
 
 # ---- crew ---------------------------------------------------------------
 [crew.size]
@@ -156,7 +156,7 @@ source = "STOP_MIN in data/make_fake.py; to be replaced by the mission brief"
 value = 15
 unit = "min"
 type = "scenario"
-source = "Team choice, confirmed by Tushaar"
+source = "Team choice, confirmed by Tushaar: time to get back inside at the start"
 
 [timeline.eva_max_min]
 value = 360
@@ -208,7 +208,7 @@ unit = "m"
 type = "scenario"
 source = "Team choice: keeps plan.json small"
 
-# ---- shelter map --------------------------------------------------------
+# ---- back-to-start map (the keys keep the contract name shelter_map) ---
 [shelter_map.contour_interval_min]
 value = 10
 unit = "min"
@@ -234,3 +234,74 @@ value = 8
 unit = "neighbours"
 type = "scenario"
 source = "skimage.graph.MCP_Geometric with fully_connected=True"
+
+# ---- one-way budget (point-to-point paths from a landing spot) ------------
+[budget.destination_stop]
+value = true
+unit = "true | false"
+type = "scenario"
+source = "Team choice (Tushaar): the one-way over-budget limit counts one stop of timeline.stop_min_default at the destination; false sets it to 0"
+
+# ---- landing safety (landing.py, export_landing.py) ----------------------
+# Every limit is in metres or degrees, never in cells: the pad and the clearance are turned into
+# cells from cell_m, so the same values hold on any grid. All of them are team assumptions waiting
+# for Nahla's confirmation; none has a published source.
+[landing.pad_radius_m]
+value = 25
+unit = "m"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: radius of the circular lander pad that must be safe"
+
+[landing.max_pad_slope_deg]
+value = 5
+unit = "deg"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: tilt of the best-fit plane through the pad's DEM cells"
+
+[landing.max_roughness_m]
+value = 0.25
+unit = "m (RMS of the DEM about the pad's best-fit plane)"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: half of the yellow (careful) roughness of 0.5 m in terrain/thresholds.toml [roughness], so a pad is clearly smoother than ground that is only walkable with care. Scale differs: terrain measures RMS about the local mean in a 5 x 5 cell (25 m) window on the 5 m grid; this is RMS about a plane over the whole pad (50 m across) on the same grid"
+
+[landing.max_height_range_m]
+value = 1.0
+unit = "m (highest minus lowest DEM cell on the pad, after removing the best-fit plane)"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: catches a single step, mound or pit that the RMS roughness averages away; not a sourced lander clearance"
+
+[landing.hazard_clearance_m]
+value = 30
+unit = "m (from the pad centre)"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: no red cell, over-limit slope cell or cliff-buffer cell this close to the pad centre"
+
+[landing.marginal_pct]
+value = 20
+unit = "percent of a limit"
+type = "assumption"
+source = "Team assumption (Tushaar): a pad that passes but is within this share of any limit is marked marginal"
+
+[landing.ti_warn_below]
+value = 150
+unit = "J m^-2 K^-1 s^-1/2"
+type = "assumption"
+source = "terrain/thresholds.toml [thermal_inertia] yellow_below (loose sand; terrain's starting value, not checked against Jezero data). Used only for a warning flag, never a hard rule, and only while layers.json marks the thermal layer as real"
+
+[landing.window_centre_m]
+value = "site"
+unit = "\"site\" (the centre of site.grid) or [x, y] in m on the site grid"
+type = "scenario"
+source = "Team choice: the export window is centred on the site"
+
+[landing.window_size_m]
+value = "full"
+unit = "\"full\" (the whole site.grid) or [width, height] in m"
+type = "scenario"
+source = "Team choice: the whole site grid of layers.json; a smaller window is for the future full-crater grid"
+
+[landing.tile_size_m]
+value = 5120
+unit = "m (square tiles; whole cells; edge tiles are smaller)"
+type = "scenario"
+source = "Team choice: 1024 cells at 5 m, so the current 2 km site is one tile and a 9,000 x 9,000 cell grid would be 9 x 9 tiles"

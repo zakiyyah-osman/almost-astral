@@ -32,27 +32,27 @@ def wp(wid, kind, cell, shape=(20, 30)):
 
 def scenario(hazard=None):
     c = make_cost(hazard)
-    rover = wp("rover", "rover", (10, 2))
+    start = wp("start", "start", (10, 2))
     stops = [wp("stop1", "stop", (3, 20)), wp("stop2", "stop", (17, 26))]
-    plan = tour.plan_routes(c, rover, stops, CFG)
-    sh = shelter.shelter_time(c, rover.cell, INGRESS, 8)
+    plan = tour.plan_routes(c, start, stops, CFG)
+    sh = shelter.shelter_time(c, start.cell, INGRESS, 8)
     route = plan.routes["balanced"]
-    return c, rover, stops, route, sh, storm.storm_replan(c, route, sh, SPACING, STOP_MIN)
+    return c, start, stops, route, sh, storm.storm_replan(c, route, sh, SPACING, STOP_MIN)
 
 
 def test_samples_include_every_stop():
-    c, rover, stops, route, sh, rep = scenario()
+    c, start, stops, route, sh, rep = scenario()
     by_stop = {p.stop: p for p in rep.points if p.stop}
     assert set(by_stop) == {"stop1", "stop2"}
     for s in stops:
         assert by_stop[s.id].cell == s.cell
         assert (by_stop[s.id].x, by_stop[s.id].y) == (s.x, s.y)
-    # The rover at the start is sampled too.
-    assert rep.points[0].cell == rover.cell and rep.points[0].route_distance_m == 0.0
+    # The start cell itself is sampled too.
+    assert rep.points[0].cell == start.cell and rep.points[0].route_distance_m == 0.0
 
 
 def test_samples_are_spaced_along_the_route():
-    c, rover, stops, route, sh, rep = scenario()
+    c, start, stops, route, sh, rep = scenario()
     clock = tour.route_clock(c, route, STOP_MIN)
     spaced = [p for p in rep.points if p.stop is None]
     d = [p.route_distance_m for p in rep.points]
@@ -64,17 +64,17 @@ def test_samples_are_spaced_along_the_route():
     assert len(rep.points) >= int(clock.distance_m[-1] // SPACING)
 
 
-def test_return_path_ends_at_rover():
-    c, rover, stops, route, sh, rep = scenario()
+def test_return_path_ends_at_start():
+    c, start, stops, route, sh, rep = scenario()
     for p in rep.points:
-        assert p.path[0] == p.cell and p.path[-1] == rover.cell
+        assert p.path[0] == p.cell and p.path[-1] == start.cell
         assert not any(c.blocked[rc] for rc in p.path)
         steps = np.abs(np.diff(np.array(p.path), axis=0)) if len(p.path) > 1 else np.zeros((0, 2))
         assert (steps.max(initial=0) <= 1)
 
 
-def test_return_min_equals_shelter_time():
-    c, rover, stops, route, sh, rep = scenario()
+def test_return_min_equals_minutes_back_to_start():
+    c, start, stops, route, sh, rep = scenario()
     for p in rep.points:
         assert p.return_min == sh.minutes[p.cell]
         back = tour_path_minutes(c, p.path)
@@ -88,22 +88,22 @@ def tour_path_minutes(c, cells):
 
 
 def test_return_distance_matches_the_path():
-    c, rover, stops, route, sh, rep = scenario()
+    c, start, stops, route, sh, rep = scenario()
     from search import summarise
     for p in rep.points:
         assert p.return_distance_m == pytest.approx(summarise(c, p.path).distance_m)
 
 
 def test_worst_point_is_maximum():
-    c, rover, stops, route, sh, rep = scenario()
+    c, start, stops, route, sh, rep = scenario()
     mins = [p.return_min for p in rep.points]
     assert mins[rep.worst] == max(mins)
     assert rep.worst == mins.index(max(mins))              # the first one on a tie
-    assert max(mins) > INGRESS + 2                          # the far points really are a walk from the rover
+    assert max(mins) > INGRESS + 2                          # the far points really are a walk from the start
 
 
 def test_elapsed_includes_the_time_spent_at_earlier_stops():
-    c, rover, stops, route, sh, rep = scenario()
+    c, start, stops, route, sh, rep = scenario()
     clock = tour.route_clock(c, route, STOP_MIN)
     el = [p.elapsed_min for p in rep.points]
     assert el == sorted(el)
@@ -122,14 +122,14 @@ def test_elapsed_includes_the_time_spent_at_earlier_stops():
 def test_return_path_goes_round_a_red_wall():
     hazard = np.zeros((20, 30), np.uint8)
     hazard[2:16, 12] = 2                                   # wall with gaps at the top and bottom
-    c, rover, stops, route, sh, rep = scenario(hazard)
+    c, start, stops, route, sh, rep = scenario(hazard)
     far = next(p for p in rep.points if p.stop == "stop1")
-    assert far.return_distance_m > math.hypot(far.cell[0] - rover.cell[0], far.cell[1] - rover.cell[1]) * CELL
+    assert far.return_distance_m > math.hypot(far.cell[0] - start.cell[0], far.cell[1] - start.cell[1]) * CELL
     assert all(hazard[rc] != 2 for p in rep.points for rc in p.path)
 
 
 def test_spacing_changes_the_number_of_samples():
-    c, rover, stops, route, sh, _ = scenario()
+    c, start, stops, route, sh, _ = scenario()
     fine = storm.storm_replan(c, route, sh, 25.0, STOP_MIN)
     coarse = storm.storm_replan(c, route, sh, 200.0, STOP_MIN)
     assert len(fine.points) > len(coarse.points) >= 3       # coarse still has the start and both stops
@@ -142,6 +142,6 @@ def test_sample_indices_snap_to_the_nearest_cell():
     assert storm.sample_indices(d, 100.0).tolist() == [0]
 
 
-def test_no_shelter_value_is_nan_on_the_route():
-    c, rover, stops, route, sh, rep = scenario()
+def test_no_back_to_start_value_is_nan_on_the_route():
+    c, start, stops, route, sh, rep = scenario()
     assert all(np.isfinite(p.return_min) for p in rep.points)

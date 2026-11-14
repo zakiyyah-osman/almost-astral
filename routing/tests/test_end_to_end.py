@@ -11,7 +11,7 @@ from PIL import Image
 import grid as g
 import plan_route
 from config import load_config
-from conftest import write_full_site
+from conftest import run_site, write_full_site
 
 REAL_OUT = Path(__file__).resolve().parents[2] / "data" / "out"
 CFG = load_config()
@@ -89,7 +89,12 @@ def test_plan_status_ok(real):
     assert plan["status"] == "ok"
     assert all(c["ok"] for c in plan["checks"])
     assert all(p["status"] == "ok" for p in plan["profiles"].values())
-    assert plan["warnings"] == []
+    # Only the expected notes: waypoints.geojson still has the old rover point (deprecated kind, and
+    # ignored as a start), the demo start is used, and the stops are unverified.
+    expected = ("uses kind 'rover', which is deprecated", "it is ignored", "the walk starts at the demo start",
+                "are unverified")
+    assert all(any(e in w for e in expected) for w in plan["warnings"]), plan["warnings"]
+    assert plan["start"]["kind"] == "demo" and plan["start"]["landing_status"] == "safe"
 
 
 def test_runs_on_120x80_grid(wide_site, tmp_path):
@@ -99,13 +104,13 @@ def test_runs_on_120x80_grid(wide_site, tmp_path):
     hazard[20:60, 60] = 2                                  # a wall with gaps at the top and bottom
     dem = (0.05 * np.arange(120)[None, :] + np.zeros((80, 1))).astype(np.float32)
     waypoints = [
-        ("rover", "Rover", "rover", *grid.cell_centre(40, 10)),
+        ("start", "Start", "start", *grid.cell_centre(40, 10)),
         ("stop1", "East", "stop", *grid.cell_centre(10, 100)),
         ("stop2", "South", "stop", *grid.cell_centre(70, 90)),
     ]
     folder = tmp_path / "wide"
     write_full_site(folder, dem, hazard, 10.0, waypoints)
-    result = plan_route.run(folder)
+    result = run_site(folder)
     plan = json.loads(result.files["plan.json"])
     assert plan["inputs"]["grid"] == {"width": 120, "height": 80, "cell_m": 10.0}
     assert plan["status"] == "ok"

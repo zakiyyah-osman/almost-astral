@@ -5,7 +5,8 @@ import math
 import pytest
 
 from config import (
-    EXPECTED_PARAMS, LIST_PARAMS, Config, ConfigError, load_config, walk_run_transition_kmh,
+    EXPECTED_PARAMS, LIST_PARAMS, NON_NUMERIC_PARAMS, Config, ConfigError, load_config,
+    walk_run_transition_kmh,
 )
 
 
@@ -29,7 +30,7 @@ def _set_bad(raw, key, bad):
         _set(raw, key, bad)
 
 
-NUMERIC_KEYS = [k for k in EXPECTED_PARAMS if k != "timeline.stop_order"]
+NUMERIC_KEYS = [k for k in EXPECTED_PARAMS if k not in NON_NUMERIC_PARAMS]
 
 
 # ---- NaN and inf -------------------------------------------------------------
@@ -63,6 +64,14 @@ RANGE_RULES = [
     ("storm.sample_spacing_m", [0, -10], [1, 200]),
     ("track.spacing_m", [0, -10], [1, 50]),
     ("shelter_map.contour_interval_min", [0, -5], [1, 15]),
+    ("landing.pad_radius_m", [0, -5], [0.1, 100]),
+    ("landing.max_pad_slope_deg", [0, -1, 90], [0.5, 30]),
+    ("landing.max_roughness_m", [0, -0.1], [0.01, 2]),
+    ("landing.max_height_range_m", [0, -1], [0.1, 5]),
+    ("landing.hazard_clearance_m", [-1], [0, 100]),
+    ("landing.marginal_pct", [-1, 100, 150], [0, 50]),
+    ("landing.ti_warn_below", [-1], [0, 300]),
+    ("landing.tile_size_m", [0, -10], [5, 5120]),
 ]
 RULE_IDS = [r[0] for r in RANGE_RULES]
 
@@ -167,7 +176,8 @@ def test_unknown_type_rejected_in_any_section(raw, key):
 
 # ---- parameter names ---------------------------------------------------------
 def test_expected_parameters_match_the_shipped_config():
-    assert set(EXPECTED_PARAMS) == set(load_config().assumptions())
+    found = set(load_config().assumptions())
+    assert set(EXPECTED_PARAMS) == found
     assert len(EXPECTED_PARAMS) == len(set(EXPECTED_PARAMS))
 
 
@@ -299,3 +309,29 @@ def test_equal_or_ordered_weights_are_accepted(raw, balanced, safest):
     _set(raw, "profiles.w_balanced", balanced)
     _set(raw, "profiles.w_safest", safest)
     Config.from_dict(raw)
+
+
+# ---- the landing window ------------------------------------------------------
+@pytest.mark.parametrize("key,word,bad", [
+    ("landing.window_centre_m", "site", ["centre", [1.0], [1.0, 2.0, 3.0], [-1.0, 5.0], [1.0, True], 5]),
+    ("landing.window_size_m", "full", ["all", [100.0], [0.0, 100.0], [-5.0, 100.0], 100]),
+])
+def test_window_values_are_checked(raw, key, word, bad):
+    _set(raw, key, word)
+    Config.from_dict(raw)
+    _set(raw, key, [100.0, 200.0])
+    Config.from_dict(raw)
+    for b in bad:
+        _set(raw, key, b)
+        with pytest.raises(ConfigError, match=key):
+            Config.from_dict(raw)
+
+
+def test_landing_thresholds_are_assumptions_with_a_source():
+    cfg = load_config()
+    for name in ("pad_radius_m", "max_pad_slope_deg", "max_roughness_m", "max_height_range_m",
+                 "hazard_clearance_m", "marginal_pct", "ti_warn_below"):
+        p = cfg.assumptions()[f"landing.{name}"]
+        assert p["type"] == "assumption" and p["source"]
+    assert "terrain/thresholds.toml" in cfg.assumptions()["landing.max_roughness_m"]["source"]
+    assert "terrain/thresholds.toml" in cfg.assumptions()["landing.ti_warn_below"]["source"]

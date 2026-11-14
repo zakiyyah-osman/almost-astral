@@ -4,7 +4,10 @@
 - Create or edit files only in routing/. Read anything else; never edit it.
 - Never edit CONTRACT.md, requirements.txt, or other people's folders/outputs. If a change is needed there, stop and tell me.
 - Write to data/out/ only: route.geojson, shelter_time.png, plan.json (exactly per CONTRACT.md),
-  plus new files route_fastest.geojson and route_safest.geojson.
+  plus new files route_fastest.geojson and route_safest.geojson, and the folder data/out/landing/
+  (export_landing.py: manifest.json, golden_cases.json and tiles/<ti>_<tj>/ binary grids: landing safety,
+  warnings, nearest safe cell and the cost surface; Tushaar commits it, not the scripts).
+  data/out/reach/ is gone (the old per-start export); do not recreate it.
 - plan.json: add fields freely, never rename or remove contract fields.
 
 ## Inputs (data/out/)
@@ -20,7 +23,7 @@ radiation.csv, layers.json. Read width/height/cell_m from layers.json site.grid.
 - Soft constraints = penalties expressed in minutes: yellow cells, steep-but-legal slope, proximity to red.
 - Keep two quantities separate:
   - planning cost = physical time + w × risk (only chooses the path)
-  - physical walk time (used for timeline, shelter map, plan.json, budgets)
+  - physical walk time (used for timeline, back-to-start map, plan.json, budgets)
 - Three profiles: fastest (w = 0), balanced (default → route.geojson), safest (high w).
 - A w-sweep producing a time vs risk-exposure table; a sensitivity run over v_flat, slope limit and w.
 
@@ -31,14 +34,24 @@ radiation.csv, layers.json. Read width/height/cell_m from layers.json site.grid.
 - Do not relax slope limits for lower gravity: traction drops with g.
 
 ## Safety and budgets
-- Shelter time: physical minutes back to the rover from every cell, including ingress time.
+- The walker is an astronaut on foot only. Users get one-way paths from the start to a destination; no return-route option.
+- No fixed starts. The user clicks a landing zone; landing.py judges a lander pad centred on every cell
+  ([landing] in config.toml, every limit in metres or degrees, all team assumptions pending Nahla) and moves an
+  unsafe click to the nearest safe cell (straight line). The browser then runs its own Dijkstra on the exported
+  cost surface (DESIGN section 15 is the exact edge rule; golden_cases.json is the test). Never put landing-spot
+  coordinates in the config or the code.
+- plan_route.py / analysis.py: the start is --start x,y, or the "demo start" (the safe landing cell nearest the
+  grid centre). Blocked start = error; yellow / >10 deg / not a safe landing spot = warning. A start (or old
+  'rover') waypoint is never used as the start, only reported as ignored; the stops in waypoints.geojson are
+  unverified (warning in plan.json). The start's id in every output is "start".
+- Time back to the start: physical minutes back to the start from every cell, including ingress time.
 - Timeline: walk + stops + ingress, checked against eva_max_min, reserve_pct (30) and the radiation limit.
 - Radiation: background ≈ 0.64 mSv/day (Gale RAD, applied to Jezero as a scenario). Solar-event dose stays in Gy; never add it to Sv.
 - Storm re-plan: fastest return from sampled route points.
 - A stop on a red cell or one that can't be reached → fail with a clear message naming the stop.
 
 ## Assumptions
-Every parameter lives in routing/config.toml with value, unit, type (observation / proxy / scenario) and source.
+Every parameter lives in routing/config.toml with value, unit, type (observation / proxy / scenario / assumption) and source.
 No magic numbers in code. plan.json carries an assumptions block copied from config.
 
 ## Site

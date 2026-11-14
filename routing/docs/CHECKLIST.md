@@ -37,21 +37,21 @@ Each item: **task** · file · check.
 ## Phase 3: routing + profiles
 
 - [x] **3.1** Search wrapper returning the path, physical minutes and risk minutes separately. · `routing/search.py` · `test_search.py::test_straight_on_open_flat_grid`, `::test_flat_5m_step_is_0_111_min`, `::test_diagonal_is_root2_longer`, `::test_goes_round_red_wall`, `::test_unreachable_reported`, `::test_time_not_changed_by_w_on_same_path`.
-- [x] **3.2** Load waypoints; fail by name on a blocked or unreachable stop. · `routing/tour.py` · `test_tour.py::test_stop_on_red_names_stop`, `::test_unreachable_stop_names_stop`, `::test_needs_exactly_one_rover`.
+- [x] **3.2** Load waypoints; fail by name on a blocked or unreachable stop. · `routing/tour.py` · `test_tour.py::test_stop_on_red_names_stop`, `::test_unreachable_stop_names_stop`, `::test_at_most_one_start_and_at_least_one_stop`.
 - [x] **3.3** Stop order, both modes. · `routing/tour.py` · `test_tour.py::test_as_listed_keeps_file_order`, `::test_optimise_minimises_balanced_cost`, `::test_tie_follows_file_order`.
-- [x] **3.4** The three profile routes. · `routing/tour.py` · `test_tour.py::test_route_is_rover_to_rover_through_all_stops`, `::test_time_fastest_le_balanced_le_safest`, `::test_risk_fastest_ge_balanced_ge_safest`.
+- [x] **3.4** The three profile routes. · `routing/tour.py` · `test_tour.py::test_route_is_start_to_start_through_all_stops`, `::test_time_fastest_le_balanced_le_safest`, `::test_risk_fastest_ge_balanced_ge_safest`.
 - [x] **End of phase 3:** `pytest routing/tests` passes · commit.
 
-## Phase 4: shelter + storm
+## Phase 4: back-to-start map + storm
 
-- [x] **4.1** Shelter-time array, ingress included. · `routing/shelter.py` · `test_shelter.py::test_rover_cell_equals_ingress`, `::test_flat_matches_distance_over_speed`, `::test_blocked_cells_are_nan`.
+- [x] **4.1** Back-to-start time array, ingress included. · `routing/shelter.py` · `test_shelter.py::test_start_cell_equals_ingress`, `::test_flat_matches_distance_over_speed`, `::test_blocked_cells_are_nan`.
 - [x] **4.2** Render the PNG with contour lines. · `routing/shelter.py` · `test_shelter.py::test_png_is_grid_sized_rgba`, `::test_blocked_cells_transparent`, `::test_contours_at_interval`.
-- [x] **4.3** Storm return table. · `routing/storm.py` · `test_storm.py::test_samples_include_every_stop`, `::test_return_path_ends_at_rover`, `::test_return_min_equals_shelter_time`, `::test_worst_point_is_maximum`.
+- [x] **4.3** Storm return table. · `routing/storm.py` · `test_storm.py::test_samples_include_every_stop`, `::test_return_path_ends_at_start`, `::test_return_min_equals_minutes_back_to_start`, `::test_worst_point_is_maximum`.
 - [x] **End of phase 4:** `pytest routing/tests` passes · commit.
 
 ## Phase 5: timeline + radiation + outputs
 
-- [x] **5.1** Legs and totals. · `routing/timeline.py` · `test_timeline.py::test_total_is_walk_plus_stops_plus_ingress`, `::test_legs_chain_rover_to_rover`.
+- [x] **5.1** Legs and totals. · `routing/timeline.py` · `test_timeline.py::test_total_is_walk_plus_stops_plus_ingress`, `::test_legs_chain_start_to_start`.
 - [x] **5.2** Budget checks and status. · `routing/timeline.py` · `test_timeline.py::test_usable_is_252_min_for_360_and_30pct`, `::test_over_reserve_flags_status`, `::test_abort_check_uses_elapsed_plus_return`.
 - [x] **5.3** Radiation. · `routing/timeline.py` · `test_timeline.py::test_background_dose_180_min_is_80_usv`, `::test_solar_event_is_8_1_mgy_in_its_own_field`, `::test_event_dose_not_added_to_sv`, `::test_csv_baseline_mismatch_warns`.
 - [x] **5.4** Track samples. · `routing/timeline.py` · `test_timeline.py::test_track_spacing`, `::test_elapsed_never_decreases`, `::test_elapsed_includes_stop_time`.
@@ -62,8 +62,8 @@ Each item: **task** · file · check.
 
 ## Phase 6: sweep + sensitivity
 
-- [ ] **6.1** w-sweep. The sweep function lives in `analysis.py`. `plan_route.py` calls it and writes the `sweep` block in `plan.json`. `analysis.py` run as a script takes `--in DIR`, `--config FILE` and `--reports DIR` (default `routing/reports`), as in DESIGN section 2; it writes `sweep.csv` and the other CSVs only and never writes to `data/out`. · `routing/analysis.py`, `routing/plan_route.py` · `test_analysis.py::test_sweep_time_rises_risk_falls`, `::test_in_config_reports_options` (runs on a temp copy, `data/out` and `routing/reports` untouched); after `python routing/plan_route.py`, `plan.json` `sweep` has 7 rows; after `python routing/analysis.py`, `routing/reports/sweep.csv` has the same 7 rows.
-- [ ] **6.2** Sensitivity over `v_flat`, slope limit and w. · `routing/analysis.py` · `python routing/analysis.py` writes `routing/reports/sensitivity.csv` with 18 rows; `test_analysis.py::test_faster_v_flat_shortens_walk`.
+- [x] **6.1** w-sweep. The sweep function lives in `analysis.py`. `plan_route.py` calls it and writes the `sweep` block in `plan.json`. `analysis.py` run as a script takes `--in DIR`, `--config FILE` and `--reports DIR` (default `routing/reports`), as in DESIGN section 2; it writes `sweep.csv` and the other CSVs only and never writes to `data/out`. · `routing/analysis.py`, `routing/plan_route.py` · `test_analysis.py::test_sweep_time_rises_risk_falls`, `::test_in_config_reports_options` (runs on a temp copy, `data/out` and `routing/reports` untouched); after `python routing/plan_route.py`, `plan.json` `sweep` has 7 rows; after `python routing/analysis.py`, `routing/reports/sweep.csv` has the same 7 rows.
+- [x] **6.2** Sensitivity over `v_flat`, slope limit and w. · `routing/analysis.py` · `python routing/analysis.py` writes `routing/reports/sensitivity.csv` with 18 rows; `test_analysis.py::test_faster_v_flat_shortens_walk`.
 - [ ] **6.3** Validate the hard mask against the Perseverance traverse: share of traverse points on passable cells. **Blocked until Yaj supplies the traverse in grid coordinates.** · `routing/analysis.py` · `test_analysis.py::test_traverse_share_on_synthetic_mask`; the run writes `routing/reports/validation.csv` with the number of traverse points, the number on passable cells and the share.
 - [ ] **End of phase 6:** `pytest routing/tests` passes · `python data/validate.py` passes · commit.
 
@@ -75,3 +75,22 @@ Each item: **task** · file · check.
 - [x] **7.4** The web app still builds. · no file · `cd web && npm run build` exits 0.
 - [x] **7.5** Update the run instructions. · `routing/README.md` · every command in it runs as written.
 - [x] **End of phase 7:** `pytest routing/tests` passes · `python data/validate.py` passes · commit · hand over to `QA.md`.
+
+## Phases 8 and 9: fixed starts and the per-start reach export (superseded by phase 10)
+
+Phase 8 added a configured start and a reach export (one search per profile from the start, with time, distance, risk, direction and reason grids in `data/out/reach/`). Phase 9 made the start a list of three landing spots copied from the web app's own output. Both were built and checked at the time, then **removed in phase 10**: those landing spots came from fake data, and the browser now searches from any landing spot itself. What survives: the blocked-reason codes (`start.py`), the start checks, the `rover` deprecation alias, and the one-way over-budget rule (now `budget.destination_stop`, DESIGN section 15.5).
+
+## Phase 10: landing safety and the browser's cost surface
+
+The user clicks anywhere to choose a landing zone; an unsafe click moves to the nearest safe spot; from it the user clicks a destination and the browser finds three walking paths. DESIGN sections 4.9, 14 and 15. Walking model, constraints, budgets, radiation and the one-way over-budget rule are unchanged.
+
+- [x] **10.1** Remove the fixed starts: `[starts.*]`, `start.default`, the data hashes and the `reach.*` parameters from `config.toml` and `config.py`; `export_reach.py` and its tests deleted; `data/out/reach/` deleted (53 files). · `routing/config.toml`, `routing/config.py`, `routing/start.py` · `test_start.py::test_the_config_has_no_starts_and_no_landing_spot_coordinates`; `test_config_rules.py::test_expected_parameters_match_the_shipped_config`; `ls data/out` shows no `reach`.
+- [x] **10.2** `[landing]` thresholds in metres and degrees, type `assumption`, sources citing the current terrain files; window and tile size. · `routing/config.toml`, `routing/config.py` · `test_config_rules.py::test_landing_thresholds_are_assumptions_with_a_source`, `::test_window_values_are_checked`, the `landing.*` rows of `::test_range_rule_rejects`.
+- [x] **10.3** Landing safety codes 0-7 with the documented priority, marginal band, thermal-inertia warning bits. · `routing/landing.py` · `test_landing.py::test_no_data_on_the_pad`, `::test_a_yellow_cell_on_the_pad_fails`, `::test_red_within_the_clearance_fails_and_beyond_it_passes`, `::test_too_steep`, `::test_height_range_from_one_step`, `::test_too_rough_on_a_checkerboard`, `::test_the_most_serious_reason_wins`, `::test_marginal_band_is_within_20_percent_of_a_limit`, `::test_marginal_on_real_geometry`, `::test_low_and_missing_thermal_inertia_are_warning_bits_only`, `::test_thermal_inertia_is_only_used_when_the_layer_is_real`.
+- [x] **10.4** Nearest safe cell, with ties and the no-safe-cell error; `landing_check`. · `routing/landing.py` · `test_landing.py::test_nearest_safe_matches_brute_force`, `::test_nearest_safe_tie_is_one_of_the_tied_cells_and_repeatable`, `::test_no_safe_cell_is_a_clear_error`, `::test_a_safe_click_stays_where_it_is`, `::test_an_unsafe_click_moves_to_the_nearest_safe_cell`, `::test_a_marginal_click_stays_and_says_which_limit`.
+- [x] **10.5** Cost-surface export identical to `cost.build`; edge rule written in DESIGN 15 and checked bit for bit against MCP. · `routing/export_landing.py`, `docs/DESIGN.md` · `test_export_landing.py::test_exported_surface_is_identical_to_cost_build`, `::test_the_edge_rule_reproduces_mcp_cumulative_costs_bit_for_bit`, `::test_route_follows_search_py_on_the_original_cost`.
+- [x] **10.6** Golden cases (10 pairs x 3 profiles, one unreachable, one over budget under its own test budget) and the reference `route`; an independent Dijkstra replays them. · `routing/export_landing.py`, `routing/tests/replay.py` · `test_export_landing.py::test_golden_cases_cover_pairs_an_unreachable_and_an_over_budget_destination`, `::test_replay_reproduces_the_golden_cases_on_the_synthetic_site`, `::test_replay_reproduces_the_golden_cases_on_the_real_site`.
+- [x] **10.7** One output folder with a manifest; window and tiles; `nearest_safe` computed on the whole window before tiling. · `routing/export_landing.py` · `test_export_landing.py::test_manifest_round_trips`, `::test_tiles_stitch_back_to_the_single_tile_export`, `::test_a_window_exports_only_that_box_in_site_metres`, `::test_a_bad_window_fails_clearly`, `::test_a_tile_size_that_is_not_whole_cells_fails`, `::test_two_runs_give_identical_bytes`, `::test_no_safe_cell_fails_and_writes_nothing`.
+- [x] **10.8** `plan_route.py` / `analysis.py`: `--start x,y`, or the demo start; `plan.json` keys unchanged apart from the start record; unverified-stops warning. · `routing/tour.py`, `plan_route.py`, `analysis.py`, `outputs.py` · `test_start.py::test_plan_route_with_start`, `::test_plan_route_command_line_start`, `::test_plan_route_with_the_demo_start`, `::test_demo_start_is_the_safe_cell_nearest_the_grid_centre`, `::test_plan_json_keys_are_unchanged_apart_from_the_start_record`, `::test_plan_json_warns_that_the_stops_are_unverified`, `::test_a_start_waypoint_is_ignored_with_a_warning`.
+- [x] **10.9** Run on the shared data. · no file · `python routing/export_landing.py` (9 files, 4,506,482 bytes in `data/out/landing/`), `python routing/plan_route.py` (demo start), `python routing/analysis.py` and `python data/validate.py` all exit 0.
+- [ ] **End of phase 10:** `pytest routing/tests` passes · `python data/validate.py` passes · commit (left to Tushaar) · teammate requests in DESIGN section 12 ("Phase 10").

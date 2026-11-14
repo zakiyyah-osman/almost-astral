@@ -16,7 +16,7 @@ from pathlib import Path
 DEFAULT_PATH = Path(__file__).resolve().parent / "config.toml"
 
 REQUIRED_KEYS = ("value", "unit", "type", "source")
-PARAM_TYPES = ("observation", "proxy", "scenario")
+PARAM_TYPES = ("observation", "proxy", "scenario", "assumption")
 
 # Every parameter of DESIGN section 10. A file with one missing or one more is rejected.
 EXPECTED_PARAMS = (
@@ -37,6 +37,10 @@ EXPECTED_PARAMS = (
     "shelter_map.contour_interval_min", "shelter_map.colour_max_min",
     "track.spacing_m",
     "search.connectivity",
+    "budget.destination_stop",
+    "landing.pad_radius_m", "landing.max_pad_slope_deg", "landing.max_roughness_m",
+    "landing.max_height_range_m", "landing.hazard_clearance_m", "landing.marginal_pct",
+    "landing.ti_warn_below", "landing.window_centre_m", "landing.window_size_m", "landing.tile_size_m",
 )
 
 # Parameters whose value is not a single number.
@@ -44,6 +48,13 @@ LIST_PARAMS = {
     "profiles.sweep_w", "sensitivity.v_flat_kmh", "sensitivity.slope_max_deg", "sensitivity.w",
 }
 STRING_PARAMS = {"timeline.stop_order": ("as_listed", "optimise")}
+BOOL_PARAMS = {"budget.destination_stop"}
+WINDOW_CENTRE = "landing.window_centre_m"   # "site", or [x, y] in metres
+WINDOW_SIZE = "landing.window_size_m"       # "full", or [width, height] in metres
+SITE_CENTRE = "site"
+FULL_WINDOW = "full"
+# Parameters whose value is not a number or a list of numbers.
+NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, WINDOW_CENTRE, WINDOW_SIZE)
 INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity"}
 ALLOWED_VALUES = {"search.connectivity": (4, 8)}
 
@@ -83,6 +94,14 @@ RANGES = {
     "storm.sample_spacing_m": _POS,
     "shelter_map.contour_interval_min": _POS,
     "track.spacing_m": _POS,
+    "landing.pad_radius_m": _POS,
+    "landing.max_pad_slope_deg": _range(0, 90, lo_in=False, hi_in=False),
+    "landing.max_roughness_m": _POS,
+    "landing.max_height_range_m": _POS,
+    "landing.hazard_clearance_m": _NONNEG,
+    "landing.marginal_pct": _range(0, 100, hi_in=False),
+    "landing.ti_warn_below": _NONNEG,
+    "landing.tile_size_m": _POS,
 }
 
 
@@ -215,10 +234,17 @@ class Config:
     @classmethod
     def _check_value(cls, label, value):
         """Finite numbers (not bool) in range, lists of them for list parameters, one string."""
-        if label in STRING_PARAMS:
+        if label == WINDOW_CENTRE:
+            cls._check_pair(label, value, SITE_CENTRE, positive=False)
+        elif label == WINDOW_SIZE:
+            cls._check_pair(label, value, FULL_WINDOW, positive=True)
+        elif label in STRING_PARAMS:
             allowed = STRING_PARAMS[label]
             if value not in allowed:
                 raise ConfigError(f"{label}: {value!r} is not one of {', '.join(allowed)}")
+        elif label in BOOL_PARAMS:
+            if not isinstance(value, bool):
+                raise ConfigError(f"{label}: must be true or false, got {value!r}")
         elif label in LIST_PARAMS:
             if not isinstance(value, list) or not value or not all(_is_number(v) for v in value):
                 raise ConfigError(f"{label}: must be a non-empty list of numbers, got {value!r}")
@@ -226,6 +252,19 @@ class Config:
                 cls._check_number(label, v)
         else:
             cls._check_number(label, value)
+
+    @staticmethod
+    def _check_pair(label, value, word, positive):
+        """The text `word`, or two finite numbers in metres: > 0 when `positive`, else >= 0."""
+        if value == word:
+            return
+        ok = isinstance(value, list) and len(value) == 2 and all(_is_number(v) and math.isfinite(v) for v in value)
+        if not ok:
+            raise ConfigError(f'{label}: must be "{word}" or two finite numbers in metres, got {value!r}')
+        if positive and min(value) <= 0:
+            raise ConfigError(f"{label}: both values must be > 0, got {value!r}")
+        if not positive and min(value) < 0:
+            raise ConfigError(f"{label}: both values must be 0 or more, got {value!r}")
 
     def _check_profile_weights(self):
         """w_fastest is exactly 0 (risk ignored) and w_fastest <= w_balanced <= w_safest."""

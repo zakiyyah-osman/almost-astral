@@ -71,3 +71,56 @@ test('the HUD follows my mission, not the team files', () => {
   const storm = startStorm(tl, mid, s.d)
   assert.ok(storm.ret, 'a storm uses the computed way home')
 })
+
+// Flat ground 60 x 60 cells of 5 m, with a band of careful ground along the straight way home.
+function flatSiteWithBand() {
+  const W = 60
+  const H = 60
+  const dem = new Float32Array(W * H)
+  const hazard = new Uint8Array(W * H)
+  for (let r = 28; r <= 31; r++) for (let c = 10; c <= 50; c++) hazard[r * W + c] = 1
+  const slope = slopeDeg(dem, W, H, 5)
+  return buildCost({ dem, slope, hazard, width: W, height: H, cellM: 5, params: P })
+}
+
+test('the way home takes exactly the time the field promises', () => {
+  const cost = site()
+  const { field } = mission(cost)
+  for (const [x, y] of [[250, 150], [200, 60], [120, 240]]) {
+    const i = cellOf(x, y, cost.width, cost.height, cost.cellM).i
+    if (!Number.isFinite(field[i])) continue
+    const home = pathHome(cost, field, i)
+    assert.ok(Math.abs(home.walk_min - field[i]) < 1e-6, `walked ${home.walk_min} min, field says ${field[i]}`)
+  }
+})
+
+test('a risk-weighted way home stays off careful ground when a short detour avoids it', () => {
+  const cost = flatSiteWithBand()
+  const shelter = cellOf(20, 150, cost.width, cost.height, cost.cellM).i
+  const from = cellOf(270, 150, cost.width, cost.height, cost.cellM).i
+  const careful = (path) => path.filter(([x, y]) => cost.hazard[cellOf(x, y, cost.width, cost.height, cost.cellM).i] === 1).length
+  const fast = pathHome(cost, timeField(cost, [shelter]), from)
+  const w = P.w_balanced
+  const safe = pathHome(cost, timeField(cost, [shelter], w), from, w)
+  assert.ok(careful(fast.path) > 20, 'the fastest way runs along the careful band')
+  assert.equal(careful(safe.path), 0)
+  assert.ok(safe.walk_min < fast.walk_min * 1.05, 'and the detour costs under 5% more walking time')
+})
+
+test('the storm return in the HUD plan can follow a risk-weighted field', () => {
+  const cost = flatSiteWithBand()
+  const home = cellOf(20, 150, cost.width, cost.height, cost.cellM).i
+  const pts = [
+    { id: 'start', kind: 'rover', name: 'Start', x: 20, y: 150 },
+    { id: 'q1', kind: 'stop', name: 'Quest', x: 270, y: 150, stopMin: 10 },
+    { id: 'start', kind: 'rover', name: 'Start', x: 20, y: 150 },
+  ]
+  const r = planOuting(cost, pts, P.w_balanced, P, { ingress: true })
+  assert.ok(r.ok)
+  const w = P.w_balanced
+  const plan = hudPlan(r.plan, r.track, timeField(cost, [home]), cost, P.ingress_min, 100, { field: timeField(cost, [home], w), w })
+  const far = plan.storm_replan.points.reduce((a, b) => (b.return_distance_m > a.return_distance_m ? b : a))
+  const careful = far.path.filter(([x, y]) => cost.hazard[cellOf(x, y, cost.width, cost.height, cost.cellM).i] === 1).length
+  assert.equal(careful, 0)
+  assert.ok(far.return_min > P.ingress_min)
+})
