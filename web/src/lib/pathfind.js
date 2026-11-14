@@ -90,8 +90,8 @@ export function paramsFrom(plan, manifest = null) {
   return p
 }
 
-// Min-heap of [key, value] pairs.
-class Heap {
+// Min-heap of [key, value] pairs (also used by lib/escape.js).
+export class Heap {
   constructor() {
     this.k = []
     this.v = []
@@ -259,6 +259,9 @@ export function totals(cost, cells) {
 export function reasonText(cost, reason) {
   if (reason === 'outside') return 'outside the map'
   if (reason === 'landing_blocked') return 'the start cannot be walked on'
+  if (reason === 'escape_unavailable') return "the start is inside a red zone, and routing's export has no escape rate (escape_time_rate) to walk out of it yet"
+  if (reason === 'start_too_steep') return `Too steep to walk out of here: over ${cost.escape?.max_slope_deg ?? '?'}°`
+  if (reason === 'no_exit') return 'no way out of the red zone around the start leads to the destination through the side quests'
   return cost.maskCodes?.find((m) => m.code === reason)?.text ?? `blocked (code ${reason})`
 }
 

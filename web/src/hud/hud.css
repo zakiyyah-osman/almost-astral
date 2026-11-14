@@ -88,9 +88,10 @@
 .hud-weather { display: flex; gap: 8px; margin: 10px 0 0; }
 .hud-weather div { flex: 1; display: grid; gap: 1px; padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); }
 .hud-weather b { font-size: 0.95em; font-weight: 600; }
-.hud-profile { display: block; width: 100%; height: auto; margin: 8px 0 0; border-radius: 6px; background: rgba(255, 255, 255, 0.05); }
-.hud-profile polyline { fill: none; stroke: #7fa89f; stroke-width: 2; vector-effect: non-scaling-stroke; }
-.hud-profile circle { fill: var(--hud-ok); }
+/* the route profile (web/src/components/RouteCharts.jsx RouteProfile), the same as the sidebar's */
+.hud-profile-wrap { margin: 8px 0 0; padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); }
+.hud-profile-wrap .route-profile h2 { margin: 0 0 4px; font-size: 0.8rem; }
+.hud-empty { color: var(--hud-warn, #fbbf24); }
 
 .hud-alerts { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 4px; }
 .hud-alerts li { padding: 5px 8px; border-radius: 5px; font-size: 0.8em; border-left: 4px solid; background: rgba(255, 255, 255, 0.05); }

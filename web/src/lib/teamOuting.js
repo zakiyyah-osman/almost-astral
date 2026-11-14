@@ -87,3 +87,70 @@ export function planExtras(plan) {
   const sum = (k) => (num(k).length ? Math.round(num(k).reduce((s, v) => s + v, 0)) : NaN)
   return { max_slope_deg: num('max_slope_deg').length ? Math.max(...num('max_slope_deg')) : NaN, ascent_m: sum('ascent_m'), descent_m: sum('descent_m') }
 }
+
+// The demo route's plan for the HUD, worked out from the picked route file's own cells and routing's
+// cost surface, not from plan.json's precomputed track or storm return. The line is cut at the stop
+// nearest each visited waypoint (moving forwards only); each leg's distance, walking time and risk are
+// summed along the 5 m samples (routing/docs/DESIGN.md section 15.3 on the sampled cells). Minutes on
+// site, ingress and the budgets come from plan.json. Returns { plan, track } or null.
+export function demoHudPlan(cost, plan, routeFc, waypoints) {
+  const line = lineOf(routeFc)
+  if (!cost || !plan?.legs?.length || !line) return null
+  const track = sampleLine(cost, line)
+  if (track.length < 2) return null
+  const { timeRate, riskRate } = cost
+  const rate = (i) => Math.max(0, timeRate[i])
+  let t = 0
+  let risk = 0
+  track[0].t = 0
+  track[0].risk = 0
+  for (let k = 1; k < track.length; k++) {
+    const a = track[k - 1].i
+    const b = track[k].i
+    const step = track[k].d - track[k - 1].d
+    t += (step * (rate(a) + rate(b))) / 2
+    risk += (step * (rate(a) * riskRate[a] + rate(b) * riskRate[b])) / 2
+    track[k].t = t
+    track[k].risk = risk
+  }
+  const byId = Object.fromEntries((waypoints?.features ?? []).map((f) => [f.properties.id, f.geometry.coordinates]))
+  // Where each leg ends on the line: the nearest sample to its waypoint, after the previous cut; the last leg ends at the end.
+  const cuts = [0]
+  plan.legs.forEach((leg, k) => {
+    if (k === plan.legs.length - 1) return cuts.push(track.length - 1)
+    const p = byId[leg.to]
+    let best = cuts[cuts.length - 1]
+    if (p) {
+      let bd = Infinity
+      for (let q = best; q < track.length; q++) {
+        const dd = Math.hypot(track[q].x - p[0], track[q].y - p[1])
+        if (dd < bd) {
+          bd = dd
+          best = q
+        }
+      }
+    }
+    cuts.push(best)
+  })
+  const r1 = (v) => Math.round(v * 10) / 10
+  const legs = plan.legs.map((leg, k) => {
+    const a = track[cuts[k]]
+    const b = track[cuts[k + 1]]
+    const seg = track.slice(cuts[k], cuts[k + 1] + 1)
+    let up = 0
+    let down = 0
+    for (let q = 1; q < seg.length; q++) {
+      const dz = seg[q].z - seg[q - 1].z
+      if (dz > 0) up += dz
+      else down -= dz
+    }
+    return { from: leg.from, to: leg.to, distance_m: Math.round(b.d - a.d), walk_min: r1(b.t - a.t), stop_min: leg.stop_min ?? 0, risk_min: r1(b.risk - a.risk), ascent_m: Math.round(up), descent_m: Math.round(down), max_slope_deg: r1(Math.max(...seg.map((q) => q.slope).filter(Number.isFinite))) }
+  })
+  const walk = r1(legs.reduce((s, l) => s + l.walk_min, 0))
+  const stops = legs.reduce((s, l) => s + l.stop_min, 0)
+  const ingress = plan.totals?.ingress_min ?? 0
+  return {
+    plan: { start: plan.start, legs, totals: { walk_min: walk, stop_min: stops, ingress_min: ingress, total_min: r1(walk + stops + ingress) }, budgets: plan.budgets, radiation_dose_usv: plan.radiation_dose_usv, from_route_cells: true },
+    track,
+  }
+}

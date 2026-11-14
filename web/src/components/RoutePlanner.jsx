@@ -25,11 +25,15 @@ function LandingStatus({ landing }) {
   )
 }
 
-// A custom mission: a landing, side quests in visiting order, and the final destination.
-// The landing is chosen on the map and checked against routing's landing rules (lib/landingCheck.js);
-// the other points can be picked on the map (a click, or a click on a pin) or from the list of named places.
-export default function MissionBuilder({ landing, landingReady, mission, setMission, picking, setPicking, places, detours, targets, onBestOrder, defaultStopMin, mineralNote }) {
-  const { start, quests, dest } = mission
+// The route planner both modes share: a start, side quests in visiting order, and the destination.
+// startKind 'landing' (My mission): the start is a landing, chosen on the map and checked against routing's
+// landing rules (lib/landingCheck.js). startKind 'start' (Team outing): any walkable point; startNote is shown
+// under it (for example why a picked start was refused). The other points can be picked on the map
+// (a click, or a click on a pin) or from the list of named places.
+export default function RoutePlanner({ startKind = 'landing', landing, landingReady, startNote, trip, setTrip, picking, setPicking, places, detours, targets, onBestOrder, defaultStopMin, mineralNote }) {
+  const { start, quests, dest } = trip
+  const mission = trip
+  const setMission = setTrip
   const set = (patch) => setMission((m) => ({ ...m, ...patch }))
   const setQuest = (k, patch) => setMission((m) => ({ ...m, quests: m.quests.map((q, j) => (j === k ? { ...q, ...patch } : q)) }))
   const moveQuest = (k, by) =>
@@ -69,15 +73,31 @@ export default function MissionBuilder({ landing, landingReady, mission, setMiss
 
   return (
     <div className="mission">
-      <div className="mrow">
-        <span className={`pin landing-${landing?.status === 'marginal' ? 'marginal' : 'safe'}`}>L</span>
-        <div className="mrow-main">
-          <b>Landing</b>
-          <small>{start ? fmtXY(start) : landingReady ? 'Click the map to choose a landing site' : 'Loading the landing map…'}</small>
-        </div>
-        {landingReady && pickButton('landing', start ? 'Move' : 'On map')}
-      </div>
-      <LandingStatus landing={landing} />
+      {startKind === 'landing' ? (
+        <>
+          <div className="mrow">
+            <span className={`pin landing-${landing?.status === 'marginal' ? 'marginal' : 'safe'}`}>L</span>
+            <div className="mrow-main">
+              <b>Landing</b>
+              <small>{start ? fmtXY(start) : landingReady ? 'Click the map to choose a landing site' : 'Loading the landing map…'}</small>
+            </div>
+            {landingReady && pickButton('landing', start ? 'Move' : 'On map')}
+          </div>
+          <LandingStatus landing={landing} />
+        </>
+      ) : (
+        <>
+          <div className="mrow">
+            <span className="pin m-start">S</span>
+            <div className="mrow-main">
+              <b>Start</b>
+              <small>{start ? fmtXY(start) : 'Click the map to choose a start'}</small>
+            </div>
+            {pickButton('start', start ? 'Move' : 'On map')}
+          </div>
+          {startNote}
+        </>
+      )}
 
       <div className="quests-head">
         <h3>
@@ -104,7 +124,7 @@ export default function MissionBuilder({ landing, landingReady, mission, setMiss
                   ) : start && dest ? (
                     'cost not available'
                   ) : (
-                    'set start and destination'
+                    'set a start and a destination'
                   )}
                 </small>
               </div>
@@ -144,7 +164,7 @@ export default function MissionBuilder({ landing, landingReady, mission, setMiss
                 <span>
                   <b>{t.mineral}</b>
                   <small>
-                    {Math.round(t.areaM2).toLocaleString()} m² · {t.detourMin == null ? 'set start and destination' : t.detourMin < 1 ? 'on the route' : `about ${Math.round(t.detourMin)} min off the route, there and back`}
+                    {Math.round(t.areaM2).toLocaleString()} m² · {t.detourMin == null ? 'set a start and a destination' : t.detourMin < 1 ? 'on the route' : `about ${Math.round(t.detourMin)} min off the route, there and back`}
                   </small>
                 </span>
                 <button type="button" disabled={added(t)} onClick={() => setMission((m) => ({ ...m, quests: [...m.quests, { x: t.x, y: t.y, name: `${t.mineral} area`, stopMin: defaultStopMin }] }))}>
@@ -170,7 +190,7 @@ export default function MissionBuilder({ landing, landingReady, mission, setMiss
         {placeSelect('dest', 'Pick a place')}
       </div>
 
-      <p className="muted">One way: the walk ends at the destination. The time needed counts the walk, {defaultStopMin} min there (or what you set), the minutes at each side quest and getting into the lander.</p>
+      <p className="muted">One way: the walk ends at the destination. The time needed counts the walk, {defaultStopMin} min there (or what you set), the minutes at each side quest and getting inside (ingress).</p>
     </div>
   )
 }

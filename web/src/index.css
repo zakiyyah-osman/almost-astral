@@ -672,7 +672,7 @@ input, textarea, [contenteditable], .coords b, .coords small, .point-head b { -w
 .coords { pointer-events: auto; }
 
 
-/* ---- landing choice (lib/landingCheck.js, LandingNotice.jsx) ---- */
+/* ---- landing choice (lib/landingCheck.js, RouteNotice.jsx) ---- */
 .pin.landing-safe { background: var(--pin-landing-safe); }
 .pin.landing-marginal { background: var(--pin-landing-marginal); color: #130e0c; }
 .map-legend i.dot.landing-safe { background: var(--pin-landing-safe); }
@@ -701,3 +701,10 @@ path.landing-move-line { stroke: var(--landing-moved); }
 .profiles button.warn { border-color: rgba(251, 191, 36, 0.6); }
 .profiles button em.warn { color: var(--warn); }
 .checks li.warn { color: var(--warn); font-weight: 600; }
+
+/* the walk out of a red zone (lib/escape.js) */
+.escape-label { color: #ff6b3d; font-weight: 700; }
+.profiles button .escape-line { color: #ff8a65; }
+.map-legend i.line.escape { background: repeating-linear-gradient(90deg, #ff6b3d 0 8px, transparent 8px 14px); }
+.chart .cursor.here { stroke: #5eead4; stroke-width: 2; } /* where the crew is (HUD) */
+.route-check .escape-note { display: block; margin-top: 4px; font-weight: 400; color: var(--muted); }

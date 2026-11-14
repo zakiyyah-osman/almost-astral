@@ -5,10 +5,19 @@ import { planLeg } from './pathfind.js'
 // points: [{ id, name, x, y, kind, stopMin? }] in visiting order. Minutes are spent at each point that
 // is a science stop (kind 'stop'): its own stopMin, else opts.stopMin, else the planner's default;
 // 0 for the start and any point of another kind. opts.cache: see cachedLeg.
+// opts.escape: { A, B, leg } a first leg already walked out of a red zone (lib/escape.js), from the real
+// start A to the exit B = points[0]; it counts in every total and is flagged on its plan leg.
 export function planOuting(cost, points, w, params, opts = {}) {
   const legs = []
   const coords = []
   const tracks = []
+  if (opts.escape) {
+    legs.push({ ...opts.escape, escape: true })
+    for (let q = 0; q < opts.escape.leg.points.length; q++) {
+      coords.push(opts.escape.leg.points[q])
+      tracks.push({ ...opts.escape.leg.track[q], leg: -1, escape: true })
+    }
+  }
   for (let k = 0; k < points.length - 1; k++) {
     const A = points[k]
     const B = points[k + 1]
@@ -41,7 +50,8 @@ const r1 = (v) => Math.round(v * 10) / 10
 
 function assemble(legs, coords, params, opts) {
   const stopMin = opts.stopMin ?? params.stop_min_default
-  const planLegs = legs.map(({ A, B, leg }) => ({
+  const planLegs = legs.map(({ A, B, leg, escape }) => ({
+    ...(escape ? { escape: true } : {}),
     from: A.id,
     to: B.id,
     distance_m: Math.round(leg.distance_m),
@@ -69,7 +79,10 @@ function assemble(legs, coords, params, opts) {
   const checks = []
   checks.push({ id: 'time', level: 'warn', ok: neededMin <= usableExact, value: total, limit: usable, message: total <= usable ? `Fits in the ${usable} min usable (${params.eva_max_min} min limit minus a ${params.reserve_pct}% reserve).` : `Over the ${usable} min usable time (${params.eva_max_min} min limit minus a ${params.reserve_pct}% reserve).` })
   if (dose != null) checks.push({ id: 'dose', ok: dose <= params.radiation_limit_usv, value: dose, limit: params.radiation_limit_usv, message: `Dose about ${dose} of ${params.radiation_limit_usv} µSv.` })
-  const nogo = planLegs.reduce((s, l) => s + l.metres_nogo, 0)
+  // The escape leg walks through blocked ground by design; it gets its own (warning) check.
+  const esc = planLegs.find((l) => l.escape)
+  if (esc) checks.push({ id: 'escape', level: 'warn', ok: false, value: esc.distance_m, limit: 0, message: `Starts inside a red zone: ${esc.distance_m} m (${esc.walk_min} min) to walk out before the route.` })
+  const nogo = planLegs.filter((l) => !l.escape).reduce((s, l) => s + l.metres_nogo, 0)
   checks.push({ id: 'nogo', ok: nogo === 0, value: nogo, limit: 0, message: nogo === 0 ? 'Never enters no-go ground.' : `${nogo} m on no-go ground.` })
 
   const plan = {
@@ -96,10 +109,17 @@ function assemble(legs, coords, params, opts) {
     metres_careful: planLegs.reduce((s, l) => s + l.metres_careful, 0),
     metres_nogo: nogo,
   }
-  const route = {
-    type: 'FeatureCollection',
-    features: [{ type: 'Feature', properties: { source: 'web route-finder', profile: opts.profile ?? null }, geometry: { type: 'LineString', coordinates: coords } }],
+  const features = [{ type: 'Feature', properties: { source: 'web route-finder', profile: opts.profile ?? null }, geometry: { type: 'LineString', coordinates: coords } }]
+  if (opts.escape) {
+    const e = opts.escape.leg
+    plan.escape = { distance_m: e.distance_m, walk_min: e.walk_min, risk_min: e.risk_min, exit: { x: opts.escape.B.x, y: opts.escape.B.y }, cells: e.cells }
+    // The route after the exit, raw (unrounded) sums of its legs.
+    const after = legs.filter((l) => !l.escape)
+    plan.after_escape = { distance_m: after.reduce((s, { leg }) => s + leg.distance_m, 0), walk_min: after.reduce((s, { leg }) => s + leg.walk_min, 0), risk_min: after.reduce((s, { leg }) => s + leg.risk_min, 0), cells: after.flatMap(({ leg }, k) => (k ? leg.cells.slice(1) : leg.cells)) }
+    // Drawn on top in its own style (SiteMap); the full line above stays first, for the HUD.
+    features.push({ type: 'Feature', properties: { escape: true, label: 'Escape' }, geometry: { type: 'LineString', coordinates: e.points } })
   }
+  const route = { type: 'FeatureCollection', features }
   return { plan, route }
 }
 

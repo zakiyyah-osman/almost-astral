@@ -487,8 +487,16 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       L.geoJSON(refRoute, { coordsToLatLng: toLL, interactive: false, style: { color: '#c9b8ad', weight: 2, opacity: 0.8, dashArray: '2 6' } }).addTo(g)
     }
     if (route) {
-      L.geoJSON(route, { coordsToLatLng: toLL, interactive: false, style: { color: '#1a0e09', weight: 7, opacity: 0.7 } }).addTo(g)
-      L.geoJSON(route, { coordsToLatLng: toLL, interactive: false, style: { color: '#ffffff', weight: 3, opacity: 0.95, dashArray: '6 6' } }).addTo(g)
+      const main = (f) => !f.properties?.escape
+      L.geoJSON(route, { filter: main, coordsToLatLng: toLL, interactive: false, style: { color: '#1a0e09', weight: 7, opacity: 0.7 } }).addTo(g)
+      L.geoJSON(route, { filter: main, coordsToLatLng: toLL, interactive: false, style: { color: '#ffffff', weight: 3, opacity: 0.95, dashArray: '6 6' } }).addTo(g)
+      // The walk out of a red zone (lib/escape.js): its own colour and a label, on top of the route.
+      for (const f of route.features ?? []) {
+        if (!f.properties?.escape) continue
+        L.geoJSON(f, { coordsToLatLng: toLL, interactive: false, style: { color: '#1a0e09', weight: 8, opacity: 0.7 } }).addTo(g)
+        const line = L.geoJSON(f, { coordsToLatLng: toLL, style: { color: '#ff6b3d', weight: 4, opacity: 1, dashArray: '8 6' } }).addTo(g)
+        line.bindTooltip(f.properties.label ?? 'Escape', { permanent: true, direction: 'top', className: 'stop-label escape-label' })
+      }
     }
   }, [route, refRoute, altRoutes, data])
 

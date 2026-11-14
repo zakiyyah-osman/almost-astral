@@ -105,6 +105,10 @@ export function costFromLanding(g, terrain = null) {
     slope: terrain?.slope ?? null,
     hazard: terrain?.hazard ?? null,
     budget: g.manifest.budget,
+    // Red-zone escape (lib/escape.js): only when routing exports these grids; null until then.
+    escapeTimeRate: g.arrays.escape_time_rate ?? null,
+    escapeRiskRate: g.arrays.escape_risk_rate ?? null,
+    escape: g.manifest.escape ?? null,
     maskCodes: g.manifest.mask_codes,
     searches: new Map(),
   }

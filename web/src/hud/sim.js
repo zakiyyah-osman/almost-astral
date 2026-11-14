@@ -152,7 +152,8 @@ export function buildTimeline(plan, waypoints, route) {
   // (back home, or at a one-way destination), so it is never a sampling stop.
   const roverId = plan.start?.id ?? plan.legs[0].from ?? ROVER_ID
   const homeIds = new Set([roverId, plan.legs[0].from])
-  const isStop = (leg, i) => i < plan.legs.length - 1 && !homeIds.has(leg.to)
+  // The walk out of a red zone (leg.escape, web/src/lib/escape.js) ends at its exit: not a sampling stop.
+  const isStop = (leg, i) => i < plan.legs.length - 1 && !homeIds.has(leg.to) && !leg.escape
 
   // The path: the real route if there is one, otherwise straight lines between the stops.
   let pts = routePoints(route)
