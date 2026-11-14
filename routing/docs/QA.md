@@ -31,9 +31,14 @@ foreach ($k in "flat","plane10","yellow_all","yellow_patch","wall","ridge","ring
   python $QA\qa_tools.py site $k $QA\sites\$k
 }
 
-# The start always comes from the config (start.xy_m), so the QA runs use a copy of
-# routing/config.toml with the start on the QA sites' start point. Every Cfg copy is made from it.
-python $QA\qa_tools.py config $QA\cfg\base.toml start.xy_m "[26.25, 101.25]"
+# The starts always come from the config ([starts.L1], [starts.L2], [starts.L3]; L1 is the default),
+# so the QA runs use a copy of routing/config.toml with the three starts on the QA sites: all in the
+# west, clear of every feature. Every Cfg copy is made from it. The copy still holds the hashes of the
+# real data/out files, so every QA plan has two "not the file the starts were computed on" warnings:
+# that is expected and not a failure.
+python $QA\qa_tools.py config $QA\cfg\base1.toml starts.L1 "[26.25, 101.25]"
+python $QA\qa_tools.py config $QA\cfg\base2.toml starts.L2 "[26.25, 76.25]"  $QA\cfg\base1.toml
+python $QA\qa_tools.py config $QA\cfg\base.toml  starts.L3 "[26.25, 126.25]" $QA\cfg\base2.toml
 $CFG = "$QA\cfg\base.toml"
 function Plan($site, $tag = $site, $cfg = $CFG)  { python routing/plan_route.py --in $QA\sites\$site --out $QA\out\$tag --config $cfg; "exit code $LASTEXITCODE" }
 function Audit($site, $tag = $site, $cfg = $CFG) { python $QA\qa_tools.py audit $QA\sites\$site $QA\out\$tag $cfg }
@@ -48,7 +53,7 @@ A parameter check is written `Plan flat a5 (Cfg a5 walking.v_flat_kmh 4.7)`: bui
 
 ### The synthetic sites
 
-All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Start (waypoint kind `start`, and `start.xy_m` in `$CFG`) at `[26.25, 101.25]`, `stop1` "QA East" at `[276.25, 101.25]`, `stop2` "QA North-East" at `[276.25, 151.25]`. The round trip on open flat ground is 570.7 m on an 8-neighbour grid.
+All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Start (waypoint kind `start`, and `starts.L1`, the default, in `$CFG`) at `[26.25, 101.25]`, `stop1` "QA East" at `[276.25, 101.25]`, `stop2` "QA North-East" at `[276.25, 151.25]`. The round trip on open flat ground is 570.7 m on an 8-neighbour grid.
 
 | Site | Terrain | Hazard | Tests |
 | --- | --- | --- | --- |
@@ -171,7 +176,8 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Sta
 | G1 | `Plan ring g` | Non-zero exit. The message contains `stop2`, `QA North-East`, the coordinates `276.25, 151.25` and the word unreachable (or an equal reason). It does not blame `stop1`. Hashes unchanged. No traceback. | |
 | G2 | `Plan red_stop g` | Non-zero exit. The message contains `stop1`, `QA East`, `276.25, 101.25` and says the cell is red. Hashes unchanged. | |
 | G3 | In `$QA\sites\ridge\waypoints.geojson` move `stop1` to `[151.25, 101.25]` (on the scarp). `Plan ridge g`. Move it back. | Non-zero exit naming `stop1`, reason slope over the limit or inside the buffer. | |
-| G4 | In a copy of `flat`, set `stop1`'s `kind` to `"start"` (two starts) and run. Undo, then set the start's `kind` to `"rover"` (the old name) and run. Then run with `--config (Cfg g4 start.xy_m "[151.25, 101.25]")` on `ridge` (start on the scarp). | Two starts: non-zero exit, "at most one" start, nothing written. `"rover"`: exit 0, `plan.json` `warnings` says the kind is deprecated, and `legs`, `start.id` and the route files never contain the word `rover` (the id is `start`). Start on the scarp: non-zero exit, the message gives the start, its coordinates and the reason (slope over the limit or the buffer). Nothing written. | |
+| G4 | In a copy of `flat`, set `stop1`'s `kind` to `"start"` (two starts) and run. Undo, then set the start's `kind` to `"rover"` (the old name) and run. Then run with `--config (Cfg g4 starts.L1 "[151.25, 101.25]")` on `ridge` (the default start on the scarp). | Two starts: non-zero exit, "at most one" start, nothing written. `"rover"`: exit 0, `plan.json` `warnings` says the kind is deprecated, and `legs`, `start.id` and the route files never contain the word `rover` (the id is `start`). Start on the scarp: non-zero exit, the message gives the start, its coordinates and the reason (slope over the limit or the buffer). Nothing written. | |
+| G4b | `Plan ridge g (Cfg g4b starts.L3 "[151.25, 101.25]")` (L3, which is not the default, on the scarp). | Non-zero exit. The message names `start 'L3'` and its coordinates, and the reason (slope over the limit or the buffer); it does not name L1 or L2. Nothing written: every start is checked, not only the default. | |
 | G5 | In a copy of `flat`, delete `hazard.tif`. Then restore it and set `site.grid.width` to `100` in `layers.json`. | Each: non-zero exit with a message naming the file or the size mismatch. Nothing written. No traceback. | |
 | G6 | `Plan flat g` | Back to exit code 0: the good case still works after the failure tests. | |
 

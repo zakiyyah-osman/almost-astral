@@ -21,14 +21,46 @@ if str(ROUTING) not in sys.path:
 Site = namedtuple("Site", "folder dem hazard width height cell_m")
 REPO_CONFIG = ROUTING / "config.toml"
 START_KINDS = ("start", "rover")
-_START_VALUE = re.compile(r"(\[start\.xy_m\]\s*\nvalue = )\[[^\]]*\]")
+_STARTS_BLOCK = re.compile(r"# ---- starts -.*?(?=# ---- reach export)", re.S)
+ZERO_SHA = "0" * 64
 
 
-def config_text(start_xy, text=None):
-    """The text of routing/config.toml (or `text`) with start.xy_m set to start_xy."""
+def _sha_in(text, key, fallback):
+    m = re.search(rf'\[start\.{key}\]\s*\nvalue = "([0-9a-f]{{64}})"', text)
+    return m.group(1) if m else fallback
+
+
+def start_block(starts, default, dem_sha, hazard_sha):
+    """The TOML text of the starts section: [start.*] and one [starts.<id>] per start."""
+    out = [
+        "# ---- starts ----- (written by the tests) ---------------------------------\n",
+        f'[start.default]\nvalue = "{default}"\nunit = "id"\ntype = "scenario"\nsource = "test"\n\n',
+        f'[start.dem_sha256]\nvalue = "{dem_sha}"\nunit = "sha256"\ntype = "scenario"\nsource = "test"\n\n',
+        f'[start.hazard_sha256]\nvalue = "{hazard_sha}"\nunit = "sha256"\ntype = "scenario"\nsource = "test"\n\n',
+    ]
+    for sid, (x, y) in starts.items():
+        out.append(
+            f'[starts.{sid}]\nvalue = [{float(x)!r}, {float(y)!r}]\nunit = "m"\ntype = "scenario"\n'
+            f'source = "test start {sid}, temporary"\n\n'
+        )
+    return "".join(out)
+
+
+def config_text(starts, text=None, default=None, dem_sha=None, hazard_sha=None):
+    """routing/config.toml (or `text`) with its starts section replaced.
+
+    starts: {id: (x, y)}, or one (x, y) point for a single start L1. The default start is `default`
+    or else the first. The data hashes are `dem_sha` and `hazard_sha`, or else the ones already in
+    the text.
+    """
     text = REPO_CONFIG.read_text(encoding="utf-8") if text is None else text
-    new, n = _START_VALUE.subn(lambda m: f"{m.group(1)}[{float(start_xy[0])!r}, {float(start_xy[1])!r}]", text)
-    assert n == 1, "start.xy_m not found in the config text"
+    if not isinstance(starts, dict):
+        starts = {"L1": starts}
+    default = next(iter(starts)) if default is None else default
+    dem_sha = _sha_in(text, "dem_sha256", ZERO_SHA) if dem_sha is None else dem_sha
+    hazard_sha = _sha_in(text, "hazard_sha256", ZERO_SHA) if hazard_sha is None else hazard_sha
+    new, n = _STARTS_BLOCK.subn(lambda m: start_block(starts, default, dem_sha, hazard_sha), text)
+    assert n == 1, "the starts section was not found in the config text"
     return new
 
 
@@ -52,10 +84,16 @@ def run_site(folder):
     return plan_route.run(folder, path if path.exists() else None)
 
 
-def write_config(path, start_xy, text=None):
+def write_config(path, starts, text=None, **kw):
+    """Write a config with the given starts (see config_text) to `path`."""
     path = Path(path)
-    path.write_text(config_text(start_xy, text), encoding="utf-8")
+    path.write_text(config_text(starts, text, **kw), encoding="utf-8")
     return path
+
+
+def sha256_of(path):
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def write_site(folder, dem, hazard, cell_m, name="Synthetic test site"):
@@ -132,13 +170,14 @@ def write_waypoints(folder, items):
     return path
 
 
-def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False, start=None):
+def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False, start=None, starts=None, default=None):
     """A complete input folder as plan_route.py and data/validate.py expect it.
 
     waypoints: (id, name, kind, x, y) tuples. Adds radiation.csv, weather.csv and one layer image.
-    Also writes config_for(folder): routing/config.toml with start.xy_m set to `start`, or else
-    to the first start waypoint (kind start, or the deprecated rover), because the start always comes
-    from the config.
+    Also writes config_for(folder): routing/config.toml with its starts set to `starts` ({id: (x, y)}),
+    or to one start L1 at `start`, or else at the first start waypoint (kind start, or the deprecated
+    rover), because the start always comes from the config. The config carries the hashes of this
+    site's dem.tif and hazard.tif, so a site written here gives no staleness warning.
     """
     from PIL import Image
 
@@ -162,8 +201,11 @@ def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False, start=No
     weather = ["sol,local_hour,temp_c,pressure_pa,dust_tau", "40,12,-20,700,0.5"]
     (folder / "weather.csv").write_text("\n".join(weather) + "\n", encoding="utf-8")
     write_waypoints(folder, waypoints)
-    if start is None:
-        start = next(((x, y) for _, _, kind, x, y in waypoints if kind in START_KINDS), None)
-    if start is not None:
-        write_config(config_for(folder), start)
+    if starts is None:
+        if start is None:
+            start = next(((x, y) for _, _, kind, x, y in waypoints if kind in START_KINDS), None)
+        starts = None if start is None else {"L1": start}
+    if starts is not None:
+        write_config(config_for(folder), starts, default=default,
+                     dem_sha=sha256_of(folder / "dem.tif"), hazard_sha=sha256_of(folder / "hazard.tif"))
     return site

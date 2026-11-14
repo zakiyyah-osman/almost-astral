@@ -29,7 +29,7 @@ RAMP_RGB = (
 CELL_ALPHA = 210                    # coloured cells let the relief show through a little
 CONTOUR_RGBA = (30, 30, 30, 255)    # burned-in contour lines
 TRANSPARENT = (0, 0, 0, 0)
-LABEL = "Minutes back to start"     # legend title; the layer measures from start.xy_m
+LABEL = "Minutes back to start"     # legend title; the layer measures from the default start
 
 
 @dataclass(frozen=True)

@@ -168,7 +168,9 @@ def test_unknown_type_rejected_in_any_section(raw, key):
 
 # ---- parameter names ---------------------------------------------------------
 def test_expected_parameters_match_the_shipped_config():
-    assert set(EXPECTED_PARAMS) == set(load_config().assumptions())
+    found = set(load_config().assumptions())
+    assert set(EXPECTED_PARAMS) == {k for k in found if not k.startswith("starts.")}
+    assert {k for k in found if k.startswith("starts.")} == {"starts.L1", "starts.L2", "starts.L3"}   # any number
     assert len(EXPECTED_PARAMS) == len(set(EXPECTED_PARAMS))
 
 

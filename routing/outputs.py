@@ -176,9 +176,10 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
         },
         "assumptions": cfg.assumptions(),
         "start": {
-            "id": tour.start.id, "name": tour.start.name,
+            "id": tour.start.id, "name": tour.start.name, "landing_id": tour.start.landing_id,
             "xy_m": xy((tour.start.x, tour.start.y)), "cell": [int(v) for v in tour.start.cell],
-            "source": "routing/config.toml start.xy_m (landing spot L1, temporary)",
+            "source": f"routing/config.toml starts.{tour.start.landing_id}, the default start "
+                      "(a landing spot, temporary)",
         },
         "inputs": {
             "site": layers.get("site", {}).get("name"),
@@ -230,5 +231,7 @@ def write_files(out_dir, files):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
-        (out_dir / name).write_bytes(data)
+        path = out_dir / name                   # a name may hold folders: "L1/fastest_time.f32"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
     return [out_dir / name for name in files]

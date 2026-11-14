@@ -2,9 +2,9 @@
 
 What the route planner does and why. Build order is in `CHECKLIST.md`; independent checks are in `QA.md`.
 
-Status: everything is built except the hard-mask validation against the Perseverance traverse (CHECKLIST 6.3), which waits for the traverse data. Phase 8 added the fixed start (section 4.9) and the reach export for point-to-point routes (section 13). Items still waiting for a decision are collected in sections 11 and 12.
+Status: everything is built except the hard-mask validation against the Perseverance traverse (CHECKLIST 6.3), which waits for the traverse data. Phase 8 added the fixed start (section 4.9) and the reach export for point-to-point routes (section 13); phase 9 made the start selectable: three landing spots, L1 to L3. Items still waiting for a decision are collected in sections 11 and 12.
 
-The walk is for an astronaut on foot only. Every walk starts and ends at the start point `start.xy_m` in `config.toml`, which is landing spot L1 for now.
+The walk is for an astronaut on foot only. The user can start from one of three landing spots (L1, L2, L3, listed in `config.toml` as `[starts.<id>]`, temporary). The full outing is planned from the default one (`start.default`, L1) and ends there; the reach export gives point-to-point paths from each of the three.
 
 ## 1. Scope
 
@@ -15,7 +15,7 @@ Reads from `data/out/` (never writes these):
 | `layers.json` | `site.grid` (width, height, cell_m), site name, whether inputs are still fake |
 | `dem.tif` | terrain slope, elevation along the route |
 | `hazard.tif` | red cells (blocked) and yellow cells (penalised) |
-| `waypoints.geojson` | the science stops, and optionally a `start` waypoint, which is only compared with `start.xy_m` (the old kind `rover` is still read, with a warning) |
+| `waypoints.geojson` | the science stops, and optionally a `start` waypoint, which is only compared with the default start (the old kind `rover` is still read, with a warning) |
 | `radiation.csv` | cross-check of the background rate, storm hours for the demo |
 
 Writes to `data/out/`:
@@ -26,7 +26,7 @@ Writes to `data/out/`:
 | `shelter_time.png` | contract file |
 | `plan.json` | contract file, with added fields (section 9) |
 | `route_fastest.geojson`, `route_safest.geojson` | new files, same format as `route.geojson` |
-| `reach/` (13 binary grids and `reach.json`) | new folder, written by `export_reach.py` (section 13) |
+| `reach/` (`reach.json` and one folder per start with 12 grids and `reason.u8`) | new folder, written by `export_reach.py` (section 13) |
 
 Writes inside `routing/` only: `reports/sweep.csv`, `reports/sensitivity.csv`, `reports/validation.csv`. These come from `analysis.py`, which never writes to `data/out/`.
 
@@ -45,7 +45,7 @@ Flat modules in `routing/`. The entry point stays `python routing/plan_route.py`
 | `cost.py` | hard mask, risk rate, time-rate array and planning-cost array |
 | `search.py` | thin wrapper over `skimage.graph.MCP_Geometric`: cumulative cost from a start cell, path to any cell, time and risk summed along a path |
 | `tour.py` | load and check waypoints, decide stop order, build the three profile routes |
-| `start.py` | the start from `start.xy_m`, its checks (section 4.9), and the blocked-reason codes |
+| `start.py` | the configured starts, their checks (section 4.9), the data-hash check, and the blocked-reason codes |
 | `shelter.py` | minutes-back-to-start array and its PNG rendering |
 | `storm.py` | return paths from sampled route points |
 | `timeline.py` | legs, totals, track samples, budget checks, radiation |
@@ -85,7 +85,7 @@ hazard.tif ───► red, yellow ────┼─► hard mask (red, slope 
                                                                                      ▼
 config.toml ──► w per profile ───────────────► planning cost = time rate × (1 + w × risk rate)
                                                                                      │
-start.xy_m ─► start cell, checked (4.9) ┐
+[starts.*] ─► every start checked (4.9); the default one starts the outing ┐
 waypoints.geojson ─► snap to cells, check passable ──► MCP_Geometric from each waypoint
                                                                                      │
                                           stop order ─► fastest / balanced / safest routes
@@ -164,7 +164,7 @@ Because the cost is the same in both directions, the time from A to B equals the
 ### 4.6 Waypoints and stop order
 
 - A point `(x, y)` snaps to the cell that contains it. Route vertices are cell centres, so a marker can sit up to half a cell diagonal from the line.
-- The start is `start.xy_m` from the config (section 4.9), never a waypoint position. At most one waypoint of `kind: "start"` is allowed; it is optional and only compared with `start.xy_m`. The start's id is always `start` (the `from`/`to` of the first and last legs), whatever id the file uses. A stop may not use the id `start`.
+- The start is the default `[starts.<id>]` of the config (section 4.9), never a waypoint position. At most one waypoint of `kind: "start"` is allowed; it is optional and only compared with the default start. The start's id is always `start` (the `from`/`to` of the first and last legs), whatever id the file uses and whichever landing spot is the default. A stop may not use the id `start`.
 - `kind: "rover"` is the old name for `start`. It is still read, as `start`, and logs a deprecation warning that is also written to `plan.json` `warnings`. Any other kind fails.
 - At least one `kind: "stop"` is required.
 - A stop on a blocked cell, or with no path to the start, stops the run with a non-zero exit code. The message names the stop id, its name, its coordinates and the reason (red cell, slope over limit, inside buffer, unreachable). No output file is written.
@@ -186,20 +186,26 @@ All three share the hard mask. They differ only in how much risk exposure they t
 - **Sensitivity:** every combination of `sensitivity.v_flat_kmh`, `sensitivity.slope_max_deg` and `sensitivity.w` (2 x 3 x 3 = 18 runs). One row each: walk minutes, total minutes, risk minutes, budget status, or `infeasible` with the stop that failed. Goes to `reports/sensitivity.csv`.
 - **Hard-mask validation:** the share of Perseverance traverse points that fall on passable cells, reported in `reports/validation.csv`. Perseverance drove there, so a low share means the mask is too strict. Blocked until Yaj supplies the traverse in grid coordinates (section 12).
 
-### 4.9 The start
+### 4.9 The starts
 
-Every walk starts and ends at `start.xy_m` (metres, `[x, y]`) in `config.toml`. For now this is landing spot L1: the first of the recommended landing spots that `web/src/lib/landing.js` (`recommendLanding`) computes in the browser, here (1387.5, 712.5) m, the centre of cell (row 257, col 277), on the data in `data/out/` of 2026-11-14. It is marked temporary and will change when the full Jezero dataset is loaded. `plan_route.py` and `export_reach.py` both use it, so the outing plan, the minutes-back-to-start map and the reach grids measure from the same cell.
+The walk can start from one of several named starts, listed in `config.toml` as `[starts.<id>]` (metres, `[x, y]`; ids are letters, digits, `_` or `-`; any number, at least one) with `start.default` naming the default. For now there are three, landing spots L1, L2 and L3: the three recommended landing spots that `web/src/lib/landing.js` (`recommendLanding`) computes in the browser. They were obtained by running that file's own code, unchanged, on the data in `data/out/` of 2026-11-14 (hazards from `hazard.png`, as the app builds them), and copying its output: L1 (1112.5, 607.5) m, L2 (1007.5, 367.5) m, L3 (1187.5, 1227.5) m. They are marked temporary and will change when the full Jezero dataset is loaded.
 
-Checks, in this order (`start.py`):
+`landing.js` ranks pads by the walking minutes from the pad to the first stop plus the walking minutes from the pad to the last stop. The smallest possible value is the walking time between those two stops, which every pad on a fastest path between them reaches, so many pads tie (on the data above 283 cells tie, 74 of them with a valid flat pad) and L1 and L2 tie to 1e-14. The three spots are therefore equally short walks between the first and last stop, not a ranking by that number.
+
+`plan_route.py` plans the full outing from the default start only; the back-to-start map and `plan.json` measure from it. `export_reach.py` exports one set of grids per start. Both check every configured start, so one bad start is found by every script that uses the config.
+
+Checks (`start.py`), for every start, in this order:
 
 1. The point must lie on the grid (for the reach export, inside the exported area after `reach.crop_m` and `reach.downsample`).
 2. The cell must be passable. Each blocked reason is its own error message: no DEM data, red cell, slope over `constraints.slope_max_deg`, inside the cliff buffer, sealed gap. These are exactly the hard constraints of section 4.1, so a start the route cannot leave is refused.
-3. A start on a yellow cell, or on slope above `risk.steep_onset_deg`, is allowed. It gives a warning in `plan.json` `warnings` and `reach.json` `warnings`.
-4. If `waypoints.geojson` has a start (or rover) waypoint more than half a cell from `start.xy_m`, the config value is used and a warning is logged and written to `plan.json` `warnings`.
+3. A start on a yellow cell, or on slope above `risk.steep_onset_deg`, is allowed. It gives a warning in `plan.json` `warnings` and in `reach.json` (the start's own `warnings` and the top-level `warnings`).
+4. If `waypoints.geojson` has a start (or rover) waypoint more than half a cell from the default start, the config value is used and a warning is logged and written to `plan.json` `warnings`.
 
-A failed check stops the run with a non-zero exit code and writes nothing. In the sensitivity table, a start that becomes blocked under a tighter slope limit makes the run `infeasible` with `failed_stop` = `start`.
+A failed check stops the run with a non-zero exit code and writes nothing. The error names the start that failed and why, for example `start 'L2' (1007.5, 367.5) m, cell (326, 201), is on a blocked cell: red hazard cell. Set starts.L2 in routing/config.toml to passable ground.` In the sensitivity table, a start that becomes blocked under a tighter slope limit makes the run `infeasible` with `failed_stop` = `start`.
 
-The same reason codes are used per cell in `reach/reason.u8` (section 13): 0 reachable, 1 no data, 2 red, 3 slope, 4 buffer, 5 sealed, 6 passable but walled off from the start. A cell blocked for several reasons takes the first in that order.
+**The data the starts were computed on.** `start.dem_sha256` and `start.hazard_sha256` hold the SHA-256 of `dem.tif` and `hazard.tif` at the time L1 to L3 were computed. When the current file differs, `plan_route.py` writes a warning to `plan.json` `warnings` and `export_reach.py` writes it to `reach.json` `warnings` and prints it, saying which file changed and what to do (rerun `landing.js`, update the `[starts.*]` tables and the hash). The starts are not recomputed automatically: they come from the app's code, which the routing folder does not run.
+
+The same reason codes are used per cell in `reach/<start id>/reason.u8` (section 13): 0 reachable, 1 no data, 2 red, 3 slope, 4 buffer, 5 sealed, 6 passable but walled off from this start. A cell blocked for several reasons takes the first in that order. Code 6 is the only one that depends on the start.
 
 ## 5. Walking model
 
@@ -358,7 +364,7 @@ Shape (numbers are placeholders):
 ```
 
 - `profiles` has the same block for `fastest` and `safest`.
-- `start` (added): `id`, `name`, `xy_m`, `cell` and `source`, the start actually used (section 4.9). The id is always `start`, whatever id `waypoints.geojson` uses, and the first leg's `from` and the last leg's `to` are that id.
+- `start` (added): `id`, `name`, `landing_id`, `xy_m`, `cell` and `source`: the start actually used (section 4.9). The `id` is always `start`, whatever id `waypoints.geojson` uses, and the first leg's `from` and the last leg's `to` are that id. `landing_id` is the config id of the landing spot that was the default start (`"L1"`); it is the only thing phase 9 added to `plan.json`, apart from `assumptions` now holding the `starts.*` and `start.*` entries.
 - `shelter_map.label` (added): "Minutes back to start".
 - `assumptions` is the whole of `config.toml`, copied.
 - `inputs_fake` is true while any layer `source` in `layers.json` contains `FAKE`. The file carries no top-level `fake` key, so `validate.py` treats the plan as real output.
@@ -611,16 +617,50 @@ unit = "neighbours"
 type = "scenario"
 source = "skimage.graph.MCP_Geometric with fully_connected=True"
 
-# ---- start --------------------------------------------------------------
-# The fixed start (and end) of every walk, in metres on the site grid: [x, y].
-# This is landing spot L1, and it is TEMPORARY. It is the first of the recommended landing
-# spots from web/src/lib/landing.js (recommendLanding), computed on data/out on 2026-11-14.
-# Recompute it when the full Jezero dataset is loaded.
-[start.xy_m]
-value = [1387.5, 712.5]
+# ---- starts -------------------------------------------------------------
+# The landing spots the user can start from, in metres on the site grid: [x, y]. They are
+# TEMPORARY: landing spots L1, L2 and L3 from web/src/lib/landing.js (recommendLanding), computed by
+# running that file's own code on data/out. Recompute them whenever dem.tif or hazard.tif change
+# (the two hashes below say which data they were computed on; a mismatch gives a warning), and
+# when the full Jezero dataset is loaded. Add or remove [starts.<id>] tables freely: ids are
+# letters, digits, "_" or "-", and every start must pass the start checks (start.py).
+# plan_route.py plans the full outing from the default start only; export_reach.py exports
+# one set of reach grids per start.
+[start.default]
+value = "L1"
+unit = "id of one of the [starts.*] tables"
+type = "scenario"
+source = "Team choice: the first recommended landing spot"
+
+[start.dem_sha256]
+value = "33f8e75891c43440beb248355acff907b160b029e6835d18ac2dabdf53a6fae4"
+unit = "sha256 of data/out/dem.tif"
+type = "scenario"
+source = "The dem.tif the landing spots were computed on (2026-11-14)"
+
+[start.hazard_sha256]
+value = "b75b7f6e01cb347cd93ecb469fe5f7c18048bd405d3a199b3dd667d3751d60da"
+unit = "sha256 of data/out/hazard.tif"
+type = "scenario"
+source = "The hazard.tif the landing spots were computed on (2026-11-14)"
+
+[starts.L1]
+value = [1112.5, 607.5]
 unit = "m (site grid x, y)"
 type = "scenario"
-source = "Landing spot L1 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop), computed on data/out of 2026-11-14; temporary until the full Jezero dataset is loaded"
+source = "Landing spot L1 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop; hazards from hazard.png as the app builds them), run on data/out of 2026-11-14. Temporary until the full Jezero dataset is loaded"
+
+[starts.L2]
+value = [1007.5, 367.5]
+unit = "m (site grid x, y)"
+type = "scenario"
+source = "Landing spot L2 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop; hazards from hazard.png as the app builds them), run on data/out of 2026-11-14. Temporary until the full Jezero dataset is loaded"
+
+[starts.L3]
+value = [1187.5, 1227.5]
+unit = "m (site grid x, y)"
+type = "scenario"
+source = "Landing spot L3 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop; hazards from hazard.png as the app builds them), run on data/out of 2026-11-14. Temporary until the full Jezero dataset is loaded"
 
 # ---- reach export (export_reach.py) --------------------------------------
 [reach.crop_m]
@@ -703,11 +743,13 @@ Back-to-start map, storm, timeline and outputs:
 
 Start and reach export (phase 8):
 
-35. The start is landing spot L1 as the web app computes it today. The app builds L1 on hazards from slope alone (`web/src/lib/useTerrain.js`, while the hazard layer says FAKE), not on `hazard.tif`. L1 was checked against this planner's model: green, slope 0.96 deg, not blocked.
+35. L1, L2 and L3 are the landing spots as the web app's own code computes them on the data of 2026-11-14 (hazards from `hazard.png`, the app's `hazardFromImage`; slope limit and cost parameters from `plan.json` `assumptions`, which is this config). They were computed once by running `web/src/lib/landing.js` unchanged and copied here. The first version of L1 in this config came from the earlier, slope-only hazard data and was stale: the data changed (Yaj's real crater map, a real hazard layer) and the app's spots moved, which is why the data hashes (section 4.9) exist.
 36. A reach destination is over budget when `time + ingress_min + stop_min > usable_min` (section 13.4): one way only, because the user only gets the path from the start to the destination. No return walk is counted. One stop of `timeline.stop_min_default` is counted at the destination; `reach.destination_stop = false` sets it to 0.
 37. With `reach.crop_m`, paths cannot leave the box: the search runs on the cropped grid. The hard mask and the risk are built on the whole grid first, so the buffer and the near-red term still see cells just outside it.
 38. With `reach.downsample` = k > 1, the export runs on a coarser grid: DEM block mean (a block with any no-data cell has no data), hazard block maximum (the worst class), slope recomputed at k x `cell_m`. Rows and columns left over at the north and east edges are dropped. Times on a coarse grid are not the times of `plan.json`.
 39. Reach values are float32 (about 7 significant digits); `trace` reports them as stored.
+40. In `landing.js` the pads tie on the walking-time metric (section 4.9) and are then sorted with `p.walk - q.walk || p.meanSlope - q.meanSlope`, without a tolerance, so floating-point noise of 1e-14 in the metric decides the order of pads that are equal for every practical purpose, and the intended tie-break by mean slope does not take effect. The app and this config give the same L1 to L3 because both use the same code and data; a fix in `landing.js` would change the app's L1 to L3 and require recomputing the config (the front end reads the spots from `reach.json`, so it keeps working).
+41. All three starts reach the same 152,738 cells on the current data, so reason 6 (walled off) is the same for L1, L2 and L3 today. The per-start reason grids exist because it can differ on other data, and the tests cover that case on a synthetic site split by a wall.
 
 ## 12. Open questions for teammates
 
@@ -739,8 +781,8 @@ Start and reach export (phase 8):
 
 **Phase 8: start and reach export**
 
-- Zakiyyah: `waypoints.geojson` still uses `kind: "rover"`. Keep it until the contract and `data/validate.py` accept `"start"` (see the Team line below); the routing code accepts both and warns about the old kind. Its position (1000, 900) m is no longer used: the start is `start.xy_m` in `routing/config.toml`.
-- Loick: `web/src/App.jsx` finds the start with `kind === 'rover'`, so it breaks the moment the waypoints switch to `start`. The new destination picker should read `data/out/reach/reach.json` and follow section 13.3; the grids are built from `hazard.tif`, while the app routes on hazards from slope alone while the hazard layer says FAKE.
+- Zakiyyah: `waypoints.geojson` still uses `kind: "rover"`. Keep it until the contract and `data/validate.py` accept `"start"` (see the Team line below); the routing code accepts both and warns about the old kind. Its position (1000, 900) m is no longer used: the start is the default `[starts.*]` entry of `routing/config.toml`.
+- Loick: `web/src/App.jsx` finds the start with `kind === 'rover'`, so it breaks the moment the waypoints switch to `start`. The destination picker should read the landing spots from `data/out/reach/reach.json` (`starts[]`: `id`, `xy_m`, `cell`, `default`, `warnings`, file paths) instead of computing them with `recommendLanding`, let the user pick one, and follow section 13.3 with that start's id. The grids are built from `hazard.tif`, as is `reach.json`'s start list. `landing.js` compares walking times without a tolerance, so ties are decided by floating-point noise rather than by mean slope (assumption 40): a tolerance of about 1e-6 min there would make the tie-break work as written. If you change it, the config's L1 to L3 must be recomputed.
 - Yaj: the title of the `shelter_time` layer in `layers.json` should read "Minutes back to start" (it still carries the old wording). Could `layers.json` point at `reach/reach.json` (for example `vectors.reach` or a new `reach` key)? The hazard layer's `source` still says FAKE although `hazard.tif` was regenerated on real Jezero data, so `reach.json` `fake` and `plan.json` `inputs_fake` are still true.
 - Team: `CONTRACT.md` still describes `kind` as `"rover"` or `"stop"`, and `data/validate.py` rejects any other kind, so `waypoints.geojson` cannot switch to `"start"` until the contract and `validate.py` are changed together. `CONTRACT.md` also still words the `shelter_time.png` description with the old start name.
 
@@ -754,31 +796,42 @@ Start and reach export (phase 8):
 
 ## 13. Reach export (`export_reach.py`)
 
-The user clicks any destination on the map and gets three paths from the start: fastest (the app calls it "efficient", w = `profiles.w_fastest`), balanced (w = `profiles.w_balanced`) and safest (w = `profiles.w_safest`), each with distance, walking time, risk and the terrain along the way. One search per profile from the start answers every destination at once, so the browser only follows pointers.
+The user picks one of the starts (landing spots L1, L2 and L3 for now), clicks any destination on the map and gets three paths from that start: fastest (the app calls it "efficient", w = `profiles.w_fastest`), balanced (w = `profiles.w_balanced`) and safest (w = `profiles.w_safest`), each with distance, walking time, risk and the terrain along the way. One search per profile and start answers every destination at once, so the browser only follows pointers. The paths are one way, from the start to the destination: no return route is exported.
+
+The front end reads the landing spots from `reach.json` (`starts[]`) and does not compute them.
 
 ### 13.1 What runs
 
 1. Load the site (`grid.load_site`). If `reach.downsample` > 1, coarsen it (assumption 38).
 2. Build the cost on the whole grid with `cost.build` (section 4), then cut it to `reach.crop_m` (assumption 37).
-3. Check the start on the exported grid (section 4.9).
-4. For each profile, one `search.build_tree` on that profile's planning rate from the start cell. Its own traceback array becomes the direction grid, so following it gives exactly the path `Tree.path_to` returns.
+3. Check every start on the exported grid (section 4.9). The first failure stops the run and names its start.
+4. For each start and each profile, one `search.build_tree` on that profile's planning rate from the start's cell. Its own traceback array becomes the direction grid, so following it gives exactly the path `Tree.path_to` returns.
 5. Along each tree, every cell adds one step to its predecessor's totals, with the edge formula of section 4.3 (a step of length L between cells a and b adds `L x (rate_a + rate_b) / 2`). Cells are filled in order of rising planning cost, so a predecessor is always filled first. `time` uses `time_rate` (physical minutes), `risk` uses `time_rate x risk_rate`, `dist` uses L. These are exactly `summarise` along the traced path.
-6. Write the grids and, last, `reach.json`. Nothing is written if any step fails.
+6. Per start, the reason grid: the hard-mask reason of each cell, and code 6 for a passable cell that this start cannot reach.
+7. Write the grids and, last, `reach.json`. Nothing is written if any step fails. Then delete what an older layout left (13.5).
 
-On the 400 x 400 site at 5 m this takes about 2 seconds.
+On the 400 x 400 site at 5 m this takes about 3 seconds for three starts.
 
 ### 13.2 Files
 
-All grids are raw values with no header, little-endian, row-major, row 0 = north edge, index `row * width + col`, `width x height` values each.
+```
+data/out/reach/
+  reach.json
+  L1/  fastest_time.f32  fastest_dist.f32  fastest_risk.f32  fastest_dir.u8
+       balanced_*  safest_*  (the same four each)  reason.u8
+  L2/  ...
+  L3/  ...
+```
 
-| File | Type | Content |
+There is one folder per start, named by its id. All grids are raw values with no header, little-endian, row-major, row 0 = north edge, index `row * width + col`, `width x height` values each, all the same size.
+
+| File (in `<start id>/`) | Type | Content |
 | --- | --- | --- |
 | `{profile}_time.f32` | float32 | walking minutes from the start along that profile's best path; NaN where `reason != 0` |
 | `{profile}_dist.f32` | float32 | metres along that path; NaN where `reason != 0` |
 | `{profile}_risk.f32` | float32 | risk-minutes along that path; NaN where `reason != 0` |
 | `{profile}_dir.u8` | uint8 | direction code: the step from this cell to the previous cell of its best path, toward the start |
-| `reason.u8` | uint8 | 0 reachable, 1 no data, 2 red, 3 slope, 4 buffer, 5 sealed, 6 walled off (section 4.9); shared by the profiles, which share one hard mask |
-| `reach.json` | JSON | the manifest |
+| `reason.u8` | uint8 | 0 reachable, 1 no data, 2 red, 3 slope, 4 buffer, 5 sealed, 6 walled off (section 4.9); shared by the three profiles of this start, which share one hard mask. Code 6 depends on the start |
 
 `{profile}` is `fastest`, `balanced` or `safest`. Direction codes, as (row change, column change):
 
@@ -786,23 +839,40 @@ All grids are raw values with no header, little-endian, row-major, row 0 = north
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | step | none: the start, or no path | (−1, 0) | (−1, +1) | (0, +1) | (+1, +1) | (+1, 0) | (+1, −1) | (0, −1) | (−1, −1) |
 
-Sizes on the current 400 x 400 grid: each `.f32` file is 640,000 bytes and each `.u8` file 160,000 bytes, so 2,080,000 bytes per profile and 6,400,000 bytes for all 13 grids, plus about 6 kB of manifest. The size grows with the number of cells: a crop or a downsample of 2 divides it by the area ratio or by 4.
+**Size.** On the current 400 x 400 grid each `.f32` file is 640,000 bytes and each `.u8` file 160,000 bytes: 2,080,000 bytes per profile, and 6,400,000 bytes per start (13 grids). Three starts are **19,200,000 bytes, plus a 12,728-byte manifest: 19,212,728 bytes, 19.21 MB, in 40 files**. The size is linear in the number of starts and in the number of cells: a fourth start would add 6.4 MB, a crop divides it by the area ratio and a downsample of 2 by 4.
 
-`reach.json` holds: `format_version`; `site`; `fake` (same rule as `plan.json` `inputs_fake`); `grid` (`width`, `height`, `cell_m`, `origin_m` = south-west corner `[x0, y0]` of the export in site metres, `extent_m`, `crop_m`, `crop_cells`, `downsample`, `site_grid`); `layout` (the formulas in 13.3); `byte_order` (`little`); `dtypes`; `nodata`; `units`; `start` (`xy_m`, `cell` on the exported grid, `note`); `profiles` (per profile: `w`, `files`, `reachable_cells`); `reason_file` and `reason_codes` (`code`, `name`, `text`); `direction_meaning` and `direction_codes` (`code`, `name`, `drow`, `dcol`); `budget` (13.4); `config_sha256` (SHA-256 of the whole config, keys sorted); `inputs_sha256` (`dem.tif`, `hazard.tif`); `files` (bytes and SHA-256 of each grid file); `warnings`. There is no timestamp: the same inputs give the same bytes.
+**`reach.json`** holds:
 
-### 13.3 Traceback (the reference is `export_reach.Reach.trace`)
+- `format_version` (2), `site`, `fake` (same rule as `plan.json` `inputs_fake`), `generated_by`;
+- `grid`: `width`, `height`, `cell_m`, `origin_m` (the south-west corner `[x0, y0]` of the export in site metres), `extent_m`, `crop_m`, `crop_cells`, `downsample`, `site_grid`;
+- `layout` (the formulas in 13.3), `byte_order` (`little`), `dtypes`, `nodata`, `units`;
+- `default_start`: the id of the default start;
+- **`starts`**: one entry per start, in config order: `id`, `xy_m`, `cell` (on the exported grid), `default` (true for one), `temporary` (true), `folder`, `reason_file` (`"L2/reason.u8"`), `profiles` (per profile: `files` with the paths of `time`, `dist`, `risk` and `dir`, and `reachable_cells`), and `warnings` (that start's own);
+- `profiles`: the weight `w` of each profile (shared by the starts);
+- `reason_codes` (`code`, `name`, `text`), `direction_meaning` and `direction_codes` (`code`, `name`, `drow`, `dcol`);
+- `budget` (13.4);
+- `config_sha256` (SHA-256 of the whole config, keys sorted), `inputs_sha256` (`dem.tif`, `hazard.tif`);
+- `files`: bytes and SHA-256 of every grid file, keyed by its path relative to `reach/`;
+- `warnings`: every warning (the data-hash warnings, then each start's own).
 
-Inputs: the manifest, `reason.u8`, and the profile's four grids. Destination `(x, y)` in site metres.
+All paths are relative to the folder that holds `reach.json`. There is no timestamp: the same inputs give the same bytes. A manifest of the old one-start layout has `format_version` 1 and is refused.
 
-1. Cell: `col = floor((x − origin_x) / cell_m)`, `row = height − 1 − floor((y − origin_y) / cell_m)`. If `row` or `col` is outside `0 .. height−1` / `0 .. width−1`, stop: "outside the exported area".
-2. `code = reason[row * width + col]`. If `code != 0`, stop and show `reason_codes[code].text` (no path, no totals).
-3. `cells = [(row, col)]`. Repeat at most `width x height` times: `d = dir[last]`; if `d == 0`, stop; else append `(last.row + drow[d], last.col + dcol[d])`. If the loop runs out, the grid is corrupt.
-4. The last cell must equal `start.cell`; otherwise the grid is corrupt.
-5. Reverse `cells`, so they run from the start to the destination. Vertex `k` is the cell centre `x = origin_x + (col + 0.5) x cell_m`, `y = origin_y + (height − row − 0.5) x cell_m`. If there is only one cell (the destination is the start), repeat it so the LineString has two positions.
-6. Totals are the grid values at the destination cell, not sums: `distance_m = dist[i]`, `walk_min = time[i]`, `risk_min = risk[i]`.
-7. One way only, no return walk: `needed_min = walk_min + budget.ingress_min + budget.stop_min`; `over_budget = needed_min > budget.usable_min`, which is the same as `walk_min > budget.walk_limit_min`.
+### 13.3 Traceback (the reference is `export_reach.Reach.trace(start_id, profile, x, y)`)
 
-The result is a GeoJSON Feature with a `LineString` (`[x, y]` metres) and these properties, plus `cells` as `[row, col]` from the start, so the app can read elevation, slope and hazard class along the way from its own grids for the terrain profile.
+Inputs: the manifest, a start id, a profile, and a destination `(x, y)` in site metres. Per start the front end loads that start's `reason.u8` and the four grids of the profile (they can be loaded when the start is picked).
+
+1. Start: find the entry of `starts` whose `id` is the chosen start. If there is none, the id is unknown: stop (an error, not a "no path"). Its `cell` is the start cell, and its `reason_file` and `profiles[profile].files` are the paths of the grids to read.
+2. Cell: `col = floor((x − origin_x) / cell_m)`, `row = height − 1 − floor((y − origin_y) / cell_m)`. If `row` or `col` is outside `0 .. height−1` / `0 .. width−1`, stop: "outside the exported area".
+3. `code = reason[row * width + col]`, from this start's `reason.u8`. If `code != 0`, stop and show `reason_codes[code].text` (no path, no totals). Code 6 means the destination can be walked on but not reached from this start; another start may reach it.
+4. `cells = [(row, col)]`. Repeat at most `width x height` times: `d = dir[last]`; if `d == 0`, stop; else append `(last.row + drow[d], last.col + dcol[d])`. If the loop runs out, the grid is corrupt.
+5. The last cell must equal the start's `cell`; otherwise the grid is corrupt.
+6. Reverse `cells`, so they run from the start to the destination. Vertex `k` is the cell centre `x = origin_x + (col + 0.5) x cell_m`, `y = origin_y + (height − row − 0.5) x cell_m`. If there is only one cell (the destination is the start), repeat it so the LineString has two positions.
+7. Totals are the grid values at the destination cell, not sums: `distance_m = dist[i]`, `walk_min = time[i]`, `risk_min = risk[i]`.
+8. One way only, no return walk: `needed_min = walk_min + budget.ingress_min + budget.stop_min`; `over_budget = needed_min > budget.usable_min`, which is the same as `walk_min > budget.walk_limit_min`.
+
+To show the three paths for one click, run steps 2 to 8 three times, once per profile, on the same start and destination (step 3 gives the same answer for all three).
+
+The result is a GeoJSON Feature with a `LineString` (`[x, y]` metres) and these properties: `start` (the id), `profile`, `w`, `reachable`, `reason`, `distance_m`, `walk_min`, `risk_min`, `needed_min`, `over_budget`, and `cells` as `[row, col]` from the start, so the app can read elevation, slope and hazard class along the way from its own grids for the terrain profile. When there is no path the geometry is null and `reason` (and `reason_text`) say why; `"outside"` is the reason for a point outside the exported area.
 
 ### 13.4 Over budget
 
@@ -813,4 +883,13 @@ walk_limit_min    = usable_min − ingress_min − stop_min             252 − 
 needed_min        = time + ingress_min + stop_min                   for one destination
 ```
 
-The user only gets a one-way path, from the start to the destination, so no return walk is counted. A destination is over budget when `needed_min > usable_min`, i.e. when its walking time exceeds `walk_limit_min`. The manifest carries every number and the rule text, so the app can show them; there is no separate over-budget grid, and no return-route grid is exported.
+The user only gets a one-way path, from the start to the destination, so no return walk is counted. A destination is over budget when `needed_min > usable_min`, i.e. when its walking time exceeds `walk_limit_min`. The manifest carries every number and the rule text, so the app can show them; there is no separate over-budget grid, and no return-route grid is exported. The budget is the same for every start.
+
+### 13.5 Old files
+
+After a successful write, `export_reach.py` deletes what an earlier export left in the output folder and this layout no longer writes, and lists it:
+
+- the grid files of the old one-start layout, directly in the folder (`{profile}_time.f32`, `{profile}_dist.f32`, `{profile}_risk.f32`, `{profile}_dir.u8` for the three profiles, and `reason.u8`: 13 files);
+- the grid files in a folder next to `reach.json` that looks like a start folder (it holds a `reason.u8`) but whose name is not in the config, and the folder itself if it is empty by then.
+
+Only files with those names are deleted. Any other file, and a folder that holds other files, is left alone. The old `reach.json` is overwritten.

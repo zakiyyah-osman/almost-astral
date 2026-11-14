@@ -1,4 +1,4 @@
-"""The fixed start (start.xy_m in config.toml), its validation, and the old 'rover' kind."""
+"""The starts (the [starts.*] of config.toml), their validation, the default start, and the old 'rover' kind."""
 import copy
 import json
 import logging
@@ -14,10 +14,12 @@ import grid as g
 import plan_route
 import tour
 from config import Config, ConfigError, load_config
-from conftest import config_for, run_site, with_config, write_full_site, write_waypoints
+from conftest import (
+    config_for, config_text, run_site, sha256_of, with_config, write_config, write_full_site, write_waypoints,
+)
 from start import (
     BUFFER, NODATA, RED, REACHABLE, SEALED, SLOPE, StartError, block_code, block_codes, check_start,
-    start_cell, start_xy,
+    default_start, staleness_warnings, start_cell, starts, validate_starts,
 )
 
 CFG = load_config()
@@ -37,27 +39,82 @@ def make_cost(hazard=None, dem=None, slope=None, p=P):
     return cost.build(dem, hazard, slope, GRID, p)
 
 
+def cfg_with(starts_xy, default=None):
+    """The shipped config with its starts replaced: {id: (x, y)}, default the first unless given."""
+    return Config.from_dict(
+        __import__("tomllib").loads(config_text(starts_xy, default=default))
+    )
+
+
 def cfg_with_start(xy):
-    raw = copy.deepcopy(CFG.raw)
-    raw["start"]["xy_m"]["value"] = [float(xy[0]), float(xy[1])]
-    return Config.from_dict(raw)
+    return cfg_with({"L1": xy})
 
 
-# ---- the config value --------------------------------------------------------
-def test_start_is_landing_spot_l1_in_the_shipped_config():
-    assert start_xy(CFG) == (1387.5, 712.5)
-    assert "L1" in CFG.raw["start"]["xy_m"]["source"] and "temporary" in CFG.raw["start"]["xy_m"]["source"]
+# ---- the config --------------------------------------------------------------
+def test_the_shipped_config_has_three_temporary_landing_spots():
+    assert CFG.starts() == {"L1": (1112.5, 607.5), "L2": (1007.5, 367.5), "L3": (1187.5, 1227.5)}
+    assert list(CFG.starts()) == ["L1", "L2", "L3"]                      # config order
+    assert CFG.default_start_id() == "L1"
+    for sid in ("L1", "L2", "L3"):
+        source = CFG.raw["starts"][sid]["source"]
+        assert sid in source and "landing.js" in source and "temporary" in source.lower()
+    assert [s.id for s in starts(CFG)] == ["L1", "L2", "L3"] and default_start(CFG).xy == (1112.5, 607.5)
 
 
 @pytest.mark.parametrize("bad", [[1.0], [1.0, 2.0, 3.0], [], [-1.0, 5.0], "here", [1.0, True]])
-def test_start_must_be_two_non_negative_numbers(bad):
+def test_a_start_must_be_two_non_negative_numbers(bad):
     raw = copy.deepcopy(CFG.raw)
-    raw["start"]["xy_m"]["value"] = bad
-    with pytest.raises(ConfigError, match="start.xy_m"):
+    raw["starts"]["L2"]["value"] = bad
+    with pytest.raises(ConfigError, match=r"starts\.L2"):
         Config.from_dict(raw)
 
 
-# ---- validation: every blocked reason fails with its own message -------------
+@pytest.mark.parametrize("sid", ["1L", "L 2", "L.2", "-L", "", "L/2"])
+def test_a_bad_start_id_is_rejected(sid):
+    raw = copy.deepcopy(CFG.raw)
+    raw["starts"][sid] = copy.deepcopy(raw["starts"]["L2"])
+    with pytest.raises(ConfigError, match="start id|must be"):
+        Config.from_dict(raw)
+
+
+def test_the_default_must_name_a_start():
+    raw = copy.deepcopy(CFG.raw)
+    raw["start"]["default"]["value"] = "L9"
+    with pytest.raises(ConfigError, match=r"start\.default = 'L9' is not one of the starts: L1, L2, L3"):
+        Config.from_dict(raw)
+    for bad in (3, None, ["L1"], ""):
+        raw["start"]["default"]["value"] = bad
+        with pytest.raises(ConfigError, match=r"start\.default"):
+            Config.from_dict(raw)
+
+
+def test_at_least_one_start_is_needed():
+    raw = copy.deepcopy(CFG.raw)
+    del raw["starts"]
+    with pytest.raises(ConfigError, match="no starts"):
+        Config.from_dict(raw)
+    raw = copy.deepcopy(CFG.raw)
+    raw["starts"] = {}
+    with pytest.raises(ConfigError, match="no starts"):
+        Config.from_dict(raw)
+
+
+def test_starts_can_be_added_and_the_default_changed():
+    cfg = cfg_with({"A": (10.0, 20.0), "B-2": (30.0, 40.0), "C_3": (50.0, 60.0)}, default="B-2")
+    assert cfg.starts() == {"A": (10.0, 20.0), "B-2": (30.0, 40.0), "C_3": (50.0, 60.0)}
+    assert default_start(cfg).id == "B-2" and default_start(cfg).xy == (30.0, 40.0)
+
+
+def test_the_hash_parameters_must_be_sha256_text():
+    for key in ("dem_sha256", "hazard_sha256"):
+        for bad in ("abc", "G" * 64, 5, None):
+            raw = copy.deepcopy(CFG.raw)
+            raw["start"][key]["value"] = bad
+            with pytest.raises(ConfigError, match=rf"start\.{key}"):
+                Config.from_dict(raw)
+
+
+# ---- validation: every blocked reason fails with its own message, naming the start ------
 def test_valid_start_has_no_warnings():
     c = make_cost()
     cell = start_cell(GRID, centre(10, 2))
@@ -66,8 +123,11 @@ def test_valid_start_has_no_warnings():
 
 
 def test_start_outside_the_grid_fails():
-    with pytest.raises(StartError, match=r"start \(500, 50\) m is outside the site grid.*start\.xy_m"):
+    with pytest.raises(StartError, match=r"start \(500, 50\) m is outside the site grid.*Set the start"):
         start_cell(GRID, (500.0, 50.0))
+    with pytest.raises(StartError, match=r"start 'L2' \(500, 50\) m is outside the site grid.*starts\.L2") as e:
+        start_cell(GRID, (500.0, 50.0), name="L2")
+    assert e.value.start_id == "L2"
 
 
 def _blocked_case(kind):
@@ -104,10 +164,12 @@ def test_blocked_start_fails_and_says_why(kind, code, text):
     assert block_code(c, cell) == code
     xy = centre(*cell)
     with pytest.raises(StartError) as e:
-        check_start(c, cell, xy)
+        check_start(c, cell, xy, name="L2")
     msg = str(e.value)
-    assert text in msg and f"{xy[0]:g}" in msg and "start.xy_m" in msg
-    assert e.value.waypoint_id == "start"
+    assert text in msg and f"{xy[0]:g}" in msg and "start 'L2'" in msg and "starts.L2" in msg
+    assert e.value.waypoint_id == "start" and e.value.start_id == "L2"
+    with pytest.raises(StartError, match="Set the start in routing/config.toml"):
+        check_start(c, cell, xy)                       # without a name the message still works
 
 
 def test_block_codes_match_block_code_everywhere():
@@ -116,6 +178,45 @@ def test_block_codes_match_block_code_everywhere():
     for cell in np.ndindex(SHAPE):
         assert codes[cell] == block_code(c, cell)
     assert (codes == REACHABLE).sum() == (~c.blocked).sum()
+
+
+# ---- validate_starts: every start is checked, the failing one is named ---------
+def test_validate_starts_checks_all_and_returns_their_cells():
+    cfg = cfg_with({"A": centre(10, 2), "B": centre(3, 20), "C": centre(17, 26)})
+    infos = validate_starts(cfg, make_cost(), np.zeros(SHAPE, np.uint8))
+    assert list(infos) == ["A", "B", "C"]
+    assert [i.cell for i in infos.values()] == [(10, 2), (3, 20), (17, 26)]
+    assert all(i.warnings == () for i in infos.values())
+
+
+@pytest.mark.parametrize("bad_id", ["A", "B", "C"])
+def test_an_invalid_start_fails_with_its_own_name(bad_id):
+    hazard = np.zeros(SHAPE, np.uint8)
+    cells = {"A": (10, 2), "B": (3, 20), "C": (17, 26)}
+    hazard[cells[bad_id]] = 2
+    cfg = cfg_with({k: centre(*v) for k, v in cells.items()})
+    with pytest.raises(StartError) as e:
+        validate_starts(cfg, make_cost(hazard), hazard)
+    assert e.value.start_id == bad_id and f"start {bad_id!r}" in str(e.value)
+    assert "red hazard cell" in str(e.value) and f"starts.{bad_id}" in str(e.value)
+    for other in set(cells) - {bad_id}:
+        assert f"start {other!r}" not in str(e.value)
+
+
+def test_a_start_outside_the_grid_is_named():
+    cfg = cfg_with({"A": centre(10, 2), "B": (5000.0, 10.0)})
+    with pytest.raises(StartError, match=r"start 'B' \(5000, 10\) m is outside"):
+        validate_starts(cfg, make_cost())
+
+
+def test_validate_starts_collects_a_warning_per_careful_start():
+    hazard = np.zeros(SHAPE, np.uint8)
+    hazard[10, 2] = 1
+    hazard[3, 20] = 1
+    cfg = cfg_with({"A": centre(10, 2), "B": centre(3, 20), "C": centre(17, 26)})
+    infos = validate_starts(cfg, make_cost(hazard), hazard)
+    assert [len(i.warnings) for i in infos.values()] == [1, 1, 0]
+    assert "start 'A'" in infos["A"].warnings[0] and "yellow" in infos["A"].warnings[0]
 
 
 # ---- careful ground is a warning, not a failure ------------------------------
@@ -133,7 +234,7 @@ def test_start_on_slope_over_the_onset_only_warns():
     assert len(warnings) == 1 and "slope 12.0 deg" in warnings[0]
 
 
-# ---- resolve_start: the config wins over the waypoint ------------------------
+# ---- resolve_start: the default start, the config wins over the waypoint ------
 def test_config_start_wins_and_far_waypoint_warns(caplog):
     c = make_cost()
     wp = tour.Waypoint("base", "Base", "start", *centre(5, 5), (5, 5))
@@ -141,7 +242,9 @@ def test_config_start_wins_and_far_waypoint_warns(caplog):
         start, warnings = tour.resolve_start(cfg_with_start(centre(10, 2)), c, None, wp)
     assert start.cell == (10, 2) and (start.x, start.y) == centre(10, 2)
     assert start.id == "start" and start.name == "Start" and start.kind == "start"   # never the waypoint's id
-    assert len(warnings) == 1 and "more than half a cell" in warnings[0] and "config value is used" in warnings[0]
+    assert start.landing_id == "L1"
+    assert len(warnings) == 1 and "more than half a cell from the default start 'L1'" in warnings[0]
+    assert "the config value is used" in warnings[0]
     assert "more than half a cell" in caplog.text
 
 
@@ -155,6 +258,22 @@ def test_waypoint_within_half_a_cell_gives_no_warning():
 def test_no_start_waypoint_uses_the_id_start():
     start, warnings = tour.resolve_start(cfg_with_start(centre(10, 2)), make_cost())
     assert (start.id, start.name, start.cell) == ("start", "Start", (10, 2)) and warnings == ()
+
+
+def test_the_default_start_is_the_one_resolved():
+    cfg = cfg_with({"L1": centre(10, 2), "L2": centre(3, 20), "L3": centre(17, 26)}, default="L2")
+    start, _ = tour.resolve_start(cfg, make_cost())
+    assert start.landing_id == "L2" and start.cell == (3, 20) and (start.x, start.y) == centre(3, 20)
+    assert start.id == "start"                                  # the id in outputs stays "start"
+
+
+def test_resolve_start_checks_every_start_not_only_the_default():
+    hazard = np.zeros(SHAPE, np.uint8)
+    hazard[17, 26] = 2
+    cfg = cfg_with({"L1": centre(10, 2), "L2": centre(3, 20), "L3": centre(17, 26)})   # L1 is the default
+    with pytest.raises(StartError, match=r"start 'L3'.*red hazard cell") as e:
+        tour.resolve_start(cfg, make_cost(hazard), hazard)
+    assert e.value.start_id == "L3"
 
 
 # ---- the old kind 'rover' ----------------------------------------------------
@@ -191,14 +310,15 @@ def test_start_and_rover_together_are_two_starts(flat_site):
         tour.split_waypoints(ws)
 
 
-# ---- plan_route.py measures everything from the config start -----------------
-def _site(folder, kind="start", start_cell_=(10, 2), config_cell=None):
+# ---- plan_route.py plans from the default start only --------------------------
+def _site(folder, kind="start", start_cell_=(10, 2), config_cell=None, **kw):
     waypoints = [
         ("base", "Base", kind, *centre(*start_cell_)),
         ("stop1", "North stop", "stop", *centre(3, 20)),
     ]
     start = None if config_cell is None else centre(*config_cell)
-    write_full_site(folder, np.zeros(SHAPE, np.float32), np.zeros(SHAPE, np.uint8), CELL, waypoints, start=start)
+    write_full_site(folder, np.zeros(SHAPE, np.float32), np.zeros(SHAPE, np.uint8), CELL, waypoints,
+                    start=start, **kw)
     return folder
 
 
@@ -207,13 +327,38 @@ def test_plan_starts_at_the_config_start_and_warns_about_the_waypoint(tmp_path):
     result = run_site(folder)
     plan = json.loads(result.files["plan.json"])
     assert plan["start"]["xy_m"] == list(centre(12, 4)) and plan["start"]["cell"] == [12, 4]
-    assert plan["start"]["id"] == "start"
+    assert plan["start"]["id"] == "start" and plan["start"]["landing_id"] == "L1"
     assert [leg["from"] for leg in plan["legs"]] == ["start", "stop1"] and plan["legs"][-1]["to"] == "start"
     assert any("more than half a cell" in w for w in plan["warnings"])
     coords = json.loads(result.files["route.geojson"])["features"][0]["geometry"]["coordinates"]
     assert coords[0] == coords[-1] == list(centre(12, 4))
     assert plan["track"][0]["shelter_min"] == 15            # minutes back to start: only ingress at the start
     assert plan["shelter_map"]["label"] == "Minutes back to start"
+
+
+def test_plan_route_uses_the_default_start_and_records_it(tmp_path):
+    spots = {"L1": centre(10, 2), "L2": centre(12, 6), "L3": centre(5, 4)}
+    plans = {}
+    for default in ("L1", "L2", "L3"):
+        folder = _site(tmp_path / default, starts=spots, default=default)
+        plan = json.loads(run_site(folder).files["plan.json"])
+        plans[default] = plan
+        assert plan["start"]["landing_id"] == default and plan["start"]["id"] == "start"
+        assert plan["start"]["xy_m"] == list(spots[default])
+        coords = json.loads(run_site(folder).files["route.geojson"])["features"][0]["geometry"]["coordinates"]
+        assert coords[0] == coords[-1] == list(spots[default])
+        assert plan["start"]["source"].endswith("(a landing spot, temporary)") and default in plan["start"]["source"]
+    # the three plans differ only through the start
+    assert len({json.dumps(p["legs"]) for p in plans.values()}) == 3
+
+
+def test_plan_json_keys_are_unchanged_apart_from_the_start_record(tmp_path):
+    plan = json.loads(run_site(_site(tmp_path / "s")).files["plan.json"])
+    assert set(plan["start"]) == {"id", "name", "landing_id", "xy_m", "cell", "source"}
+    for key in ("crew", "legs", "totals", "budgets", "radiation_dose_usv", "status", "checks", "stop_order",
+                "profiles", "sweep", "track", "storm_replan", "shelter_map", "radiation", "assumptions",
+                "inputs", "warnings"):
+        assert key in plan
 
 
 def test_rover_kind_warning_reaches_plan_json(tmp_path):
@@ -229,7 +374,7 @@ def test_yellow_start_is_a_warning_in_plan_json(tmp_path):
         ("base", "Base", "start", *centre(10, 2)), ("stop1", "North stop", "stop", *centre(3, 20)),
     ])
     plan = json.loads(run_site(folder).files["plan.json"])
-    assert plan["status"] == "ok" and any("yellow" in w for w in plan["warnings"])
+    assert plan["status"] == "ok" and any("start 'L1'" in w and "yellow" in w for w in plan["warnings"])
 
 
 def test_blocked_config_start_stops_plan_route_and_writes_nothing(tmp_path, capsys):
@@ -240,14 +385,29 @@ def test_blocked_config_start_stops_plan_route_and_writes_nothing(tmp_path, caps
         ("base", "Base", "start", *centre(10, 2)), ("stop1", "North stop", "stop", *centre(3, 20)),
     ])
     assert plan_route.main([*with_config(folder), "--in", str(folder)]) == 2
-    assert "red hazard cell" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "start 'L1'" in err and "red hazard cell" in err
+    assert not (folder / "plan.json").exists()
+
+
+def test_a_bad_start_that_is_not_the_default_still_stops_plan_route(tmp_path, capsys):
+    hazard = np.zeros(SHAPE, np.uint8)
+    hazard[17, 26] = 2
+    folder = tmp_path / "s"
+    write_full_site(folder, np.zeros(SHAPE, np.float32), hazard, CELL, [
+        ("base", "Base", "start", *centre(10, 2)), ("stop1", "North stop", "stop", *centre(3, 20)),
+    ], starts={"L1": centre(10, 2), "L2": centre(3, 5), "L3": centre(17, 26)})
+    assert plan_route.main([*with_config(folder), "--in", str(folder)]) == 2
+    err = capsys.readouterr().err
+    assert "start 'L3'" in err and "red hazard cell" in err and "start 'L2'" not in err
     assert not (folder / "plan.json").exists()
 
 
 def test_config_start_outside_the_grid_stops_plan_route(tmp_path, capsys):
     folder = _site(tmp_path / "s")
     assert plan_route.main(["--in", str(folder)]) == 2      # the shipped config: L1 is outside this small site
-    assert "outside the site grid" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "start 'L1'" in err and "outside the site grid" in err and "starts.L1" in err
     assert config_for(folder).exists()
 
 
@@ -286,16 +446,44 @@ def test_start_warnings_print_once_on_the_command_line(tmp_path):
     far = tmp_path / "far.toml"
     here, there = (repr([float(v) for v in centre(*c)]) for c in ((10, 2), (12, 4)))
     text = config_for(folder).read_text(encoding="utf-8")
-    old = "[start.xy_m]\nvalue = " + here
+    old = "[starts.L1]\nvalue = " + here
     assert old in text
-    far.write_text(text.replace(old, "[start.xy_m]\nvalue = " + there, 1), encoding="utf-8")
+    far.write_text(text.replace(old, "[starts.L1]\nvalue = " + there, 1), encoding="utf-8")
     script = Path(__file__).resolve().parents[1] / "plan_route.py"
     run = subprocess.run([sys.executable, "-B", str(script), "--config", str(far), "--in", str(folder)],
                          capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     text = run.stdout + run.stderr
     assert text.count("uses kind 'rover', which is deprecated") == 1
-    assert text.count("more than half a cell from start.xy_m") == 1
+    assert text.count("more than half a cell from the default start 'L1'") == 1
     plan = json.loads((folder / "plan.json").read_text(encoding="utf-8"))
     assert sum("uses kind 'rover'" in w for w in plan["warnings"]) == 1
     assert sum("more than half a cell" in w for w in plan["warnings"]) == 1
+
+
+# ---- the data the starts were computed on ------------------------------------
+def test_staleness_warns_when_the_data_is_not_the_data_the_starts_were_computed_on(tmp_path):
+    folder = _site(tmp_path / "s")
+    cfg = load_config(config_for(folder))
+    assert staleness_warnings(cfg, folder) == ()                    # write_full_site wrote this site's hashes
+    other = tmp_path / "other.toml"
+    write_config(other, {"L1": centre(10, 2)}, text=config_for(folder).read_text(encoding="utf-8"),
+                 dem_sha="a" * 64)
+    warnings = staleness_warnings(load_config(other), folder)
+    assert len(warnings) == 1 and "dem.tif is not the file the starts were computed on" in warnings[0]
+    assert "start.dem_sha256" in warnings[0] and sha256_of(folder / "dem.tif")[:12] in warnings[0]
+    write_config(other, {"L1": centre(10, 2)}, text=other.read_text(encoding="utf-8"), hazard_sha="b" * 64)
+    both = staleness_warnings(load_config(other), folder)
+    assert len(both) == 2 and "hazard.tif" in both[1] and "start.hazard_sha256" in both[1]
+
+
+def test_staleness_reaches_plan_json(tmp_path):
+    folder = _site(tmp_path / "s")
+    other = tmp_path / "stale.toml"
+    write_config(other, {"L1": centre(10, 2)}, text=config_for(folder).read_text(encoding="utf-8"),
+                 dem_sha="c" * 64)
+    import plan_route as pr
+    plan = json.loads(pr.run(folder, other).files["plan.json"])
+    assert sum("dem.tif is not the file the starts were computed on" in w for w in plan["warnings"]) == 1
+    clean = json.loads(run_site(folder).files["plan.json"])
+    assert not any("computed on" in w for w in clean["warnings"])

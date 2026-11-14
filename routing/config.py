@@ -10,6 +10,7 @@ is out of range, and a walking speed at or above the walk-run limit (DESIGN sect
 import copy
 import difflib
 import math
+import re
 import tomllib
 from pathlib import Path
 
@@ -37,22 +38,24 @@ EXPECTED_PARAMS = (
     "shelter_map.contour_interval_min", "shelter_map.colour_max_min",
     "track.spacing_m",
     "search.connectivity",
-    "start.xy_m",
+    "start.default", "start.dem_sha256", "start.hazard_sha256",
     "reach.crop_m", "reach.downsample", "reach.destination_stop",
 )
 
 # Parameters whose value is not a single number.
 LIST_PARAMS = {
     "profiles.sweep_w", "sensitivity.v_flat_kmh", "sensitivity.slope_max_deg", "sensitivity.w",
-    "start.xy_m",
 }
-LIST_LENGTHS = {"start.xy_m": 2}            # list parameters with a fixed number of elements
 STRING_PARAMS = {"timeline.stop_order": ("as_listed", "optimise")}
 BOOL_PARAMS = {"reach.destination_stop"}
+SHA256_PARAMS = {"start.dem_sha256", "start.hazard_sha256"}     # 64 lower-case hex digits
+START_DEFAULT = "start.default"             # the id of the default start
+STARTS_SECTION = "starts"                   # [starts.<id>] tables: [x, y] in metres, any number of them
+START_ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 CROP_PARAM = "reach.crop_m"                 # "full", or [x0, y0, x1, y1] in metres
 CROP_FULL = "full"
 # Parameters whose value is not a number or a list of numbers.
-NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, CROP_PARAM)
+NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, *SHA256_PARAMS, START_DEFAULT, CROP_PARAM)
 INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity", "reach.downsample"}
 ALLOWED_VALUES = {"search.connectivity": (4, 8)}
 
@@ -92,7 +95,6 @@ RANGES = {
     "storm.sample_spacing_m": _POS,
     "shelter_map.contour_interval_min": _POS,
     "track.spacing_m": _POS,
-    "start.xy_m": _NONNEG,
     "reach.downsample": _range(1),
 }
 
@@ -131,6 +133,7 @@ class Config:
         self.raw = copy.deepcopy(raw)
         self._check_names()
         self._validate_parameters()
+        self._check_starts()
         self._check_profile_weights()
         self._check_gravity()
 
@@ -180,6 +183,8 @@ class Config:
         for section, params in self.raw.items():
             if not isinstance(params, dict):
                 raise ConfigError(f"[{section}] must be a table of parameters")
+            if section == STARTS_SECTION:
+                continue                    # any number of [starts.<id>] tables, checked in _check_starts
             found.extend(f"{section}.{name}" for name in params)
         missing = [k for k in EXPECTED_PARAMS if k not in found]
         unknown = [k for k in found if k not in EXPECTED_PARAMS]
@@ -226,7 +231,15 @@ class Config:
     @classmethod
     def _check_value(cls, label, value):
         """Finite numbers (not bool) in range, lists of them for list parameters, one string."""
-        if label in STRING_PARAMS:
+        if label.startswith(STARTS_SECTION + "."):
+            cls._check_start_xy(label, value)
+        elif label in SHA256_PARAMS:
+            if not (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)):
+                raise ConfigError(f"{label}: must be a sha256 as 64 lower-case hex digits, got {value!r}")
+        elif label == START_DEFAULT:
+            if not (isinstance(value, str) and START_ID.fullmatch(value)):
+                raise ConfigError(f"{label}: must be the id of a start, as text, got {value!r}")
+        elif label in STRING_PARAMS:
             allowed = STRING_PARAMS[label]
             if value not in allowed:
                 raise ConfigError(f"{label}: {value!r} is not one of {', '.join(allowed)}")
@@ -240,11 +253,41 @@ class Config:
                 raise ConfigError(f"{label}: must be a non-empty list of numbers, got {value!r}")
             for v in value:
                 cls._check_number(label, v)
-            n = LIST_LENGTHS.get(label)
-            if n is not None and len(value) != n:
-                raise ConfigError(f"{label}: must have exactly {n} numbers, got {len(value)}: {value!r}")
         else:
             cls._check_number(label, value)
+
+    @staticmethod
+    def _check_start_xy(label, value):
+        """A start: [x, y] in metres, two finite numbers that are not negative."""
+        ok = isinstance(value, list) and len(value) == 2 and all(_is_number(v) and math.isfinite(v) for v in value)
+        if not ok:
+            raise ConfigError(f"{label}: must be [x, y], two finite numbers in metres, got {value!r}")
+        if min(value) < 0:
+            raise ConfigError(f"{label}: x and y must be 0 or more, got {value!r}")
+
+    def _check_starts(self):
+        """At least one [starts.<id>] with a valid id, and start.default names one of them."""
+        starts = self.raw.get(STARTS_SECTION)
+        if not isinstance(starts, dict) or not starts:
+            raise ConfigError("no starts: add at least one [starts.<id>] table with value = [x, y]")
+        for sid in starts:
+            if not START_ID.fullmatch(sid):
+                raise ConfigError(
+                    f"[starts.{sid}]: a start id must begin with a letter and use only letters, digits, "
+                    "'_' or '-'"
+                )
+        default = self.value(START_DEFAULT)
+        if default not in starts:
+            raise ConfigError(
+                f"{START_DEFAULT} = {default!r} is not one of the starts: {', '.join(starts)}"
+            )
+
+    def starts(self):
+        """The starts as {id: (x, y)} in metres, in config order."""
+        return {sid: (float(p["value"][0]), float(p["value"][1])) for sid, p in self.raw[STARTS_SECTION].items()}
+
+    def default_start_id(self):
+        return self.value(START_DEFAULT)
 
     @staticmethod
     def _check_crop(label, value):

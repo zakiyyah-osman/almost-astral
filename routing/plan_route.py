@@ -1,6 +1,7 @@
 """Plan the walk and write the route files, the minutes-back-to-start map and the EVA plan.
 
-The walk starts and ends at start.xy_m in routing/config.toml (landing spot L1 for now).
+The walk starts and ends at the default start of routing/config.toml (start.default, landing spot L1
+for now). Every configured start is checked, but only the default one is planned from.
 
     python routing/plan_route.py                      # reads and writes data/out
     python routing/plan_route.py --in DIR             # reads DIR, writes DIR
@@ -26,6 +27,7 @@ import cost
 import grid as grid_mod
 import outputs
 import shelter
+import start as start_mod
 import storm
 import timeline
 import tour
@@ -68,7 +70,8 @@ def run(in_dir, config_path=None):
     legend = shelter.legend(
         cfg.value("shelter_map.colour_max_min"), cfg.value("shelter_map.contour_interval_min")
     )
-    warnings = [*tour.deprecation_warnings(waypoints), *start_warnings, *tour_plan.warnings, *rad.warnings]
+    warnings = [*tour.deprecation_warnings(waypoints), *start_warnings, *start_mod.staleness_warnings(cfg, in_dir),
+                *tour_plan.warnings, *rad.warnings]
     files = outputs.render_outputs(
         cfg, grid, layers, tour_plan, timelines, replan, sheltered.minutes, legend, rad, warnings, sweep_rows
     )
@@ -85,7 +88,7 @@ def summary_lines(result: RunResult):
         f"dose {plan['radiation_dose_usv']} uSv"
     )
     start = plan["start"]
-    lines.append(f"start at ({start['xy_m'][0]:g}, {start['xy_m'][1]:g}) m")
+    lines.append(f"start {start['landing_id']} at ({start['xy_m'][0]:g}, {start['xy_m'][1]:g}) m")
     lines.append("stop order: " + " -> ".join(["start", *plan["stop_order"]["order"], "start"]))
     for name, p in plan["profiles"].items():
         lines.append(

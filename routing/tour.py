@@ -1,7 +1,7 @@
 """Waypoints, stop order and the three profile routes (DESIGN sections 4.6 and 4.7).
 
-The tour is start -> stops -> start. The start is start.xy_m in routing/config.toml (see
-start.py) and its id is always "start", whatever the waypoint file calls it; a waypoint of
+The tour is start -> stops -> start. The start is the default one of the [starts.<id>] in
+routing/config.toml (see start.py) and its id is always "start", whatever the waypoint file calls it; a waypoint of
 kind 'start' in waypoints.geojson is only compared with it. The old kind 'rover' is still read
 as 'start', with a deprecation warning. The stop order is chosen
 once, on the balanced planning cost, and used for all three profiles; the profiles differ only
@@ -59,6 +59,7 @@ class Waypoint:
     y: float
     cell: tuple             # (row, col) of the cell containing (x, y)
     deprecated_kind: object = None      # 'rover' when the file used the old kind name
+    landing_id: object = None           # the id of the start in the config ('L1'), for the start only
 
     def describe(self):
         return f"{self.kind} {self.id!r} ({self.name}) at ({self.x:g}, {self.y:g}) m"
@@ -188,7 +189,8 @@ def deprecation_warnings(waypoints):
 def split_waypoints(waypoints):
     """(start waypoint or None, stops). At most one start and at least one stop are required.
 
-    The start waypoint is optional: the start itself is start.xy_m in config.toml (resolve_start).
+    The start waypoint is optional: the start itself is the default [starts.<id>] of config.toml
+    (resolve_start).
     """
     starts = [w for w in waypoints if w.kind == KIND_START]
     stops = [w for w in waypoints if w.kind == KIND_STOP]
@@ -202,27 +204,32 @@ def split_waypoints(waypoints):
 
 
 def resolve_start(cfg: Config, cost: Cost, hazard=None, waypoint=None):
-    """(the start Waypoint, warnings), from start.xy_m in the config.
+    """(the start Waypoint, warnings): the default start of the config, after checking every start.
 
-    The configured position always wins, and the id is always "start". A start waypoint from
-    waypoints.geojson is only compared with it: if it lies more than half a cell from the
-    configured start, a warning says so.
-    Raises start.StartError if the start is outside the grid or on a blocked cell; a start on
-    careful ground gives a warning.
+    All the configured starts are checked (start.validate_starts), so a bad L3 is found even
+    though only the default one is planned from; the first bad start raises a StartError that
+    names it. The id of the returned start is always "start" and `landing_id` is the config id
+    ('L1'). A start waypoint from waypoints.geojson is only compared with the default start: if
+    it lies more than half a cell from it, a warning says so and the config value is used.
+    Starts on careful ground give warnings.
     """
-    xy = start_mod.start_xy(cfg)
-    cell = start_mod.start_cell(cost.grid, xy)
-    warnings = list(start_mod.check_start(cost, cell, xy, hazard))
+    infos = start_mod.validate_starts(cfg, cost, hazard)
+    spec = start_mod.default_start(cfg)
+    info = infos[spec.id]
+    warnings = [w for i in infos.values() for w in i.warnings]
+    xy = info.xy
     if waypoint is not None:
         if not start_mod.is_near((waypoint.x, waypoint.y), xy, cost.grid.cell_m):
             msg = (
                 f"{WAYPOINTS_FILE} puts its start waypoint at ({waypoint.x:g}, {waypoint.y:g}) m, "
-                f"more than half a cell from start.xy_m ({xy[0]:g}, {xy[1]:g}) m in routing/config.toml; "
-                "the config value is used"
+                f"more than half a cell from the default start {spec.id!r} ({xy[0]:g}, {xy[1]:g}) m "
+                "in routing/config.toml; the config value is used"
             )
             log.warning(msg)
             warnings.append(msg)
-    return Waypoint(start_mod.START_ID, START_NAME, KIND_START, xy[0], xy[1], cell), tuple(warnings)
+    return Waypoint(
+        start_mod.START_ID, START_NAME, KIND_START, xy[0], xy[1], info.cell, landing_id=spec.id,
+    ), tuple(warnings)
 
 
 def block_reason(cost: Cost, cell):
@@ -236,7 +243,7 @@ def check_waypoints(cost: Cost, start: Waypoint, stops, searcher: Searcher):
 
     A blocked start raises start.StartError; a stop problem raises RouteError naming the stop.
     """
-    start_mod.check_start(cost, start.cell, (start.x, start.y))
+    start_mod.check_start(cost, start.cell, (start.x, start.y), name=start.landing_id)
     for wp in stops:
         reason = block_reason(cost, wp.cell)
         if reason:

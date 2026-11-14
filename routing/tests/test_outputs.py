@@ -153,14 +153,19 @@ def test_added_fields_use_one_decimal(result):
 
 def test_assumptions_match_config(result):
     plan = load(result, "plan.json")
-    expected = CFG.assumptions()
-    expected["start.xy_m"]["value"] = list(centre(10, 2))       # the site's config sets its own start
-    assert plan["assumptions"] == expected
+    # the site's own config sets the starts and the data hashes; everything else is the shipped config
+    def rest(a):
+        return {k: v for k, v in a.items() if not k.startswith(("start.", "starts."))}
+    expected = rest(CFG.assumptions())
+    assert rest(plan["assumptions"]) == expected
+    assert plan["assumptions"]["start.default"]["value"] == "L1"
+    assert plan["assumptions"]["starts.L1"]["value"] == list(centre(10, 2))
+    assert [k for k in plan["assumptions"] if k.startswith("starts.")] == ["starts.L1"]
     assert plan["assumptions"]["walking.v_flat_kmh"] == {
         "value": 2.7, "unit": "km/h", "type": "scenario",
         "source": "NASA Apollo planning value for walkbacks over 1 hour",
     }
-    assert len(plan["assumptions"]) == len(CFG.assumptions())
+    assert len(plan["assumptions"]) == len(expected) + 4      # start.default, the two hashes, starts.L1
 
 
 def test_two_runs_identical(tmp_path):

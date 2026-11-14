@@ -235,16 +235,50 @@ unit = "neighbours"
 type = "scenario"
 source = "skimage.graph.MCP_Geometric with fully_connected=True"
 
-# ---- start --------------------------------------------------------------
-# The fixed start (and end) of every walk, in metres on the site grid: [x, y].
-# This is landing spot L1, and it is TEMPORARY. It is the first of the recommended landing
-# spots from web/src/lib/landing.js (recommendLanding), computed on data/out on 2026-11-14.
-# Recompute it when the full Jezero dataset is loaded.
-[start.xy_m]
-value = [1387.5, 712.5]
+# ---- starts -------------------------------------------------------------
+# The landing spots the user can start from, in metres on the site grid: [x, y]. They are
+# TEMPORARY: landing spots L1, L2 and L3 from web/src/lib/landing.js (recommendLanding), computed by
+# running that file's own code on data/out. Recompute them whenever dem.tif or hazard.tif change
+# (the two hashes below say which data they were computed on; a mismatch gives a warning), and
+# when the full Jezero dataset is loaded. Add or remove [starts.<id>] tables freely: ids are
+# letters, digits, "_" or "-", and every start must pass the start checks (start.py).
+# plan_route.py plans the full outing from the default start only; export_reach.py exports
+# one set of reach grids per start.
+[start.default]
+value = "L1"
+unit = "id of one of the [starts.*] tables"
+type = "scenario"
+source = "Team choice: the first recommended landing spot"
+
+[start.dem_sha256]
+value = "33f8e75891c43440beb248355acff907b160b029e6835d18ac2dabdf53a6fae4"
+unit = "sha256 of data/out/dem.tif"
+type = "scenario"
+source = "The dem.tif the landing spots were computed on (2026-11-14)"
+
+[start.hazard_sha256]
+value = "b75b7f6e01cb347cd93ecb469fe5f7c18048bd405d3a199b3dd667d3751d60da"
+unit = "sha256 of data/out/hazard.tif"
+type = "scenario"
+source = "The hazard.tif the landing spots were computed on (2026-11-14)"
+
+[starts.L1]
+value = [1112.5, 607.5]
 unit = "m (site grid x, y)"
 type = "scenario"
-source = "Landing spot L1 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop), computed on data/out of 2026-11-14; temporary until the full Jezero dataset is loaded"
+source = "Landing spot L1 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop; hazards from hazard.png as the app builds them), run on data/out of 2026-11-14. Temporary until the full Jezero dataset is loaded"
+
+[starts.L2]
+value = [1007.5, 367.5]
+unit = "m (site grid x, y)"
+type = "scenario"
+source = "Landing spot L2 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop; hazards from hazard.png as the app builds them), run on data/out of 2026-11-14. Temporary until the full Jezero dataset is loaded"
+
+[starts.L3]
+value = [1187.5, 1227.5]
+unit = "m (site grid x, y)"
+type = "scenario"
+source = "Landing spot L3 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop; hazards from hazard.png as the app builds them), run on data/out of 2026-11-14. Temporary until the full Jezero dataset is loaded"
 
 # ---- reach export (export_reach.py) --------------------------------------
 [reach.crop_m]

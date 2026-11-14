@@ -1,27 +1,33 @@
-"""Reach grids: the best path from the fixed start to every cell, for each profile (DESIGN section 13).
+"""Reach grids: the best path from each start to every cell, for each profile (DESIGN section 13).
 
     python routing/export_reach.py                       # reads data/out, writes data/out/reach
     python routing/export_reach.py --in DIR              # reads DIR, writes DIR/reach
     python routing/export_reach.py --in DIR --out DIR2   # reads DIR, writes DIR2
     python routing/export_reach.py --config FILE         # another parameter file
 
-The user clicks a destination on the map and the app shows three paths to it (fastest,
-balanced, safest), each with distance, walking time and risk. One search per profile from the
-start (start.xy_m in config.toml) gives the answer for every cell at once:
+The user picks a start (a landing spot, L1 to L3 for now), clicks a destination on the map and the
+app shows three paths from that start to it (fastest, balanced, safest), each with distance,
+walking time and risk. One search per profile and start (the [starts.<id>] of config.toml) gives
+the answer for every cell at once. Per start, in a folder named by its id:
 
-    {profile}_time.f32   walking minutes from the start along that profile's best path
-    {profile}_dist.f32   metres along that path
-    {profile}_risk.f32   risk-minutes along that path
-    {profile}_dir.u8     the step from each cell back toward the start (0 = start or no path)
-    reason.u8            0 reachable, otherwise why not (shared by the profiles)
-    reach.json           the manifest: grid, encodings, profiles, start, budget rule, hashes
+    <id>/{profile}_time.f32   walking minutes from the start along that profile's best path
+    <id>/{profile}_dist.f32   metres along that path
+    <id>/{profile}_risk.f32   risk-minutes along that path
+    <id>/{profile}_dir.u8     the step from each cell back toward the start (0 = start or no path)
+    <id>/reason.u8            0 reachable, otherwise why not (6, walled off, depends on the start)
+
+and one reach.json next to the folders: the grid, the encodings, the list of starts (id, xy_m, cell,
+default flag, warnings, file paths), the profile weights, the budget rule and the hashes. The front
+end reads the landing spots from that list instead of computing them.
 
 The cost model and the search are cost.py and search.py, unchanged. The direction grid is the
 search's own traceback, so following it gives exactly the path search.Tree.path_to returns.
 `trace` is the reference for the front end: DESIGN section 13 describes it step by step.
 
 Everything is built in memory first, so a run that fails writes nothing. The manifest is
-written last. There is no timestamp: the same inputs give the same bytes.
+written last. There is no timestamp: the same inputs give the same bytes. After writing, the
+files of the old one-start layout and the folders of starts that are no longer in the config are
+deleted (only files with the names of this export's grids), and listed.
 """
 import argparse
 import hashlib
@@ -45,9 +51,9 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_IN = ROOT / "data" / "out"
 REACH_DIR = "reach"
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 MANIFEST_FILE = "reach.json"
-REASON_FILE = "reason.u8"
+REASON_FILE = "reason.u8"          # inside each start's folder
 BYTE_ORDER = "little"
 DTYPES = {"f32": np.dtype("<f4"), "u8": np.dtype("u1")}
 # Per-profile grids: key -> (file suffix, dtype key, unit)
@@ -200,7 +206,11 @@ def accumulate(model: cost_mod.Cost, tree):
 
 
 def reason_grid(model: cost_mod.Cost, reachable):
-    """Reason codes: why each cell has no path (0 where it has one)."""
+    """Reason codes: why each cell has no path from one start (0 where it has one).
+
+    Code 6 (walled off) depends on the start: a cell that is passable but cut off from this start
+    by blocked cells may be reachable from another start.
+    """
     codes = start_mod.block_codes(model)
     codes[(codes == start_mod.REACHABLE) & ~reachable] = start_mod.WALLED_OFF
     return codes
@@ -237,19 +247,22 @@ def config_sha256(cfg):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def file_sha256(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+file_sha256 = start_mod.file_sha256
 
 
 @dataclass(frozen=True)
 class ExportResult:
-    files: dict             # file name -> bytes, manifest last
+    files: dict             # path relative to the reach folder ("L1/fastest_time.f32") -> bytes, manifest last
     manifest: dict
-    warnings: tuple
+    warnings: tuple         # every warning: the data hashes and each start's own
+
+    @property
+    def total_bytes(self):
+        return sum(len(v) for v in self.files.values())
 
 
 def run(in_dir, config_path=None):
-    """Compute every reach file from the inputs in `in_dir`. Writes nothing."""
+    """Compute every reach file, for every start, from the inputs in `in_dir`. Writes nothing."""
     cfg = config_mod.load_config(config_path)
     site = grid_mod.load_site(in_dir)
     factor = cfg.value("reach.downsample")
@@ -261,38 +274,56 @@ def run(in_dir, config_path=None):
     hazard = hazard[box[0]:box[1], box[2]:box[3]]
     export = model.grid
 
-    xy = start_mod.start_xy(cfg)
+    # Every start is checked before anything is searched; the first bad one is named in the error.
     where = "the exported area (reach.crop_m, reach.downsample)"
-    cell = start_mod.start_cell(export, xy, origin, where)
-    warnings = list(start_mod.check_start(model, cell, xy, hazard))
+    infos = start_mod.validate_starts(cfg, model, hazard, origin, where)
+    default_id = cfg.default_start_id()
 
     connectivity = cfg.value("search.connectivity")
-    files, profiles, reachable = {}, {}, None
-    for name, key in tour.PROFILES:
-        w = cfg.value(key)
-        tree = Searcher(model, w, connectivity).tree(cell)
-        time, dist, risk = accumulate(model, tree)
-        grids = {"time": time, "dist": dist, "risk": risk, "dir": direction_codes(tree)}
-        for gkey, arr in grids.items():
-            files[_profile_file(name, gkey)] = arr.astype(DTYPES[PROFILE_GRIDS[gkey][1]]).tobytes(order="C")
-        here = np.isfinite(time)
-        reachable = here if reachable is None else reachable
-        assert np.array_equal(here, reachable), "profiles share one hard mask, so one reachable set"
-        profiles[name] = {
-            "w": float(w),
-            "files": {gkey: _profile_file(name, gkey) for gkey in PROFILE_GRIDS},
-            "reachable_cells": int(here.sum()),
-        }
-    files[REASON_FILE] = reason_grid(model, reachable).tobytes(order="C")
+    weights = {name: float(cfg.value(key)) for name, key in tour.PROFILES}
+    searchers = {name: Searcher(model, w, connectivity) for name, w in weights.items()}
+    files, starts_out = {}, []
+    for sid, info in infos.items():
+        sprofiles, reachable = {}, None
+        for name in weights:
+            tree = searchers[name].tree(info.cell)
+            time, dist, risk = accumulate(model, tree)
+            grids = {"time": time, "dist": dist, "risk": risk, "dir": direction_codes(tree)}
+            paths = {}
+            for gkey, arr in grids.items():
+                paths[gkey] = _path(sid, _profile_file(name, gkey))
+                files[paths[gkey]] = arr.astype(DTYPES[PROFILE_GRIDS[gkey][1]]).tobytes(order="C")
+            here = np.isfinite(time)
+            reachable = here if reachable is None else reachable
+            assert np.array_equal(here, reachable), "profiles share one hard mask, so one reachable set"
+            sprofiles[name] = {"files": paths, "reachable_cells": int(here.sum())}
+        reason_path = _path(sid, REASON_FILE)
+        files[reason_path] = reason_grid(model, reachable).tobytes(order="C")
+        starts_out.append({
+            "id": sid,
+            "xy_m": [info.xy[0], info.xy[1]],
+            "cell": [int(info.cell[0]), int(info.cell[1])],
+            "default": sid == default_id,
+            "temporary": True,
+            "folder": sid,
+            "reason_file": reason_path,
+            "profiles": sprofiles,
+            "warnings": list(info.warnings),
+        })
 
-    manifest = build_manifest(
-        cfg, site, export, factor, box, origin, xy, cell, profiles, warnings, in_dir, files,
-    )
+    warnings = [*start_mod.staleness_warnings(cfg, in_dir), *(w for s in starts_out for w in s["warnings"])]
+    manifest = build_manifest(cfg, site, export, factor, box, origin, starts_out, weights, default_id,
+                              warnings, in_dir, files)
     files[MANIFEST_FILE] = outputs.dumps(manifest).encode("utf-8")
     return ExportResult(files, manifest, tuple(warnings))
 
 
-def build_manifest(cfg, site, export, factor, box, origin, xy, cell, profiles, warnings, in_dir, files):
+def _path(start_id, name):
+    return f"{start_id}/{name}"
+
+
+def build_manifest(cfg, site, export, factor, box, origin, starts_out, weights, default_id, warnings,
+                   in_dir, files):
     params = cost_mod.Params.from_config(cfg)
     return {
         "format_version": FORMAT_VERSION,
@@ -312,6 +343,7 @@ def build_manifest(cfg, site, export, factor, box, origin, xy, cell, profiles, w
             "site_grid": {"width": site.grid.width, "height": site.grid.height, "cell_m": site.grid.cell_m},
         },
         "layout": {
+            "folders": "one folder per start, named by its id, next to this file: <id>/<profile>_<grid> and <id>/reason.u8",
             "order": "row-major, row 0 = north edge, index = row * width + col",
             "header": "none: raw values only",
             "cell_of_point": "col = floor((x - origin_x) / cell_m), row = height - 1 - floor((y - origin_y) / cell_m)",
@@ -319,21 +351,21 @@ def build_manifest(cfg, site, export, factor, box, origin, xy, cell, profiles, w
         },
         "byte_order": BYTE_ORDER,
         "dtypes": {"f32": "float32", "u8": "uint8"},
-        "nodata": "NaN in the f32 grids wherever reason != 0",
+        "nodata": "NaN in the f32 grids wherever the start's reason != 0",
         "units": {k: v[2] for k, v in PROFILE_GRIDS.items()},
-        "start": {
-            "xy_m": [xy[0], xy[1]],
-            "cell": [int(cell[0]), int(cell[1])],
-            "note": "start.xy_m in routing/config.toml: landing spot L1, temporary until the full Jezero dataset",
-        },
-        "profiles": profiles,
-        "reason_file": REASON_FILE,
+        "default_start": default_id,
+        "starts_note": (
+            "The selectable starts (landing spots, temporary): the front end reads them from here instead of "
+            "computing them. Reason 6 (walled off) depends on the start, so each start has its own reason grid."
+        ),
+        "starts": starts_out,
+        "profiles": {name: {"w": w} for name, w in weights.items()},
         "reason_codes": [
             {"code": code, "name": start_mod.REASON_NAMES[code], "text": start_mod.reason_text(code, params)}
             for code in sorted(start_mod.REASON_NAMES)
         ],
         "direction_meaning": "the step from this cell to the previous cell on its best path, toward the start",
-        "direction_codes": [{"code": NO_STEP, "name": None, "drow": 0, "dcol": 0, "meaning": "start cell, or no path"}]
+        "direction_codes": [{"code": NO_STEP, "name": None, "drow": 0, "dcol": 0, "meaning": "the start cell, or no path"}]
         + [{"code": code, "name": n, "drow": dr, "dcol": dc} for code, (n, dr, dc) in DIRECTIONS.items()],
         "budget": budget(cfg),
         "config_sha256": config_sha256(cfg),
@@ -348,9 +380,55 @@ def build_manifest(cfg, site, export, factor, box, origin, xy, cell, profiles, w
     }
 
 
+# ---- files left by an older layout or a start that is gone -------------------
+# Every grid file name an export has ever written. Only these names are ever deleted.
+GRID_FILE_NAMES = tuple(_profile_file(p, k) for p, _ in tour.PROFILES for k in PROFILE_GRIDS) + (REASON_FILE,)
+
+
+def stale_paths(out_dir, start_ids):
+    """What an earlier export left in `out_dir` that this one does not write, as a list of paths.
+
+    - the grid files of the old layout, directly in `out_dir` (the names in GRID_FILE_NAMES);
+    - the grid files in a folder next to `reach.json` that looks like a start folder (it holds a
+      reason.u8) but whose name is not one of `start_ids`, and the folder itself.
+
+    Nothing else is listed: other files, and a folder with other files in it, are left alone.
+    """
+    out_dir = Path(out_dir)
+    stale = []
+    if not out_dir.is_dir():
+        return stale
+    stale += [out_dir / n for n in GRID_FILE_NAMES if (out_dir / n).is_file()]
+    for child in sorted(out_dir.iterdir()):
+        if child.is_dir() and child.name not in start_ids and (child / REASON_FILE).is_file():
+            stale += [child / n for n in GRID_FILE_NAMES if (child / n).is_file()]
+            stale.append(child)
+    return stale
+
+
+def remove_stale(paths):
+    """Delete the files in `paths`, and each listed folder if it is empty by then.
+
+    Returns what was removed, as paths with a trailing "/" for folders, relative to nothing: the
+    caller shows them as they are.
+    """
+    removed = []
+    for path in paths:
+        if path.is_file():
+            path.unlink()
+            removed.append(str(path))
+        elif path.is_dir():
+            try:
+                path.rmdir()                    # only if empty: a folder with other files stays
+            except OSError:
+                continue
+            removed.append(str(path) + "/")
+    return removed
+
+
 # ---- reading back and the reference traceback ---------------------------------
 class ReachError(ValueError):
-    """The reach folder is missing a file or does not match its manifest."""
+    """The reach folder is missing a file or does not match its manifest, or a start is unknown."""
 
 
 class Reach:
@@ -359,11 +437,13 @@ class Reach:
     def __init__(self, folder, manifest, reason, grids):
         self.folder = Path(folder)
         self.manifest = manifest
-        self.reason = reason
-        self.grids = grids          # profile -> {"time", "dist", "risk", "dir"}
+        self.reason = reason        # start id -> reason grid
+        self.grids = grids          # start id -> profile -> {"time", "dist", "risk", "dir"}
         g = manifest["grid"]
         self.width, self.height, self.cell_m = g["width"], g["height"], g["cell_m"]
         self.origin = tuple(g["origin_m"])
+        self.starts = {s["id"]: s for s in manifest["starts"]}
+        self.default_start = manifest["default_start"]
         self.steps = {d["code"]: (d["drow"], d["dcol"]) for d in manifest["direction_codes"] if d["code"] != NO_STEP}
         self.reason_by_code = {r["code"]: r for r in manifest["reason_codes"]}
 
@@ -374,6 +454,10 @@ class Reach:
             manifest = json.loads((folder / MANIFEST_FILE).read_text(encoding="utf-8"))
         except FileNotFoundError:
             raise ReachError(f"{MANIFEST_FILE} not found in {folder}") from None
+        if manifest.get("format_version") != FORMAT_VERSION:
+            raise ReachError(
+                f"{MANIFEST_FILE} has format_version {manifest.get('format_version')!r}, expected {FORMAT_VERSION}"
+            )
         if manifest.get("byte_order") != BYTE_ORDER:
             raise ReachError(f"unsupported byte order {manifest.get('byte_order')!r}")
         g = manifest["grid"]
@@ -388,11 +472,13 @@ class Reach:
                 raise ReachError(f"{name} has {arr.size} values, the manifest says {shape[0]} x {shape[1]}")
             return arr.reshape(shape)
 
-        reason = read(manifest["reason_file"], "u8")
-        grids = {
-            name: {key: read(fname, PROFILE_GRIDS[key][1]) for key, fname in p["files"].items()}
-            for name, p in manifest["profiles"].items()
-        }
+        reason, grids = {}, {}
+        for s in manifest["starts"]:
+            reason[s["id"]] = read(s["reason_file"], "u8")
+            grids[s["id"]] = {
+                name: {key: read(fname, PROFILE_GRIDS[key][1]) for key, fname in p["files"].items()}
+                for name, p in s["profiles"].items()
+            }
         return cls(folder, manifest, reason, grids)
 
     def cell_of(self, x, y):
@@ -409,21 +495,26 @@ class Reach:
             self.origin[1] + (self.height - row - 0.5) * self.cell_m,
         )
 
-    def trace(self, profile, x, y):
-        """The best path from the start to (x, y) for `profile`, as a GeoJSON Feature.
+    def trace(self, start_id, profile, x, y):
+        """The best path from start `start_id` to (x, y) for `profile`, as a GeoJSON Feature.
 
         Coordinates are [x, y] metres from the start to the destination cell centre. Totals are
         the grid values at the destination. When there is no path the geometry is null and
         `reason` says why (`"outside"` for a point outside the exported area).
         """
-        g = self.grids[profile]
+        if start_id not in self.starts:
+            raise ReachError(f"unknown start {start_id!r}; the starts are {', '.join(self.starts)}")
+        if profile not in self.manifest["profiles"]:
+            raise ReachError(f"unknown profile {profile!r}; the profiles are {', '.join(self.manifest['profiles'])}")
+        g = self.grids[start_id][profile]
+        start_cell = self.starts[start_id]["cell"]
         budget_ = self.manifest["budget"]
-        props = {"profile": profile, "w": self.manifest["profiles"][profile]["w"]}
+        props = {"start": start_id, "profile": profile, "w": self.manifest["profiles"][profile]["w"]}
         cell = self.cell_of(x, y)
         if cell is None:
             return _feature(None, {**props, "reachable": False, "reason": OUTSIDE,
                                    "reason_text": "outside the exported area"})
-        code = int(self.reason[cell])
+        code = int(self.reason[start_id][cell])
         if code != start_mod.REACHABLE:
             r = self.reason_by_code[code]
             return _feature(None, {**props, "reachable": False, "reason": code, "reason_name": r["name"],
@@ -436,9 +527,11 @@ class Reach:
             dr, dc = self.steps[d]
             cells.append((cells[-1][0] + dr, cells[-1][1] + dc))
         else:
-            raise ReachError(f"direction grid for {profile} loops at cell {cells[-1]}")
-        if list(cells[-1]) != self.manifest["start"]["cell"]:
-            raise ReachError(f"direction grid for {profile} stops at {cells[-1]}, not at the start")
+            raise ReachError(f"direction grid for {start_id}/{profile} loops at cell {cells[-1]}")
+        if list(cells[-1]) != start_cell:
+            raise ReachError(
+                f"direction grid for {start_id}/{profile} stops at {cells[-1]}, not at the start {start_cell}"
+            )
         cells.reverse()                                     # start -> destination
         coords = [list(self.centre(*c)) for c in cells]
         if len(coords) == 1:                                # destination is the start cell
@@ -463,14 +556,14 @@ def _feature(coords, props):
     return {"type": "Feature", "geometry": geometry, "properties": props}
 
 
-def trace(folder, profile, x, y):
+def trace(folder, start_id, profile, x, y):
     """Reference traceback: load the reach folder and trace one destination (see Reach.trace)."""
-    return Reach.load(folder).trace(profile, x, y)
+    return Reach.load(folder).trace(start_id, profile, x, y)
 
 
 # ---- command line ------------------------------------------------------------
 def parse_args(argv):
-    p = argparse.ArgumentParser(description="Export reach grids from the start for the three profiles.")
+    p = argparse.ArgumentParser(description="Export reach grids from every start for the three profiles.")
     p.add_argument("--in", dest="in_dir", type=Path, default=DEFAULT_IN,
                    help="folder the inputs are read from (default: data/out)")
     p.add_argument("--out", dest="out_dir", type=Path, default=None,
@@ -484,15 +577,17 @@ def summary_lines(result: ExportResult):
     m = result.manifest
     g = m["grid"]
     lines = [
-        f"{m['site']}: {g['width']} x {g['height']} cells of {g['cell_m']:g} m, origin {g['origin_m']}, "
-        f"start ({m['start']['xy_m'][0]:g}, {m['start']['xy_m'][1]:g}) m",
+        f"{m['site']}: {g['width']} x {g['height']} cells of {g['cell_m']:g} m, origin {g['origin_m']}",
     ]
-    for name, p in m["profiles"].items():
-        lines.append(f"  {name:<8} w={p['w']:g}  reachable cells {p['reachable_cells']}")
-    total = sum(len(v) for v in result.files.values())
-    for name, data in result.files.items():
-        lines.append(f"  {name:<22} {len(data):>10,} bytes")
-    lines.append(f"  {'total':<22} {total:>10,} bytes")
+    for s in m["starts"]:
+        size = sum(m["files"][p]["bytes"] for p in m["files"] if p.startswith(s["folder"] + "/"))
+        reach_cells = ", ".join(f"{n} {p['reachable_cells']}" for n, p in s["profiles"].items())
+        lines.append(
+            f"  start {s['id']}{' (default)' if s['default'] else ''}: ({s['xy_m'][0]:g}, {s['xy_m'][1]:g}) m, "
+            f"cell {s['cell']}, {size:,} bytes, reachable cells: {reach_cells}"
+        )
+    lines.append(f"  {MANIFEST_FILE}: {len(result.files[MANIFEST_FILE]):,} bytes")
+    lines.append(f"  total: {result.total_bytes:,} bytes ({result.total_bytes / 1e6:.2f} MB) in {len(result.files)} files")
     b = m["budget"]
     lines.append(
         f"over budget (one way) when time + ingress_min + stop_min > usable_min {b['usable_min']:g}, "
@@ -517,6 +612,11 @@ def main(argv=None):
     print(f"Wrote {len(result.files)} files to {out_dir}")
     for line in summary_lines(result):
         print(line)
+    removed = remove_stale(stale_paths(out_dir, {s["id"] for s in result.manifest["starts"]}))
+    if removed:
+        print(f"Deleted {len(removed)} old files and folders that this layout no longer uses:")
+        for path in removed:
+            print("  " + Path(path).relative_to(out_dir).as_posix() + ("/" if path.endswith("/") else ""))
     return 0
 
 
