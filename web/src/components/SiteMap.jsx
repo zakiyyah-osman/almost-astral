@@ -135,7 +135,7 @@ function button(position, html, onClick) {
 //  gridOn       draw latitude and longitude lines for the part of the map on screen
 //  onView       gets { centre: { x, y } } whenever the map stops moving
 //  sizeKey      changes whenever the map's box changes size without a new layout (sidebar dragged)
-//  onHover      gets { x, y } under the pointer inside the site, or null
+//  onHover      gets { x, y } under the pointer (anywhere on the map, outside the site too), or null
 //  probe        { x, y }: a point to ring (from the profile chart)
 //  astronaut    null, or { x, y, storm, trail } while the HUD simulation runs
 //  layoutKey    changes whenever the page layout changes the map's size
@@ -254,7 +254,8 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     let frame = 0
     map.on('mousemove', (e) => {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => cb.current.onHover?.(inside(e.latlng) ? geo.toXY(e.latlng) : null))
+      // Anywhere on the map, not only inside the site, so the pointer box reads out positions across the whole crater.
+      frame = requestAnimationFrame(() => cb.current.onHover?.(geo.toXY(e.latlng)))
     })
     map.on('mouseout', () => cb.current.onHover?.(null))
 
