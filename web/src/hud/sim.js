@@ -145,8 +145,13 @@ export function buildTimeline(plan, waypoints, route) {
   if (!plan?.legs?.length || !waypoints?.features?.length) return null
   const byId = {}
   for (const f of waypoints.features) byId[f.properties.id] = f
-  const name = (id) => byId[id]?.properties.name ?? id
-  const roverId = waypoints.features.find((f) => f.properties.kind === 'rover')?.properties.id ?? ROVER_ID
+  const name = (id) => byId[id]?.properties.name ?? (id === plan.start?.id ? plan.start.name : id)
+  // Home is the rover when there is one, otherwise where the walk starts (a walking-only plan starts at
+  // plan.start, id "start"). The last leg ends the outing (back home, or at a destination with a
+  // shelter), so it is never a sampling stop.
+  const roverId = waypoints.features.find((f) => f.properties.kind === 'rover')?.properties.id ?? plan.legs[0].from ?? ROVER_ID
+  const homeIds = new Set([roverId, plan.legs[0].from])
+  const isStop = (leg, i) => i < plan.legs.length - 1 && !homeIds.has(leg.to)
 
   // The path: the real route if there is one, otherwise straight lines between the stops.
   let pts = routePoints(route)
@@ -158,7 +163,7 @@ export function buildTimeline(plan, waypoints, route) {
   const cum = pathLength(pts)
   const routeLen = cum[cum.length - 1]
 
-  const nStops = plan.legs.filter((l) => l.to !== roverId).length || 1
+  const nStops = plan.legs.filter(isStop).length || 1
   const stopMin = plan.totals?.stop_min ?? 0
 
   // Where each leg ends on the path: the nearest route point to the stop, moving forwards only.
@@ -173,7 +178,7 @@ export function buildTimeline(plan, waypoints, route) {
     segments.push({ type: 'walk', t0: t, t1: t + leg.walk_min, d0: d, d1: dEnd, to: leg.to, toName: name(leg.to) })
     t += leg.walk_min
     d = dEnd
-    if (leg.to !== roverId) {
+    if (isStop(leg, i)) {
       const dwell = leg.stop_min ?? stopMin / nStops
       segments.push({ type: 'stop', t0: t, t1: t + dwell, d0: d, d1: d, to: leg.to, toName: name(leg.to) })
       t += dwell
