@@ -301,8 +301,11 @@ export function searchPath(cost, a, b, w) {
 // Walking minutes from cell src to every cell (fastest physical time, no risk weighting).
 // Speeds are the same uphill and downhill, so this is also the time from every cell back to src.
 // src can also be a list of cells: the time is then to the nearest of them (used for detours off a route).
-export function timeField(cost, src) {
-  const { width, height, cellM, blocked, timeRate } = cost
+// w is an optional risk weight, the same one the route planner uses: a minute on careful ground or
+// near no-go ground then counts (1 + w x risk) minutes. With w = 0 (the default) the field is pure walking time.
+export function timeField(cost, src, w = 0) {
+  const { width, height, cellM, blocked, timeRate, riskRate } = cost
+  const rate = w ? (k) => timeRate[k] * (1 + w * riskRate[k]) : (k) => timeRate[k]
   const n = width * height
   const t = new Float64Array(n).fill(Infinity)
   const heap = new Heap()
@@ -324,7 +327,7 @@ export function timeField(cost, src) {
       if (rr < 0 || cc < 0 || rr >= height || cc >= width) continue
       const j = rr * width + cc
       if (blocked[j] || done[j]) continue
-      const nt = t[i] + ((timeRate[i] + timeRate[j]) / 2) * f * cellM
+      const nt = t[i] + ((rate(i) + rate(j)) / 2) * f * cellM
       if (nt < t[j]) {
         t[j] = nt
         heap.push(nt, j)

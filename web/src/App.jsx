@@ -188,13 +188,16 @@ export default function App() {
   const planOpts = useMemo(() => ({ ingress: ingressOn, doseFor, cache: legCache }), [ingressOn, doseFor, legCache])
 
   // Minutes back to shelter from every cell: the start, and the destination too when it has a shelter.
-  const back = useMemo(() => {
-    if (!ready || !points) return null
+  const shelterCells = useMemo(() => {
+    if (!ready || !points) return []
     const shelters = [points[0]]
     if (mode === 'mission' && !mission.back) shelters.push(points[points.length - 1])
-    const cells = shelters.map((p) => cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)?.i).filter((i) => i != null)
-    return cells.length ? timeField(cost, cells) : null
+    return shelters.map((p) => cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)?.i).filter((i) => i != null)
   }, [ready, cost, points, mode, mission.back])
+  const back = useMemo(() => (shelterCells.length ? timeField(cost, shelterCells) : null), [cost, shelterCells])
+  // The solar-storm return: as fast as the route-finder's Balanced mode allows, but off careful and no-go
+  // ground where that costs little time, so the crew does not run along the edge of a red zone.
+  const stormField = useMemo(() => (shelterCells.length && params ? { field: timeField(cost, shelterCells, params.w_balanced), w: params.w_balanced } : null), [cost, shelterCells, params])
   const ingress = ingressOn ? params?.ingress_min ?? 0 : 0
 
   // All three modes for the active points, so the crew can compare them.
@@ -238,8 +241,8 @@ export default function App() {
   // The HUD walks the same route: the team outing or my mission, on the picked mode. Its slope,
   // height, time back and storm return are worked out from the terrain for this route.
   const hudData = useMemo(
-    () => (ok ? { ...data, plan: hudPlan(active.plan, active.track, back, cost, ingress), route: active.route, waypoints: activeWaypoints } : data),
-    [ok, data, active, back, cost, ingress, activeWaypoints],
+    () => (ok ? { ...data, plan: hudPlan(active.plan, active.track, back, cost, ingress, 100, stormField), route: active.route, waypoints: activeWaypoints } : data),
+    [ok, data, active, back, cost, ingress, activeWaypoints, stormField],
   )
   const hudKey = ok ? `${mode}-${profile}-${active.route.features[0].geometry.coordinates.length}-${active.plan.totals.total_min}` : 'files'
   const arrivals = useMemo(() => {
