@@ -2,7 +2,7 @@
 
 Writes data/out/crater/dem.tif (float32 heights, uncompressed so the web app can read it for
 route finding), hazard.tif (0/1/2), slope.png and hazard.png, and a "crater" block in layers.json.
-Slope maths, thresholds and colours are the site build's (terrain/hazards.py and
+Slope maths, thresholds and colours are the site build's (terrain/hazard_map.py and
 terrain/thresholds.toml). Only the slope rule applies here: roughness at 40 m cells would measure
 something different from the site's 5 m cells, and there is no crater-wide thermal inertia grid yet.
 
@@ -15,11 +15,13 @@ import math
 import sys
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "data"))
 sys.path.insert(0, str(ROOT / "terrain"))
 import grid  # noqa: E402
-import hazards  # noqa: E402  terrain/hazards.py (Person 2)
+import hazard_map as hazards  # noqa: E402  terrain/hazard_map.py (Person 2); terrain/hazards/ is a different package
 
 FOLDER = "crater"
 SCALE_NOTE = "rover-scale, 40 m from CTX DEM, misses boulders/small ledges"
@@ -65,11 +67,14 @@ def run(site):
     grid.save_tif(f"{FOLDER}/dem.tif", dem, "float32", csite)
 
     t = hazards.load_thresholds()
-    slope = hazards.slope_deg(dem.astype("float64"), cell)
-    hazard, no_data = hazards.classify(slope, None, None, t)
+    slope = hazards.compute_slope(dem.astype("float64"), cell)
+    # Slope rule only: zero roughness never passes a roughness threshold, and no thermal inertia.
+    # Cells without height get NaN slope, which classify() makes red (missing data is never safe).
+    hazard = hazards.classify(slope, np.zeros_like(slope), None, t)
+    no_data = ~np.isfinite(slope)
     grid.save_tif(f"{FOLDER}/hazard.tif", hazard, "uint8", csite)
-    grid.save_png(f"{FOLDER}/slope.png", hazards.slope_rgba(slope))
-    grid.save_png(f"{FOLDER}/hazard.png", hazards.hazard_rgba(hazard, no_data))
+    grid.save_png(f"{FOLDER}/slope.png", hazards.slope_image(slope))
+    grid.save_png(f"{FOLDER}/hazard.png", hazards.hazard_image(hazard))
 
     today = datetime.date.today().isoformat()
     label = cfg.get("label", "USGS Mars 2020 CTX DEM mosaic, 20 m")
