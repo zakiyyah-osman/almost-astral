@@ -119,6 +119,24 @@
       "limit": 30,
       "fails_when": "value < limit",
       "decimals": 1
+    },
+    "escape_time_rate": {
+      "file": "escape_time_rate.f64",
+      "dtype": "float64",
+      "values_per_cell": 1,
+      "meaning": "min/m for walking out of a red zone (DESIGN section 17), -1 where it cannot be walked out of",
+      "unit": "min/m",
+      "minus_one": "-1: not walkable even in an emergency: mask code not in escape.zone_codes (passable ground, no data, or an excluded code), slope above escape.max_slope_deg, or NaN slope",
+      "formula": "cost.time_rate (1 / walking speed at the cell's slope), same parameters, not clipped by constraints.slope_max_deg"
+    },
+    "escape_risk_rate": {
+      "file": "escape_risk_rate.f64",
+      "dtype": "float64",
+      "values_per_cell": 1,
+      "meaning": "risk-min per min walked out of a red zone, 0 where escape_time_rate is -1",
+      "unit": "risk-min per min",
+      "zero": "0 wherever escape_time_rate is -1",
+      "value": "escape.risk_rate in every cell where escape_time_rate > 0"
     }
   },
   "measured_note": "The four measured grids are the values landing.py compares with the limits, stored as float32. NaN means not computed: the pad or its clearance circle does not fit inside the site grid (code 2), or a pad cell has no DEM or slope value (code 3). hazard_dist_m is computed for every cell and is never NaN; +Infinity (IEEE 754, read by a Float32Array as Infinity) means there is no red, over-limit-slope or cliff-buffer cell anywhere on the site grid, so there is no distance to show. The codes were decided on the float64 values, so a float32 value can sit exactly on a limit that the code says it crossed.",
@@ -300,7 +318,9 @@
         "pad_slope_deg": "tiles/0_0/pad_slope_deg.f32",
         "pad_roughness_m": "tiles/0_0/pad_roughness_m.f32",
         "pad_height_range_m": "tiles/0_0/pad_height_range_m.f32",
-        "hazard_dist_m": "tiles/0_0/hazard_dist_m.f32"
+        "hazard_dist_m": "tiles/0_0/hazard_dist_m.f32",
+        "escape_time_rate": "tiles/0_0/escape_time_rate.f64",
+        "escape_risk_rate": "tiles/0_0/escape_risk_rate.f64"
       }
     }
   ],
@@ -491,7 +511,24 @@
     "rule": "one way only: needed_min = walk_min + ingress_min + stop_min; over budget when needed_min > usable_min, i.e. when walk_min > walk_limit_min. No return walk is counted."
   },
   "golden_cases": "golden_cases.json",
-  "config_sha256": "6d43062e042a7a379340d88fe66d37bdfe639577446a07239156f9c2457b59b2",
+  "escape": {
+    "zone_codes": [2, 3, 4, 5],
+    "risk_rate": 1.0,
+    "max_slope_deg": 35.0,
+    "cell_counts": {
+      "finite": 6985,
+      "excluded_by_max_slope": 205
+    },
+    "rule": "zone = the 8-connected region of cells whose mask code is in zone_codes that holds the start. Phase 1: Dijkstra from the start inside the zone with the edge rule of search.edge_rule, using escape_time_rate / escape_risk_rate in zone cells and time_rate / risk_rate on exit cells; a zone cell with escape_time_rate < 0 is never entered; an exit is a passable cell (mask 0) next to the zone, entered in one step and never expanded. If the start cell has escape_time_rate < 0 the result is no_exit with reason start_too_steep. Exit = the lowest escape walk cost at w = 0 among exits in the destination's 8-connected passable region (none: no_exit); exact ties go to the lowest total planning cost for the profile (escape at w + normal search from the exit). Phase 2: the normal search from the exit, never entering blocked ground.",
+    "note": "Team assumption (Tushaar), emergency estimate only: escape speeds apply the walking model to slopes above constraints.slope_max_deg, beyond the range it was meant for, so escape times are rough. risk_rate and max_slope_deg are team assumptions, not sourced values.",
+    "config_keys": [
+      "escape.zone_codes",
+      "escape.risk_rate",
+      "escape.max_slope_deg"
+    ],
+    "golden_cases": "golden_escape_cases.json"
+  },
+  "config_sha256": "678d729eee98bcbcc0bed92846dc2bd04daaec2d1e6cc45f805b8575270096d3",
   "inputs_sha256": {
     "dem.tif": "33f8e75891c43440beb248355acff907b160b029e6835d18ac2dabdf53a6fae4",
     "hazard.tif": "b75b7f6e01cb347cd93ecb469fe5f7c18048bd405d3a199b3dd667d3751d60da",
@@ -542,6 +579,14 @@
       "bytes": 640000,
       "sha256": "5299a5b15d2216058d5d37dfd5c62432ce55d69ba41c9e2a138757019e251dbd"
     },
+    "tiles/0_0/escape_time_rate.f64": {
+      "bytes": 1280000,
+      "sha256": "ee3dae03c40e8e87a9629326a7b2066a7b9e729fb3208a9be3e682ad152158bb"
+    },
+    "tiles/0_0/escape_risk_rate.f64": {
+      "bytes": 1280000,
+      "sha256": "5edbb558c6cb0db10e4a97cbdb4f0b73f479ef9f5bbdf1034507de5b513b2756"
+    },
     "landing_zones.png": {
       "bytes": 18577,
       "sha256": "8d28d86b5ae3255c02293a85db7f9e401981e7ce5dc6f6a6b7c9becd605ff027"
@@ -549,6 +594,10 @@
     "golden_cases.json": {
       "bytes": 174525,
       "sha256": "c7a9f46ce2f338cfd9eea161ee86fa581a97e6e1867ba424d26e03adb1fcfca5"
+    },
+    "golden_escape_cases.json": {
+      "bytes": 37302,
+      "sha256": "5eff3758ed374ad2153b15557310805e42e2a095c438292c3a55fd7f041135d5"
     }
   },
   "warnings": []

@@ -205,7 +205,7 @@ def test_manifest_round_trips(site, exported):
         "landing_safety": "uint8", "landing_warn": "uint8", "nearest_safe": "uint16",
         "nearest_safe_dist": "float32", "time_rate": "float64", "risk_rate": "float64", "mask": "uint8",
         "pad_slope_deg": "float32", "pad_roughness_m": "float32", "pad_height_range_m": "float32",
-        "hazard_dist_m": "float32"}
+        "hazard_dist_m": "float32", "escape_time_rate": "float64", "escape_risk_rate": "float64"}
     assert {k: (v["unit"], v["limit_key"], v["limit"], v["fails_when"]) for k, v in m["grids"].items() if "limit" in v} == {
         "pad_slope_deg": ("deg", "landing.max_pad_slope_deg", 5, "value > limit"),
         "pad_roughness_m": ("m", "landing.max_roughness_m", 0.25, "value > limit"),
@@ -400,7 +400,7 @@ def test_one_tile_size_and_total(exported):
     m = result.manifest
     assert len(m["tiles"]) == 1 and m["tiles"][0]["shape"] == [44, 64] and m["tile_cells"] == 1024
     cells = 44 * 64
-    grids = cells * (1 + 1 + 4 + 4 + 8 + 8 + 1 + 4 * 4)
+    grids = cells * (1 + 1 + 4 + 4 + 8 + 8 + 1 + 4 * 4 + 8 + 8)     # ... + the two escape grids
     assert sum(v["bytes"] for k, v in m["files"].items() if k.startswith("tiles/")) == grids
 
 

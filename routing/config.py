@@ -42,6 +42,7 @@ EXPECTED_PARAMS = (
     "landing.max_height_range_m", "landing.hazard_clearance_m", "landing.marginal_pct",
     "landing.ti_warn_below", "landing.window_centre_m", "landing.window_size_m", "landing.tile_size_m",
     "landing.display_safe_rgba", "landing.display_marginal_rgba",
+    "escape.zone_codes", "escape.risk_rate", "escape.max_slope_deg",
 )
 
 # Parameters whose value is not a single number.
@@ -51,6 +52,9 @@ LIST_PARAMS = {
 # Display colours: [red, green, blue, alpha], four whole numbers from 0 to 255.
 ZONE_COLOURS = {"safe": "landing.display_safe_rgba", "marginal": "landing.display_marginal_rgba"}
 RGBA_PARAMS = tuple(ZONE_COLOURS.values())
+# Escape from a red zone: the mask codes that may be walked out of (start.py codes; 1 no data never).
+ESCAPE_ZONE_CODES = "escape.zone_codes"
+ESCAPE_ALLOWED_CODES = (2, 3, 4, 5)
 STRING_PARAMS = {"timeline.stop_order": ("as_listed", "optimise")}
 BOOL_PARAMS = {"budget.destination_stop"}
 WINDOW_CENTRE = "landing.window_centre_m"   # "site", or [x, y] in metres
@@ -58,7 +62,7 @@ WINDOW_SIZE = "landing.window_size_m"       # "full", or [width, height] in metr
 SITE_CENTRE = "site"
 FULL_WINDOW = "full"
 # Parameters whose value is not a number or a list of numbers.
-NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, WINDOW_CENTRE, WINDOW_SIZE, *RGBA_PARAMS)
+NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, WINDOW_CENTRE, WINDOW_SIZE, *RGBA_PARAMS, ESCAPE_ZONE_CODES)
 INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity"}
 ALLOWED_VALUES = {"search.connectivity": (4, 8)}
 
@@ -106,6 +110,8 @@ RANGES = {
     "landing.marginal_pct": _range(0, 100, hi_in=False),
     "landing.ti_warn_below": _NONNEG,
     "landing.tile_size_m": _POS,
+    "escape.risk_rate": _NONNEG,
+    "escape.max_slope_deg": _range(0, 90, lo_in=False, hi_in=False),
 }
 
 
@@ -242,6 +248,12 @@ class Config:
             cls._check_pair(label, value, SITE_CENTRE, positive=False)
         elif label == WINDOW_SIZE:
             cls._check_pair(label, value, FULL_WINDOW, positive=True)
+        elif label == ESCAPE_ZONE_CODES:
+            ok = (isinstance(value, list) and value and len(set(value)) == len(value) and all(
+                isinstance(v, int) and not isinstance(v, bool) and v in ESCAPE_ALLOWED_CODES for v in value))
+            if not ok:
+                raise ConfigError(f"{label}: must be a non-empty list of distinct mask codes from "
+                                  f"{list(ESCAPE_ALLOWED_CODES)} (never 1, no data), got {value!r}")
         elif label in RGBA_PARAMS:
             ok = isinstance(value, list) and len(value) == 4 and all(
                 isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 255 for v in value)

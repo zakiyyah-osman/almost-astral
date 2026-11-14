@@ -103,15 +103,19 @@ Every limit is in metres or degrees and is a **team assumption pending Nahla** (
 data/out/landing/
   manifest.json          grid, window, tiles, dtypes, code tables, thresholds, message templates, budget rule, edge rule, hashes
   golden_cases.json      reference paths and totals
+  golden_escape_cases.json  reference escapes out of red zones (DESIGN section 17)
   landing_zones.png      safe (green) and marginal (amber) cells of the whole window, RGBA
   tiles/<ti>_<tj>/       landing_safety.u8  landing_warn.u8  nearest_safe.u16  nearest_safe_dist.f32
                          time_rate.f64  risk_rate.f64  mask.u8
                          pad_slope_deg.f32  pad_roughness_m.f32  pad_height_range_m.f32  hazard_dist_m.f32
+                         escape_time_rate.f64  escape_risk_rate.f64
 ```
 
-On the 400 x 400 site this is one tile, **7,095,045 bytes (7.10 MB) in 14 files**. For a bigger grid, `landing.window_centre_m` / `landing.window_size_m` choose a window and `landing.tile_size_m` (5120 m, 1024 cells at 5 m) cuts it into tiles; the manifest lists each tile's index, origin, shape and files. The safety codes are computed on the whole site grid and `nearest_safe` on the whole window before tiling, so both are right across tile edges. Paths never leave the window. Crater-scale processing itself is not built yet; only the formats and functions are ready for it.
+On the 400 x 400 site this is one tile, **9,695,355 bytes (9.70 MB) in 17 files**. For a bigger grid, `landing.window_centre_m` / `landing.window_size_m` choose a window and `landing.tile_size_m` (5120 m, 1024 cells at 5 m) cuts it into tiles; the manifest lists each tile's index, origin, shape and files. The safety codes are computed on the whole site grid and `nearest_safe` on the whole window before tiling, so both are right across tile edges. Paths never leave the window. Crater-scale processing itself is not built yet; only the formats and functions are ready for it.
 
 The user gets one-way paths only. A destination is over budget when `walk_min + ingress_min + stop_min > usable_min`, i.e. when its walking time is above `budget.walk_limit_min` in the manifest (212 min: 252 - 15 - 25). `budget.destination_stop = false` leaves the stop out.
+
+**Escape from a red zone.** A Team outing may start inside blocked ground. `escape_time_rate.f64` (min/m) is the walking model at the cell's slope, not clipped by the 20° limit, in cells whose mask code is in `escape.zone_codes` (2–5) and whose slope is at most `escape.max_slope_deg` (35°); it is −1 everywhere else. `escape_risk_rate.f64` is `escape.risk_rate` (1.0) in those cells and 0 elsewhere. All three values are team assumptions. **Emergency estimate only**: the speeds extrapolate the walking model beyond its intended slope range. The browser searches inside the zone to its exits and takes the shortest escape walk among the exits that can still reach the destination, then runs the normal search, which never re-enters blocked ground. A start steeper than 35° gives `no_exit` / `start_too_steep`. The exact rule is DESIGN section 17, and `golden_escape_cases.json` holds 5 real cases to test against (3 escapes, `start_too_steep`, `no_exit`). On the current site 6,985 zone cells have a finite rate and 205 are excluded by the slope limit.
 
 Reference functions, which the app must reproduce:
 
