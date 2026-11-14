@@ -118,9 +118,8 @@
     "route.geojson": "Calculated 2026-11-14 by routing/plan_route.py (balanced profile) on the real hazard map and HiRISE terrain. Confidence: medium (same assumptions as plan.json).",
     "plan.json": "Calculated 2026-11-14 by routing/plan_route.py. Times use the walking model in routing/config.toml (scenario values); dose uses the radiation.csv estimate.",
     "waypoints.geojson": "Stop positions chosen 2026-11-14 from our real layers: CRISM (MRO) minerals, THEMIS (Mars Odyssey) thermal inertia and the HiRISE-derived hazard map. Confidence: medium (CRISM thresholds are relative, tuned by eye; minerals.png keeps only pass/fail, not strength).",
-    "crater/dem.tif": "USGS Mars 2020 CTX DEM mosaic, 20 m: M20_JezeroCrater_CTXDEM_20m.tif, resampled to 40 m cells (average of the 20 m pixels). Built 2026-11-14. Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show.",
-    "crater/hazard.tif": "Derived from USGS Mars 2020 CTX DEM mosaic, 20 m (M20_JezeroCrater_CTXDEM_20m.tif): slope only, rover-scale, 40 m from CTX DEM, misses boulders/small ledges. Built 2026-11-14. Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show.",
-    "photos.geojson": "NASA Mars 2020 raw images (mars.nasa.gov/mars2020/multimedia/raw-images, JSON API): 32 Navcam and Mastcam-Z full frames at eye level (mast about 2 m up), sols 52-2006: 15 inside or near our 2 km site and 17 along Perseverance's route elsewhere in Jezero (in_site / along_route). Positions from NASA/JPL's published Perseverance traverse waypoints, matched by the rover site/drive in each image ID. Chosen 2026-11-14. Credit NASA/JPL-Caltech (Mastcam-Z: NASA/JPL-Caltech/ASU). Confidence: high for positions (same site/drive); the camera's view direction is not recorded here."
+    "photos.geojson": "NASA Mars 2020 raw images (mars.nasa.gov/mars2020/multimedia/raw-images, JSON API): 32 Navcam and Mastcam-Z full frames at eye level (mast about 2 m up), sols 52-2006: 15 inside or near our 2 km site and 17 along Perseverance's route elsewhere in Jezero (in_site / along_route). Positions from NASA/JPL's published Perseverance traverse waypoints, matched by the rover site/drive in each image ID. Chosen 2026-11-14. Credit NASA/JPL-Caltech (Mastcam-Z: NASA/JPL-Caltech/ASU). Confidence: high for positions (same site/drive); the camera's view direction is not recorded here.",
+    "crater/grid.json": "USGS Mars 2020 CTX DEM mosaic, 20 m: M20_JezeroCrater_CTXDEM_20m.tif, resampled to 40 m cells (average of the 20 m pixels); height (whole metres), slope and hazard classes (Derived from USGS Mars 2020 CTX DEM mosaic, 20 m (M20_JezeroCrater_CTXDEM_20m.tif): slope only, rover-scale, 40 m from CTX DEM, misses boulders/small ledges). Built 2026-11-14. Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show."
   },
   "crater": {
     "name": "Jezero crater (whole crater and rim)",
@@ -141,11 +140,11 @@
       "north": 18.919859,
       "east": 78.14888
     },
-    "dem": "crater/dem.tif",
-    "hazard": "crater/hazard.tif",
+    "grid_header": "crater/grid.json",
     "source": "USGS Mars 2020 CTX DEM mosaic, 20 m",
     "built": "2026-11-14",
     "scale_note": "rover-scale, 40 m from CTX DEM, misses boulders/small ledges",
+    "label": "40 m, rover-scale",
     "confidence": "Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show.",
     "layers": [
       {

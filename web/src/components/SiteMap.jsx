@@ -268,7 +268,11 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     const geo = makeGeo(data.site)
     geoRef.current = geo
     const site = geo.bounds
-    const inside = (ll) => site.contains(ll)
+    // Clicks pick or inspect points anywhere with terrain data: the 2 km site, and the whole-crater grid
+    // around it when layers.json has one (its readout and routes come from the crater worker).
+    const cb0 = data.crater?.bounds_latlon
+    const craterBox = geo.real && cb0 ? L.latLngBounds([cb0.south, lon180(cb0.west)], [cb0.north, lon180(cb0.east)]) : null
+    const inside = (ll) => site.contains(ll) || !!craterBox?.contains(ll)
 
     const map = geo.real
       ? L.map(elRef.current, { crs: MARS_CRS, minZoom: 3, maxZoom: 18, zoomSnap: 0.25, wheelPxPerZoomLevel: 90, attributionControl: false, worldCopyJump: false })

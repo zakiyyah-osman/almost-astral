@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/hud/sim.test.js src/lib/routeCheck.test.js src/lib/profile.test.js src/lib/pathfind.test.js src/lib/mission.test.js src/lib/geo.test.js src/lib/photos.test.js src/lib/marsClock.test.js src/lib/hudPlan.test.js src/lib/research.test.js src/lib/landingCheck.test.js src/lib/teamOuting.test.js src/lib/routeFailure.test.js src/lib/routePlan.test.js src/lib/escape.test.js"
+    "test": "node --test src/hud/sim.test.js src/lib/routeCheck.test.js src/lib/profile.test.js src/lib/pathfind.test.js src/lib/mission.test.js src/lib/geo.test.js src/lib/photos.test.js src/lib/marsClock.test.js src/lib/hudPlan.test.js src/lib/research.test.js src/lib/landingCheck.test.js src/lib/teamOuting.test.js src/lib/routeFailure.test.js src/lib/routePlan.test.js src/lib/escape.test.js src/lib/craterTasks.test.js"
   },
   "dependencies": {
     "leaflet": "1.9.4",

@@ -18,6 +18,8 @@ import { routeFailure, unreachableText } from './lib/routeFailure.js'
 import { MINERAL_CLASSES } from './lib/research.js'
 import { buildTimeline, doseTotal, parseTable, radiationModel } from './hud/sim.js'
 import { useTerrain, mineralAt } from './lib/useTerrain.js'
+import { useCrater, useCraterProbe, useAsync } from './lib/useCrater.js'
+import { waypointsFor } from './lib/outing.js'
 import { PROFILES, paramsFrom, reasonText, route as findRoute, searchFrom, timeField } from './lib/pathfind.js'
 import { loadLandingFromSite, costFromLanding } from './lib/landingData.js'
 import { landingCheck } from './lib/landingCheck.js'
@@ -59,6 +61,8 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 // One trip per mode, kept when switching: start (the landing in My trip), side quests, destination, profile.
 // One way, as routing plans it. Team outing with no start shows routing's plan.json demo route.
 const EMPTY_TRIP = { start: null, quests: [], dest: null, profile: 'balanced' }
+// A route with a point outside the 2 km site: never to be read as one of the planner's site routes.
+const CRATER_LABEL = 'Exploratory: 40 m crater grid, computed in the browser'
 
 
 // Browser storage can be missing or blocked (private windows, previews): never let that break the page.
@@ -222,32 +226,85 @@ export default function App() {
   // The shared route-planning workflow (lib/useRoutePlan.js), for the active mode's trip.
   const demo = useMemo(() => (data?.plan ? { plan: data.plan, routes: data.routes, waypoints: data.waypoints } : null), [data])
   const rp = useRoutePlan({ cost: ready ? cost : null, params, trip, demo: outing ? demo : null, doseFor, legCache, escape: outing })
-  const { status, isDemo, points, results, active, ok, altRoutes, track, furthest, back, shelterCells, arrivals } = rp
+  const { isDemo, points, back, shelterCells } = rp
   const ingress = params?.ingress_min ?? 0
   const profInfo = PROFILES.find((p) => p.id === profile)
 
+  // Points inside the 2 km site use the site grid (rp, above). A trip point anywhere else in the crater
+  // (the destination or a side quest; the start stays on the site grid) uses the 40 m crater grid, which
+  // lives in a Web Worker (lib/crater.worker.js) and is never parsed on the page. Same one-way rule:
+  // ingress counted, minutes back to the start.
+  const inSite = useCallback((p) => !!(p && cost && cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)), [cost])
+  const allInSite = !points || points.every(inSite)
+  const hoverOut = !!hover && ready && !inSite(hover)
+  const inspectOut = !!inspect && ready && !inSite(inspect)
+  const rad = useMemo(() => ({ radRows: radRows ?? [], backgroundUsvH: BACKGROUND_USV_H }), [radRows])
+  const crater = useCrater(data, params, rad, hoverOut || inspectOut || !allInSite)
+  const home = points?.[0] ?? trip.start
+  const shelters = useMemo(() => (home ? [{ x: home.x, y: home.y }] : []), [home?.x, home?.y]) // eslint-disable-line react-hooks/exhaustive-deps
+  const hoverProbe = useCraterProbe(crater, hoverOut ? hover : null, shelters)
+  const inspectProbe = useCraterProbe(crater, inspectOut ? inspect : null, shelters)
+  const craterJob = useAsync(() => {
+    if (allInSite || !points || crater.status !== 'ready') return null
+    const plain = points.map(({ id, name, kind, x, y, stopMin }) => ({ id, name, kind, x, y, stopMin }))
+    return crater.call('plans', { points: plain, ingress: true, shelters, profiles: PROFILES.map((p) => ({ id: p.id, w: params[p.key] })) })
+  }, [crater, points, allInSite, shelters, params])
+  const craterBusy = !allInSite && (crater.status === 'loading' || craterJob.busy)
+
+  // One route state for the rest of the app: rp on the site grid, else the crater worker's plans.
+  // The worker returns a failed plan's reason code only; its text is the landing export's for that code
+  // (the crater cost uses the same mask codes, lib/pathfind.js buildCost).
+  const craterResults = useMemo(() => {
+    const v = craterJob.value
+    if (!v || !cost) return v
+    return Object.fromEntries(Object.entries(v).map(([id, r]) => [id, r.ok || r.reason_text ? r : { ...r, reason_text: reasonText(cost, r.reason) }]))
+  }, [craterJob.value, cost])
+  const results = allInSite ? rp.results : craterResults
+  const active = results?.[profile]
+  const ok = !!active?.ok
+  const craterRoute = active?.grid === 'crater'
+  const status = allInSite ? rp.status : !results ? (craterBusy ? 'pending' : 'failed') : ok ? 'ok' : 'failed'
+  const craterAlt = useMemo(() => (!allInSite && results ? PROFILES.filter((p) => p.id !== profile && results[p.id]?.ok).map((p) => results[p.id].route) : null), [allInSite, results, profile])
+  const altRoutes = allInSite ? rp.altRoutes : craterAlt
+  // A crater route's track already carries minutes back to the start (worked out in the worker).
+  const track = allInSite ? rp.track : ok ? active.track : null
+  const furthest = allInSite ? rp.furthest : track ? track.reduce((a, b) => ((b.back ?? -1) > (a.back ?? -1) ? b : a)) : null
+  const routeWaypoints = rp.waypoints ?? (points ? waypointsFor(points) : null)
+  const craterArrivals = useMemo(() => {
+    if (allInSite || !ok || !routeWaypoints) return {}
+    const tl = buildTimeline(active.plan, routeWaypoints, active.route)
+    return Object.fromEntries((tl?.segments ?? []).filter((s) => s.type === 'walk').map((s) => [s.to, s.t1]))
+  }, [allInSite, ok, active, routeWaypoints])
+  const arrivals = allInSite ? rp.arrivals : craterArrivals
+
   // What each side quest adds, on the active mode.
   const detours = useMemo(() => {
-    if (!ready || isDemo || !trip.quests.length || !trip.start || !trip.dest) return null
+    // Site grid only: on the crater grid each detour would need its own long search.
+    if (!ready || isDemo || !allInSite || !trip.quests.length || !trip.start || !trip.dest) return null
     return detourCosts(cost, trip, params[profInfo.key], params, planOpts)
-  }, [ready, cost, params, isDemo, trip, profInfo, planOpts])
+  }, [ready, cost, params, isDemo, trip, profInfo, planOpts, allInSite])
 
   // Mineral areas from CRISM, and roughly how far each is off the active route (there and back).
   const allTargets = useMemo(() => (ready ? mineralTargets(terrain.mineralImg, terrain.mineralLegend, cost, { minCells: 10 }) : []), [ready, terrain, cost])
   const targets = useMemo(() => {
     if (!allTargets.length) return []
-    const cells = ok ? [...new Set(active.track.map((p) => p.i))] : null
+    // A crater route's cells are crater cells, not site cells: no detour times for it.
+    const cells = ok && !craterRoute ? [...new Set(active.track.map((p) => p.i))] : null
     const field = cells?.length ? timeField(cost, cells) : null
     return allTargets
       .map((t) => ({ ...t, detourMin: field && Number.isFinite(field[t.i]) ? 2 * field[t.i] : null }))
       .sort((a, b) => (a.detourMin ?? 1e9) - (b.detourMin ?? 1e9) || b.areaM2 - a.areaM2)
-  }, [allTargets, ok, active, cost])
+  }, [allTargets, ok, active, cost, craterRoute])
 
-  // What the rest of the app reads: the active mode's plan, route and waypoints (one route state, rp).
-  // No route means nothing drawn and no HUD plan.
-  const shown = { ...data, plan: rp.plan, route: rp.route, waypoints: rp.waypoints ?? data?.waypoints }
-  const hudData = rp.hud ? { ...data, ...rp.hud } : { ...data, plan: null, route: null }
-  const hudKey = isDemo ? 'demo' : ok ? `${mode}-${profile}-${active.route.features[0].geometry.coordinates.length}-${active.plan.totals.total_min}` : 'none'
+  // What the rest of the app reads: the active mode's plan, route and waypoints (one route state).
+  // No route means nothing drawn and no HUD plan. hudPlan works on the site grid; a crater route goes to
+  // the HUD as planned (its own timeline).
+  const shown = allInSite
+    ? { ...data, plan: rp.plan, route: rp.route, waypoints: rp.waypoints ?? data?.waypoints }
+    : { ...data, plan: ok ? active.plan : null, route: ok ? active.route : null, waypoints: routeWaypoints ?? data?.waypoints }
+  const hud = allInSite ? rp.hud : ok ? { plan: active.plan, route: active.route, waypoints: routeWaypoints } : null
+  const hudData = hud ? { ...data, ...hud } : { ...data, plan: null, route: null }
+  const hudKey = isDemo ? 'demo' : ok ? `${mode}-${profile}-${craterRoute ? 'crater-' : ''}${active.route.features[0].geometry.coordinates.length}-${active.plan.totals.total_min}` : 'none'
 
   // A route that cannot be found also gets a pop-up, once per new failure (lib/routeFailure.js).
   const failure = useMemo(() => routeFailure(active), [active])
@@ -287,7 +344,7 @@ export default function App() {
 
   // Everything known about one point: anywhere on the map, with terrain values where there is data.
   const describe = useCallback(
-    (p) => {
+    (p, probe) => {
       if (!p || !data) return null
       const ll = data.site.center_lat != null ? xyToLatLon(p.x, p.y, data.site) : null
       const out = { x: p.x, y: p.y, ll, inside: false }
@@ -299,7 +356,16 @@ export default function App() {
       }
       if (!ready) return out
       const c = cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)
-      if (!c) return out
+      if (!c) {
+        // Outside the 2 km site: the 40 m crater grid, answered by the crater worker. The latest answer
+        // stands for the pointer while it is within a cell or two of the point that was asked about.
+        if (!data.crater?.grid_header || crater.status === 'error') return out
+        const v = probe && Math.hypot(probe.for.x - p.x, probe.for.y - p.y) < 80 ? probe.value : undefined
+        if (v === undefined) return { ...out, pending: true }
+        if (!v?.inCrater) return out
+        if (v.noData) return { ...out, inside: true, crater: true, noData: true }
+        return { ...out, inside: true, crater: true, z: v.z, slope: v.slope, hazard: v.hazard, ti: null, mineral: null, back: v.back != null ? v.back + ingress : null, backPending: !!v.backPending }
+      }
       return {
         ...out,
         inside: true,
@@ -313,17 +379,18 @@ export default function App() {
         back: back && Number.isFinite(back[c.i]) ? back[c.i] + ingress : null,
       }
     },
-    [data, ready, cost, terrain, back, ingress, points],
+    [data, ready, cost, terrain, back, ingress, points, crater.status],
   )
-  const readout = useMemo(() => describe(hover), [describe, hover])
+  const readout = useMemo(() => describe(hover, hoverProbe), [describe, hover, hoverProbe])
   // The clicked point: the same search as the routes, from the point back to the landing (w = 0).
+  // On the crater grid the worker's answer stands (its minutes back come from the 40 m field).
   const inspected = useMemo(() => {
-    const d = describe(inspect)
-    if (!d?.inside || !shelterCells.length) return d
+    const d = describe(inspect, inspectProbe)
+    if (!d?.inside || d.crater || !shelterCells.length) return d
     const c = cellOf(inspect.x, inspect.y, cost.width, cost.height, cost.cellM)
     const r = findRoute(cost, c.i, shelterCells[0], 0, null)
     return { ...d, back: r.reachable ? r.walk_min + ingress : null, backReason: r.reachable ? null : r.reason_text }
-  }, [describe, inspect, cost, shelterCells, ingress])
+  }, [describe, inspect, inspectProbe, cost, shelterCells, ingress])
 
   const closeNotice = useCallback(() => setNotice(null), [])
 
@@ -471,7 +538,9 @@ export default function App() {
   stops.forEach((f, k) => (stopNumber[f.properties.id] = k + 1))
   const stop = features.find((f) => f.properties.id === selectedStop)
   const anyFake = data.layers.some((l) => l.source.startsWith('FAKE'))
-  const calcNote = isDemo
+  const calcNote = craterRoute
+    ? `${CRATER_LABEL}, with routing's rules (lib/pathfind.js buildCost); not routing's cost surface`
+    : isDemo
     ? "routing's planner (routing/plan_route.py): plan.json as exported, on the same cost surface as data/out/landing"
     : "Calculated in the browser on routing's cost surface (data/out/landing), with the edge rule of routing/docs/DESIGN.md section 15"
   const extras = isDemo ? planExtras(plan) : plan
@@ -504,8 +573,13 @@ export default function App() {
 
   const pointRows = (r) => (
     <>
-      {r.inside ? (
+      {r.pending ? (
+        <span className="muted">{crater.status === 'ready' ? 'Reading the crater terrain…' : 'Loading the crater terrain…'}</span>
+      ) : r.noData ? (
+        <span className="haz h2">No terrain data here: do not enter</span>
+      ) : r.inside ? (
         <>
+          {r.crater && <span className="res">40 m, rover-scale</span>}
           <span>
             height <b>{Math.round(r.z)} m</b>
           </span>
@@ -524,6 +598,8 @@ export default function App() {
             <span>
               <b>{Math.round(r.back)} min</b> back to {shelterWord}
             </span>
+          ) : r.backPending ? (
+            <span className="muted">minutes back: calculating…</span>
           ) : (
             <span className="haz h2">no walking route back{r.backReason ? `: ${r.backReason}` : ''}</span>
           )}
@@ -541,7 +617,7 @@ export default function App() {
     >
       <MissionCard
         data={shown}
-        routeLabel={ok ? `${profLabel} route${!isDemo ? `, ${points[0].name} to ${trip.dest?.name || 'destination'}${trip.quests.length ? ` with ${trip.quests.length} side quest${trip.quests.length > 1 ? 's' : ''}` : ''}` : ''}` : null}
+        routeLabel={ok ? `${craterRoute ? `${CRATER_LABEL}. ` : ''}${profLabel} route${!isDemo ? `, ${points[0].name} to ${trip.dest?.name || 'destination'}${trip.quests.length ? ` with ${trip.quests.length} side quest${trip.quests.length > 1 ? 's' : ''}` : ''}` : ''}` : null}
       />
       <aside className="sidebar" aria-label="Planning panel" hidden={shut}>
         <div className="side-top">
@@ -672,6 +748,13 @@ export default function App() {
                 <h2>Mode</h2>
                 {!ready && <p className="muted">{routeError ? `Route finding needs routing's export in data/out/landing: ${routeError}` : terrain.status === 'missing' ? 'Route finding needs dem.tif, which is missing.' : 'Reading the terrain model and the cost surface…'}</p>}
                 {ready && status === 'incomplete' && <p className="muted">{!trip.start ? `Choose ${outing ? 'a start' : 'a landing site'}, then click where you want to go, to see the three routes.` : 'Click where you want to go to see the three routes.'}</p>}
+                {craterBusy && <p className="muted routing-busy">Calculating… (route across the crater, 40 m grid)</p>}
+                {ready && !allInSite && crater.status === 'error' && <p className="muted">The crater terrain could not be loaded: {crater.error}</p>}
+                {ok && craterRoute && (
+                  <p className="route-check warn exploratory">
+                    <b>{CRATER_LABEL}.</b> Routing&apos;s rules on the CTX DEM at rover scale: it misses boulders and small ledges, and is not one of the planner&apos;s site routes.
+                  </p>
+                )}
                 <ProfileCards results={results} profiles={PROFILES} profile={profile} setProfile={setProfile} usableMin={params?.usable_min} escapeNote={cost?.escape?.note} />
                 {active?.ok && active.plan.escape && (
                   <p className="route-check warn">
@@ -888,6 +971,11 @@ export default function App() {
 
       <main className={`stage${view === 'hud' ? ' with-hud' : ''}${view === 'hud' && large ? ' large' : ''}${visor ? ' visor' : ''}`}>
         <div className="map-wrap">
+          {ok && craterRoute && (
+            <p className="exploratory-tag" role="note">
+              {CRATER_LABEL}
+            </p>
+          )}
           <SiteMap
             data={data}
             extraLayers={extraLayers}

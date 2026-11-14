@@ -708,3 +708,10 @@ path.landing-move-line { stroke: var(--landing-moved); }
 .map-legend i.line.escape { background: repeating-linear-gradient(90deg, #ff6b3d 0 8px, transparent 8px 14px); }
 .chart .cursor.here { stroke: #5eead4; stroke-width: 2; } /* where the crew is (HUD) */
 .route-check .escape-note { display: block; margin-top: 4px; font-weight: 400; color: var(--muted); }
+
+/* ---- whole-crater grid: readout tag ("40 m, rover-scale") and the route "Calculating…" line ---- */
+.readout .res, .inspect .res { color: var(--muted); font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.routing-busy { color: var(--accent-strong); }
+/* a crater route is exploratory: said in the route section and on the map (so in the HUD view and the visor too) */
+.route-check.exploratory b { display: block; }
+.exploratory-tag { position: absolute; z-index: 800; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--warn); background: rgba(19, 14, 12, 0.88); color: var(--warn); font-size: 0.8rem; font-weight: 700; white-space: nowrap; pointer-events: none; }

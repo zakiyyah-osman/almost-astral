@@ -56,6 +56,15 @@ export function marsTime(millis, lonEast = 0) {
   return { jdUT, jdTT, dt, M: mod(M, 360), alphaFMS: mod(alphaFMS, 360), pbs, nuM, ls, eot, msd, mst, lmst, ltst }
 }
 
+// Subsolar point: where the Sun is straight overhead at this instant, from a marsTime() result.
+// Latitude = solar declination (Mars24 D-1). Longitude is where local true solar time is 12:00,
+// i.e. LTST = MST + lon/15 + EOT/15 = 12, so lon = 180 - 15 * MST - EOT (degrees east, 0-360).
+export function subsolarPoint(t) {
+  const lat = Math.asin(0.42565 * sin(t.ls)) / DEG + 0.25 * sin(t.ls)
+  const lonEast = mod(180 - 15 * t.mst - t.eot, 360)
+  return { lat, lonEast }
+}
+
 // Season by Ls. Jezero is at 18 N, so northern seasons apply (0 = northern spring equinox).
 export function season(ls, lat = 1) {
   const north = ['spring', 'summer', 'autumn', 'winter']

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { slopeDeg } from './terrain.js'
-import { DEFAULT_PARAMS, paramsFrom, planLeg, route, searchFrom, timeField, totals, cellAt, centreAt } from './pathfind.js'
+import { DEFAULT_PARAMS, MASK, buildCost, paramsFrom, planLeg, route, searchFrom, timeField, totals, cellAt, centreAt } from './pathfind.js'
 import { typedFrom, cellOfXY, xyOfCell } from './landingData.js'
 import { planOuting } from './outing.js'
 import { xyToLatLon, latLonToXY, distanceBearing } from './geo.js'
@@ -214,4 +214,117 @@ test('real export: the team stops from the demo start, every profile, on walkabl
     const sum = (key) => legs.reduce((s, l) => s + l[key], 0)
     for (const key of ['walk_min', 'distance_m', 'risk_min']) assert.ok(Math.abs(sum(key) - want[key]) <= 0.05 + 1e-9, `${prof} ${key} ${sum(key)} vs plan.json ${want[key]}`)
   }
+})
+
+// ---- buildCost: routing's rules on raw grids (the whole-crater grid has no export) ---------------
+
+// Parameters as the app builds them: plan.json assumptions, then the landing manifest.
+const exportParams = () => paramsFrom(readOutJson('plan.json'), readOutJson('landing/manifest.json'))
+
+// 12 x 12 flat grid; cells are named [row, col], row 0 = north.
+//   [1, 1] no height data (and red: no data wins)     [1, 5] red
+//   [5, 5] slope 25 deg, over the 20 deg limit         [8, 2] yellow, [8, 8] slope 15 deg
+//   [9, 9] and [10, 10] red, touching at a corner: [9, 10] and [10, 9] are the gap
+function smallGrids(cellM) {
+  const W = 12
+  const dem = new Float32Array(W * W).fill(-2500)
+  const slope = new Float32Array(W * W)
+  const hazard = new Uint8Array(W * W)
+  const at = (r, c) => r * W + c
+  dem[at(1, 1)] = NaN
+  hazard[at(1, 1)] = 2
+  hazard[at(1, 5)] = 2
+  slope[at(5, 5)] = 25
+  hazard[at(8, 2)] = 1
+  slope[at(8, 8)] = 15
+  hazard[at(9, 9)] = 2
+  hazard[at(10, 10)] = 2
+  return { g: { dem, slope, hazard, width: W, height: W, cellM }, at }
+}
+
+test('buildCost: mask codes follow routing, the first reason in order winning', () => {
+  const p = exportParams()
+  const { g, at } = smallGrids(5)
+  const cost = buildCost(g, p)
+  assert.equal(cost.mask[at(1, 1)], MASK.NODATA)
+  assert.equal(cost.mask[at(1, 5)], MASK.RED)
+  assert.equal(cost.mask[at(5, 5)], MASK.SLOPE)
+  // The 5 m buffer on 5 m cells: the four cells one step away, not the diagonal ones (7.07 m).
+  for (const [r, c] of [[4, 5], [6, 5], [5, 4], [5, 6]]) assert.equal(cost.mask[at(r, c)], MASK.BUFFER, `buffer at ${r},${c}`)
+  for (const [r, c] of [[4, 4], [4, 6], [6, 4], [6, 6]]) assert.equal(cost.mask[at(r, c)], 0, `no buffer at ${r},${c}`)
+  // The gap between two red cells that touch at a corner is sealed on both sides.
+  assert.equal(cost.mask[at(9, 10)], MASK.SEALED)
+  assert.equal(cost.mask[at(10, 9)], MASK.SEALED)
+  assert.equal(cost.mask[at(8, 8)], 0, '15 deg is under the limit')
+  assert.equal(cost.mask[at(0, 0)], 0, 'a corner cell is not sealed by the edge')
+  for (let i = 0; i < cost.mask.length; i++) {
+    assert.equal(cost.blocked[i], cost.mask[i] ? 1 : 0)
+    if (cost.mask[i]) assert.deepEqual([cost.timeRate[i], cost.riskRate[i]], [-1, 0])
+  }
+  // Mask codes and their texts are the landing export's, so a failure reads the same on both grids.
+  assert.deepEqual(cost.maskCodes, readOutJson('landing/manifest.json').mask_codes)
+  const leg = planLeg(cost, { x: 2.5, y: 2.5 }, { x: 27.5, y: 32.5 }, 1) // to [5, 5]
+  assert.deepEqual([leg.ok, leg.reason, leg.reason_text], [false, MASK.SLOPE, 'slope over the limit (20 deg)'])
+})
+
+test('buildCost: time and risk rates follow DESIGN sections 4.2 and 5', () => {
+  const p = exportParams()
+  const { g, at } = smallGrids(5)
+  const cost = buildCost(g, p)
+  const flat = 60 / (p.v_flat_kmh * 1000) // minutes per metre on flat ground
+  assert.equal(cost.timeRate[at(0, 0)], flat)
+  // v(S) = v_flat x exp(-k x |S|): at 15 deg, S = tan(15 deg).
+  const want = flat / Math.exp(-p.tobler_k * Math.tan((15 * Math.PI) / 180))
+  assert.ok(Math.abs(cost.timeRate[at(8, 8)] - want) / want < 1e-12)
+  // DESIGN section 5's example: a 10% slope walks at exp(-0.35) = 0.705 of the flat speed.
+  const tenPct = buildCost({ ...g, slope: new Float32Array(144).fill((Math.atan(0.1) * 180) / Math.PI), hazard: new Uint8Array(144) }, p)
+  assert.ok(Math.abs(flat / tenPct.timeRate[0] - Math.exp(-p.tobler_k * 0.1)) < 1e-6)
+  // Risk: yellow, and near red falling linearly to 0 at near_red_radius_m (red at [1, 5]).
+  assert.equal(cost.riskRate[at(8, 2)], p.yellow_rate)
+  const near = (d) => p.near_red_rate_max * Math.max(0, 1 - d / p.near_red_radius_m)
+  assert.ok(Math.abs(cost.riskRate[at(1, 6)] - near(5)) < 1e-12)
+  assert.ok(Math.abs(cost.riskRate[at(2, 6)] - near(5 * Math.SQRT2)) < 1e-12)
+  assert.ok(Math.abs(cost.riskRate[at(1, 7)] - near(10)) < 1e-12)
+  assert.equal(cost.riskRate[at(1, 8)], 0, '15 m away is the end of the ramp')
+  assert.equal(cost.riskRate[at(11, 0)], 0)
+  assert.ok(Math.abs(cost.riskRate[at(0, 0)] - near(5 * Math.SQRT2)) < 1e-12, 'a no-data cell marked red still counts as red, as in cost.py')
+  // The budget is the manifest's, and there is no escape on this surface.
+  const b = readOutJson('landing/manifest.json').budget
+  assert.deepEqual([cost.budget.usable_min, cost.budget.ingress_min, cost.budget.stop_min], [b.usable_min, b.ingress_min, b.stop_min])
+  assert.deepEqual([cost.escape, cost.escapeTimeRate, cost.escapeRiskRate], [null, null, null])
+  assert.deepEqual(cost.origin, [0, 0])
+  assert.ok(cost.searches instanceof Map)
+})
+
+test('buildCost on 40 m cells: the same rules in metres, so the 5 m buffer and the 15 m near-red ramp reach no other cell', () => {
+  const p = exportParams()
+  const { g, at } = smallGrids(40)
+  const cost = buildCost({ ...g, params: p }) // the form lib/craterTasks.js calls
+  assert.equal(cost.mask[at(5, 5)], MASK.SLOPE)
+  for (const [r, c] of [[4, 5], [6, 5], [5, 4], [5, 6]]) assert.equal(cost.mask[at(r, c)], 0)
+  assert.equal(cost.riskRate[at(1, 6)], 0)
+  assert.equal(cost.mask[at(9, 10)], MASK.SEALED, 'sealing works on cells, at any size')
+  assert.equal(cost.mask[at(1, 1)], MASK.NODATA)
+  // A wider buffer does reach: 40 m takes the four neighbours.
+  const wide = buildCost(g, { ...p, cliff_buffer_m: 40 })
+  for (const [r, c] of [[4, 5], [6, 5], [5, 4], [5, 6]]) assert.equal(wide.mask[at(r, c)], MASK.BUFFER)
+  assert.match(wide.maskCodes.find((m) => m.code === MASK.BUFFER).text, /inside the 40 m buffer/)
+})
+
+test('buildCost refuses to guess a missing value', () => {
+  const { g } = smallGrids(40)
+  const { yellow_rate, ...rest } = exportParams()
+  assert.throws(() => buildCost(g, rest), /no value for yellow_rate/)
+  assert.throws(() => buildCost(g), /no value for/)
+})
+
+test('search cache: 24 searches on a site-sized grid, one on a crater-sized grid', () => {
+  const small = gridCost({ width: 20, height: 20 })
+  for (let i = 0; i < 30; i++) searchFrom(small, i, 0)
+  assert.equal(small.searches.size, 24)
+  const n = 1600 * 1600
+  const big = { width: 1600, height: 1600, cellM: 40, blocked: new Uint8Array(n).fill(1), timeRate: new Float64Array(n), riskRate: new Float64Array(n), searches: new Map() }
+  searchFrom(big, 0, 0)
+  searchFrom(big, 1, 0)
+  assert.equal(big.searches.size, 1)
 })
