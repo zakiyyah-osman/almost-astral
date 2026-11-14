@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interplanetary Survival Guide: Martial Map</title>
+<!--CSS--><link rel="stylesheet" href="viewer.css"><!--/CSS-->
+</head>
+<body>
+<header class="mm-header">
+  <h1 id="mm-title">Interplanetary Survival Guide: Martial Map</h1>
+  <div class="mm-site" id="mm-site"></div>
+</header>
+<div class="mm-banner" id="mm-banner" role="status" hidden></div>
+<main class="mm-main">
+  <div class="mm-mapwrap" id="mm-map">
+    <div class="mm-zoom">
+      <button id="mm-zin" aria-label="Zoom in">+</button>
+      <button id="mm-zout" aria-label="Zoom out">−</button>
+      <button id="mm-zfit" aria-label="Show whole site" style="font-size:15px">⤢</button>
+    </div>
+    <div class="mm-readout" id="mm-readout" aria-live="polite"></div>
+  </div>
+  <aside class="mm-panel">
+    <section><h2>Layers</h2><div id="mm-layers"></div></section>
+    <section><h2>Landmarks (alignment check)</h2><div class="mm-landmarks" id="mm-landmarks"></div></section>
+    <section><h2>Map projection &amp; bounds</h2><div class="mm-proj" id="mm-proj"></div></section>
+  </aside>
+</main>
+<!--CONFIG--><!--/CONFIG-->
+<!--JS--><script src="coords.js"></script><script src="basemap.js"></script><script src="app.js"></script><!--/JS-->
+</body>
+</html>

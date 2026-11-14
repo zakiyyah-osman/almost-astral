@@ -1,0 +1,246 @@
+{
+  "generated_by": "hazards.run (Person 2)",
+  "generated_at": "2026-11-14T10:57:28+0400",
+  "site": {
+    "name": "Jezero crater, delta front (eastern lobe)",
+    "grid": {
+      "width": 400,
+      "height": 400,
+      "cell_m": 5.0
+    },
+    "extent_m": [
+      2000.0,
+      2000.0
+    ],
+    "center_lat": 18.46,
+    "center_lon_east": 77.4
+  },
+  "inputs": {
+    "dtm": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "thermal_inertia": "thermal_inertia.tif"
+  },
+  "config": {
+    "slope_deg": {
+      "yellow": 15,
+      "red": 25
+    },
+    "roughness_m": {
+      "window_m": 5,
+      "yellow": 0.15,
+      "red": 0.4
+    },
+    "thermal_inertia_tiu": {
+      "loose": 200,
+      "very_loose": 100
+    },
+    "rocks": {
+      "min_diameter_m": 0.3,
+      "density_radius_m": 5,
+      "density_yellow": 0.05,
+      "density_red": 0.15,
+      "large_diameter_m": 1.0,
+      "large_clearance_m": 1.0
+    },
+    "cliff": {
+      "window_m": 3,
+      "drop_m": 2.0
+    },
+    "safety_buffer_m": 2,
+    "display": {
+      "hillshade_azimuth_deg": 315,
+      "hillshade_altitude_deg": 45,
+      "slope_png_max_deg": 35,
+      "thermal_png_range_tiu": [
+        50,
+        800
+      ],
+      "minerals_classes": {
+        "0": {
+          "name": "No detection",
+          "color": "#00000000"
+        },
+        "1": {
+          "name": "Sulfates",
+          "color": "#e8c547"
+        },
+        "2": {
+          "name": "Clays (Fe/Mg smectite)",
+          "color": "#4aa3a2"
+        },
+        "3": {
+          "name": "Hematite",
+          "color": "#b5483b"
+        },
+        "4": {
+          "name": "Olivine/pyroxene (basaltic sand)",
+          "color": "#5b6b3a"
+        }
+      }
+    },
+    "validation": {
+      "max_red_fraction": 0.01
+    }
+  },
+  "leaflet_bounds": [
+    [
+      0,
+      0
+    ],
+    [
+      2000.0,
+      2000.0
+    ]
+  ],
+  "png_layers": [
+    {
+      "id": "relief",
+      "file": "relief.png",
+      "title": "Shaded relief",
+      "bounds": [
+        [
+          0,
+          0
+        ],
+        [
+          2000.0,
+          2000.0
+        ]
+      ],
+      "source": "Computed from the terrain model, sun az 315\u00b0, alt 45\u00b0"
+    },
+    {
+      "id": "slope",
+      "file": "slope.png",
+      "title": "Slope",
+      "units": "degrees",
+      "bounds": [
+        [
+          0,
+          0
+        ],
+        [
+          2000.0,
+          2000.0
+        ]
+      ],
+      "legend": {
+        "type": "ramp",
+        "min": 0,
+        "max": 35,
+        "cmap": "magma_r",
+        "marks": [
+          15,
+          25
+        ]
+      },
+      "source": "Computed from the terrain model"
+    },
+    {
+      "id": "hazard",
+      "file": "hazard.png",
+      "title": "Hazards",
+      "bounds": [
+        [
+          0,
+          0
+        ],
+        [
+          2000.0,
+          2000.0
+        ]
+      ],
+      "legend": {
+        "type": "classes",
+        "items": [
+          {
+            "value": 0,
+            "name": "Go",
+            "color": "transparent"
+          },
+          {
+            "value": 1,
+            "name": "Caution",
+            "color": "#f0be28"
+          },
+          {
+            "value": 2,
+            "name": "No-go",
+            "color": "#dc3232"
+          }
+        ]
+      },
+      "source": "Slope, roughness, cliffs, rocks and thermal inertia; thresholds in config/hazards.yaml"
+    },
+    {
+      "id": "coverage",
+      "file": "coverage.png",
+      "title": "Unknown terrain coverage",
+      "bounds": [
+        [
+          0,
+          0
+        ],
+        [
+          2000.0,
+          2000.0
+        ]
+      ],
+      "legend": {
+        "type": "classes",
+        "items": [
+          {
+            "value": 0,
+            "name": "No terrain data",
+            "color": "#8a8a8a"
+          }
+        ]
+      },
+      "source": "Cells where the terrain model has no data (also no-go in hazard.tif)"
+    }
+  ],
+  "rasters": {
+    "hazard.tif": "uint8 0 = go, 1 = caution, 2 = no-go (no terrain data is also 2)",
+    "coverage.tif": "uint8 1 = terrain data, 0 = no data (shown as 'Unknown terrain coverage')",
+    "reasons.tif": "uint16 bitmask, see reason_bits",
+    "slope.tif": "float32 degrees, NaN = no data",
+    "roughness.tif": "float32 metres, NaN = no data"
+  },
+  "reason_bits": {
+    "no_data": 1,
+    "slope_caution": 2,
+    "slope_nogo": 4,
+    "rough_caution": 8,
+    "rough_nogo": 16,
+    "loose_ground": 32,
+    "very_loose_ground": 64,
+    "rock_density_caution": 128,
+    "rock_density_nogo": 256,
+    "large_rock": 512,
+    "cliff_edge": 1024,
+    "safety_buffer": 2048
+  },
+  "area_share": {
+    "Go": 0.8425125,
+    "Caution": 0.13004375,
+    "No-go": 0.02744375,
+    "Unknown terrain coverage (no-go in hazard.tif)": 0.0
+  },
+  "reason_share": {
+    "no_data": 0.0,
+    "slope_caution": 0.07275,
+    "slope_nogo": 0.01335625,
+    "rough_caution": 0.113675,
+    "rough_nogo": 0.00694375,
+    "loose_ground": 0.0,
+    "very_loose_ground": 0.0,
+    "rock_density_caution": 0.0,
+    "rock_density_nogo": 0.0,
+    "large_rock": 0.0,
+    "cliff_edge": 0.00044375,
+    "safety_buffer": 0.00993125
+  },
+  "track_check": {
+    "passed": false,
+    "file": "track_check.json"
+  }
+}

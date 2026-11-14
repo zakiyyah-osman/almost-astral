@@ -1,0 +1,71 @@
+{
+  "tracks": [
+    {
+      "name": "route: route",
+      "length_m": 3714.712571679258,
+      "samples": 747,
+      "outside_grid": 0,
+      "fraction_by_class": {
+        "Go": 0.8045515394912985,
+        "Caution": 0.14725568942436412,
+        "No-go": 0.04819277108433735,
+        "Unknown terrain coverage": 0.0
+      },
+      "red_fraction_of_known": 0.04819277108433735,
+      "red_reasons": {
+        "rough_caution": 28,
+        "slope_caution": 24,
+        "safety_buffer": 14,
+        "slope_nogo": 13,
+        "rough_nogo": 11
+      },
+      "max_slope_deg": 35.57296776028552,
+      "first_red_points_en": [
+        [
+          805.7,
+          1133.1
+        ],
+        [
+          802.5,
+          1136.9
+        ],
+        [
+          978.7,
+          1638.3
+        ],
+        [
+          983.5,
+          1639.7
+        ],
+        [
+          988.3,
+          1641.1
+        ],
+        [
+          993.1,
+          1642.4
+        ],
+        [
+          1256.4,
+          1718.5
+        ],
+        [
+          1261.2,
+          1719.9
+        ],
+        [
+          1266.0,
+          1721.3
+        ],
+        [
+          1443.8,
+          1484.4
+        ]
+      ],
+      "passed": false,
+      "status": "FAIL",
+      "kind": "route"
+    }
+  ],
+  "passed": false
+}

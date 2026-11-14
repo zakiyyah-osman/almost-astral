@@ -34,9 +34,9 @@ y_m = (H - rows - 0.5) * CELL_M
 
 ROVER = ("rover", "Rover", 1000, 900)
 STOPS = [
-    ("stop1", "Clay outcrop", 500, 1500, "Clay minerals can preserve traces of ancient water."),
-    ("stop2", "Crater rim ridges", 1400, 1760, "Ridges left by groundwater flowing through rock cracks."),
-    ("stop3", "Carbonate patch", 1600, 500, "Carbonates form in water and can trap signs of past life."),
+    ("stop1", "Clay-bearing outcrop", 500, 1500, "Clay minerals form in the presence of water and can preserve traces of it."),
+    ("stop2", "Delta front layers", 1400, 1760, "Tilted layers of sand and mud laid down where a river entered the lake show where and how the water moved."),
+    ("stop3", "Carbonate margin", 1600, 500, "Carbonates form when carbon-dioxide-rich water reacts with rock and can trap evidence of past conditions."),
 ]
 
 

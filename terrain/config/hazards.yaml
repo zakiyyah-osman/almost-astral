@@ -1,0 +1,47 @@
+# Terrain & hazard thresholds (Person 2).
+# Every number here is an assumption for a suited, walking astronaut.
+# Change values here only, never in code, then rerun: python -m hazards.run
+
+slope_deg:
+  yellow: 15        # >= this slope is caution
+  red: 25           # >= this slope is no-go
+
+roughness_m:        # local height scatter after removing the slope trend
+  window_m: 5       # 5 x 5 m window (Step 3 of the plan)
+  yellow: 0.15
+  red: 0.40
+
+thermal_inertia_tiu:
+  loose: 200        # below this = loose sand / dust -> caution
+  very_loose: 100   # below this = deep loose sand -> no-go
+
+rocks:
+  min_diameter_m: 0.3       # rocks smaller than this are ignored
+  density_radius_m: 5       # count rocks within this radius of each cell
+  density_yellow: 0.05      # rocks per m^2 (about 4 rocks in a 5 m circle)
+  density_red: 0.15
+  large_diameter_m: 1.0     # rocks this big are obstacles in themselves
+  large_clearance_m: 1.0    # keep this far from a large rock's edge
+
+cliff:
+  window_m: 3               # look at height range inside a 3 x 3 m window
+  drop_m: 2.0               # more than this drop inside the window = cliff edge
+
+safety_buffer_m: 2          # grow every red zone by this much
+
+# Display settings for exported PNGs
+display:
+  hillshade_azimuth_deg: 315
+  hillshade_altitude_deg: 45
+  slope_png_max_deg: 35
+  thermal_png_range_tiu: [50, 800]
+  minerals_classes:          # class value in minerals.tif -> name, colour
+    0: {name: "No detection", color: "#00000000"}
+    1: {name: "Sulfates",     color: "#e8c547"}
+    2: {name: "Clays (Fe/Mg smectite)", color: "#4aa3a2"}
+    3: {name: "Hematite",     color: "#b5483b"}
+    4: {name: "Olivine/pyroxene (basaltic sand)", color: "#5b6b3a"}
+
+# Rover-track check: share of track samples allowed on red cells
+validation:
+  max_red_fraction: 0.01

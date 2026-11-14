@@ -1,0 +1,415 @@
+INTERPLANETARY SURVIVAL GUIDE: MARTIAN MAP
+Functional and non-functional requirements
+Team Almost Astral - NASA Space Apps Challenge 2026
+=====================================================================
+
+ASSUMPTIONS
+- What it is: a web app on a tablet or habitat screen, used to plan
+  and carry out a trip on Mars, on foot and by rover.
+- Mission plan:
+    - The landing point changes with each mission.
+    - The destination, J0, is fixed.
+    - The route crosses hazardous ground.
+    - The crew can add side quests on the way, for example collecting
+      minerals in an area rich in them.
+- Where: Jezero crater, on the western delta front and the crater floor
+  below it.
+- Science goal: study the delta's layered rocks and their carbonate and
+  clay minerals, for signs of past water and habitability.
+- Crew: two astronauts on foot, supported by a rover.
+- Time frame: mostly fixed data, plus a time window of changing data
+  (radiation, weather) that can be replayed.
+- Priority:
+    MUST   = needed for the demo
+    SHOULD = important, but not essential
+    COULD  = only if time is left
+- "Passes when" = the test that proves a requirement is done.
+
+
+---------------------------------------------------------------------
+0. MISSION SETTINGS
+---------------------------------------------------------------------
+FR-0  MUST  Mission settings
+  - Each mission sets:
+      - landing point
+      - J0
+      - crew size
+      - time limit per outing
+      - dose limit
+      - walking speed
+      - number of sample containers
+  - The settings are saved with the plan.
+  - Passes when: changing any setting updates the route and every
+    check within 1 second.
+
+FR-0a MUST  What is at J0
+  - Each mission states whether J0 has a shelter.
+  - If it has none, the plan includes the way back, and the safety
+    reserve applies to the whole round trip.
+
+
+---------------------------------------------------------------------
+1. MAP AND NAVIGATION
+---------------------------------------------------------------------
+FR-1  MUST  Zoom and pan
+  - The map zooms from about 50 m across to the whole site.
+  - Below 50 m, it shows more detail where the full HiRISE image
+    (25 cm per pixel) is loaded.
+
+FR-2  MUST  Orbit image as the base map
+  - The base map is a HiRISE image from orbit.
+  - COULD: Ingenuity aerial photos and Perseverance rover photos, where
+    they cover the site.
+
+FR-3  MUST  Map tools
+  - A scale bar and a north arrow.
+  - The coordinates of any point the user points at.
+
+FR-4  MUST  Coverage of the whole trip
+  - The map covers the landing point, J0 and the land between them.
+  - The team's scripts can build a new site from any centre point where
+    a HiRISE height model exists.
+  - Any point outside the data is shown as "outside coverage", and no
+    route is planned there.
+
+FR-5  COULD  High-contrast and low-light mode
+  - A helmet-display (HUD) style view and a low-light mode.
+
+
+---------------------------------------------------------------------
+2. DATA LAYERS
+---------------------------------------------------------------------
+FR-6  MUST  At least 3 NASA missions
+  - At least three kinds of data, from different NASA missions.
+
+FR-7  MUST  Terrain
+  - Height, slope and shaded relief, from the HiRISE height model.
+  - MOLA is used where HiRISE has none, and is labelled as coarse.
+
+FR-8  MUST  Minerals
+  - A mineral map from CRISM: carbonate, clay, olivine.
+  - Each mineral area shows how sure the detection is.
+  - CRISM pixels are about 18 m, so it shows areas, not single rocks.
+  - SHOULD: Perseverance chemistry (SuperCam, PIXL, SHERLOC) at rover
+    sample points inside the site; if there are none, the app says so.
+
+FR-9  SHOULD  Ground temperature
+  - Thermal inertia from THEMIS.
+  - Ground temperature from THEMIS (orbit) or from MEDA's
+    ground-temperature sensor (surface).
+
+FR-10 MUST  Radiation
+  - A surface dose rate, labelled as an ESTIMATE: it comes from
+    Curiosity's RAD at Gale crater.
+  - Solar storm (solar particle event) warnings from DONKI or MAVEN.
+
+FR-11 SHOULD  Weather
+  - Air temperature, pressure, wind and dust from Perseverance's MEDA,
+    live or replayed.
+  - Where data is missing, the app shows "no data".
+  - MEDA's wind sensor was damaged in 2022, so wind has gaps.
+
+FR-12 MUST  Layer controls
+  - Turn each layer on or off and set its opacity.
+
+FR-13 COULD  Compare two layers
+  - Show two layers side by side, or with a swipe slider.
+
+FR-14 MUST  Layer information
+  - Every layer shows:
+      - a legend and units
+      - the mission it comes from
+      - the date the data was taken
+      - its resolution
+
+
+---------------------------------------------------------------------
+3. SAFETY AND HAZARDS
+---------------------------------------------------------------------
+FR-15 MUST  Where you can walk
+  - A map of safe, careful and no-go ground, made from slope, rocks and
+    ground type.
+  - The limits are in one settings file (terrain/thresholds.toml):
+      - careful above 10 degrees
+      - no-go above 20 degrees
+  - These limits are team assumptions, and the app labels them that way.
+
+FR-16 MUST  Hazard types
+  - The app marks:
+      - steep slopes
+      - boulders and outcrops
+      - loose sand and dunes
+      - cliffs and craters
+  - Hazards are found on the fine data (25 cm image, 1 m heights).
+  - Each 5 m cell then takes the WORST value found inside it, so a 1 m
+    boulder is never lost.
+
+FR-17 MUST  Radiation dose
+  - Show the estimated dose for the route, including side quests.
+  - Warn when it goes over the mission's dose limit (default 1,000 uSv
+    per outing, a team assumption).
+
+FR-18 SHOULD  Weather alerts
+  - Show an alert when temperature, dust or wind crosses a set limit,
+    or when a solar storm is announced.
+
+FR-19 MUST  Way back
+  - Show the distance and walking time back to the rover, the lander,
+    or J0 if J0 has a shelter.
+  - These update at every point of the route.
+
+FR-20 SHOULD  Suit limits
+  - Show suit limits (consumables, time outside) and flag routes that go
+    over them.
+
+FR-21 MUST  Turn-back point
+  - Mark the point on the route where walking back would use up the
+    safety reserve (30% of the time limit by default).
+  - It is recomputed every time a side quest is added or removed.
+  - From any point on the route, there must be a safe way back that fits
+    the reserve.
+  - List what makes the crew turn back early: a storm, low consumables,
+    an injury, loss of radio.
+
+FR-22 SHOULD  Radio contact
+  - Show where along the route the crew has a clear radio line to the
+    rover, computed from the height map.
+  - Warn about parts of the route that are out of contact, for example
+    below the delta cliff.
+  - Show the message delay to Earth (3 to 22 minutes).
+
+
+---------------------------------------------------------------------
+4. ROUTE PLANNING
+---------------------------------------------------------------------
+FR-23 MUST  Route-finder
+  - Find a route from the landing point to J0, through the chosen stops.
+  - The route never crosses:
+      - ground over 20 degrees
+      - no-go cells
+      - no-data cells
+  - Three choices: shortest time, lowest risk, or a balance of both.
+  - Radiation is the same across the site, so lowest dose = shortest
+    time.
+  - Passes when: no route ever crosses a no-go or no-data cell.
+
+FR-24 MUST  Rover legs
+  - The rover drives the long parts, using its own slope limits.
+  - The crew walks from where the rover drops them off.
+  - If the trip does not fit one outing, the app splits it into rover
+    drives and walks, or into several sols.
+
+FR-25 MUST  Pick any point
+  - The user can pick the landing point, J0 and stops anywhere on the
+    map, and the route updates.
+
+FR-26 SHOULD  Drag to edit
+  - Drag points on the route; hazards and figures update at once.
+
+FR-27 MUST  Route figures
+  - Distance, height profile, slope profile and time, for each leg and
+    for the whole trip.
+  - Passes when: all of them update within 1 second of changing the
+    route.
+
+FR-28 SHOULD  Walking speed and load
+  - Walking speed is set per mission (default 2.7 km/h, a NASA Apollo
+    planning figure).
+  - The speed drops as the crew carries more load, including samples.
+
+FR-29 SHOULD  Landing and parking spots
+  - Suggest flat spots for the lander or the rover, with clear flatness
+    rules.
+  - Check any landing point the user picks against the same rules.
+
+FR-30 COULD  Two-person plans
+  - Separate or shared routes for the two astronauts, with a safety
+    distance between them.
+
+FR-31 COULD  Best time to go out
+  - Suggest a time window for the outing from temperature and daylight.
+  - Needs real weather data first.
+
+FR-32 SHOULD  Mars time
+  - Show the sol and Mars local time.
+  - The user can set the start time of the outing.
+
+FR-33 SHOULD  Save and export
+  - Save and load a plan.
+  - Export it as PDF and GeoJSON.
+
+FR-34 SHOULD  Printed crew briefing
+  - A one-page briefing to print, with:
+      - the route
+      - the stops and side quests
+      - the times
+      - the limits
+      - the turn-back point
+
+
+---------------------------------------------------------------------
+5. SIDE QUESTS (SAMPLES ON THE WAY TO J0)
+---------------------------------------------------------------------
+FR-35 MUST  Find nearby targets
+  - List the mineral areas (carbonate, clay, olivine) within a set
+    number of minutes of the route.
+  - Each area shows its mineral, its size and how sure the detection is.
+
+FR-36 MUST  Cost of a detour
+  - For each side quest, show:
+      - extra minutes
+      - extra distance
+      - extra dose
+      - extra risk
+  - Also show whether the whole plan still fits the time limit and the
+    reserve.
+
+FR-37 MUST  Must and optional stops
+  - J0 is a MUST stop; side quests are OPTIONAL.
+  - When time, dose or weather runs short, the app drops optional stops
+    first, lowest science value first, and says which ones it dropped.
+
+FR-38 SHOULD  Sample load
+  - Each sample adds weight and uses one container.
+  - The plan warns when the containers run out or the load slows the
+    walk past the time limit.
+
+FR-39 SHOULD  Sample record
+  - Each sample stores:
+      - its position and time
+      - a photo
+      - notes
+      - the mineral it was meant to be
+  - The crew confirms or corrects the mineral on site.
+
+
+---------------------------------------------------------------------
+6. SCIENCE AND WHAT THE CREW WILL SEE
+---------------------------------------------------------------------
+FR-40 MUST  Stop details
+  - Open a stop to see where it is, its geology and its minerals.
+
+FR-41 MUST  Ground-level photos
+  - Show Perseverance photos (Mastcam-Z, Navcam) taken near the chosen
+    stop.
+  - If none exist nearby, the app says so.
+
+FR-42 COULD  3D preview
+  - A simulated first-person view of the ground from any point on the
+    route.
+
+FR-43 SHOULD  Points of interest
+  - Mark places of science interest (delta outcrops, carbonate rock,
+    sample sites), each with a short description.
+
+FR-44 COULD  Notes
+  - Add notes to stops during or after the outing.
+
+
+---------------------------------------------------------------------
+7. LIVE USE DURING THE TRIP
+---------------------------------------------------------------------
+FR-45 SHOULD  Crew position
+  - Show where the crew is and how far along the route they are.
+
+FR-46 COULD  Re-plan
+  - Re-plan the route when the crew leaves it or a hazard changes.
+
+FR-47 SHOULD  Works offline
+  - The app works with no connection, from data stored in advance.
+
+FR-48 SHOULD  Demo replay
+  - A replay of about 30 seconds that walks the route, does a side
+    quest, and sets off a storm warning that triggers the turn-back.
+
+
+---------------------------------------------------------------------
+8. DATA AND SYSTEM
+---------------------------------------------------------------------
+FR-49 MUST  Public NASA sources
+  - Data comes from public NASA sources (PDS, Mars Trek, USGS
+    Astrogeology, PDS Geosciences Node), each credited in the app.
+
+FR-50 MUST  One grid
+  - All layers line up on the same Mars coordinate system and cell size
+    (5 m).
+
+FR-51 MUST  "No data" is never "safe"
+  - Missing or coarse data is shown as "no data", never as safe.
+  - "No mineral detected" looks different from "no mineral data".
+
+FR-52 MUST  Label every number
+  - Each figure is tagged as REAL, CALCULATED, ESTIMATE, ASSUMPTION or
+    PLACEHOLDER.
+
+
+=====================================================================
+NON-FUNCTIONAL REQUIREMENTS
+=====================================================================
+NFR-1  Speed
+  - The first map is ready in under 2 seconds on an iPad (2020) over
+    Wi-Fi.
+  - A new route is computed in under 1 second.
+
+NFR-2  Gloves
+  - Touch targets are at least 64 px (about 15 mm).
+  - The main actions work with one tap, without precise dragging.
+
+NFR-3  Readable outside
+  - Text contrast is at least 7:1, so it reads in bright light.
+  - Key numbers are at least 24 px.
+
+NFR-4  Colour blindness
+  - Hazard classes differ by pattern as well as colour.
+  - Every colour scale is safe for colour-blind users.
+
+NFR-5  Safety first
+  - When data is missing or uncertain, the app takes the safer choice:
+    "no data" is treated as no-go, and an estimate is never shown as
+    measured.
+
+NFR-6  Data quality
+  - Every layer shows its date, its resolution and how reliable it is.
+
+NFR-7  Units
+  - Metric only.
+  - Times are in minutes, and in sols where needed.
+
+NFR-8  Access
+  - Works with a keyboard and a screen reader.
+
+NFR-9  Offline
+  - The whole app and its data fit in one download, under 50 MB.
+
+NFR-10 Version
+  - The app shows the version and date of its data.
+
+NFR-11 Any browser
+  - Runs in current Chrome, Safari and Firefox, with no install and no
+    login.
+
+NFR-12 Can be checked
+  - The same inputs always give the same route.
+  - All limits are in settings files, not hidden in code.
+
+
+=====================================================================
+WHAT CHANGED FROM THE PREVIOUS VERSION
+=====================================================================
+- Requirements renumbered FR-0 to FR-52.
+- Mission plan added: the landing point changes, J0 is fixed, and side
+  quests are optional.
+- New:
+    - mission settings (FR-0)
+    - what is at J0 (FR-0a)
+    - map covers the whole trip (FR-4)
+    - side quests (FR-35 to FR-39)
+- Rover legs raised to MUST (FR-24), because the trip can be longer
+  than one walk.
+- Radio contact raised to SHOULD (FR-22), because the route can pass
+  below the delta cliff, out of sight of the rover.
+- Turn-back point is recomputed with every side quest (FR-21).
+- Hazards are found on fine data and kept at their worst value per cell
+  (FR-16), so boulders are not lost.
+- Mineral areas show how sure the detection is (FR-8, FR-35).
+- Non-functional requirements made testable (NFR-1 to NFR-12).
