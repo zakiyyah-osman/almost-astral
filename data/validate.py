@@ -86,6 +86,38 @@ def check_raster(out, name, w, h, allowed=None):
                 err(f"{name}: values {sorted(values - allowed)} are not allowed (use {sorted(allowed)})")
 
 
+def check_crater(out, index):
+    """Optional whole-crater block (data/adapters/crater.py): its own grid, files and lat/lon bounds."""
+    crater = index.get("crater")
+    if not crater:
+        return
+    try:
+        w, h, cell = crater["grid"]["width"], crater["grid"]["height"], crater["grid"]["cell_m"]
+    except KeyError as e:
+        err(f"layers.json: crater.grid is missing {e}")
+        return
+    if crater.get("extent_m") != [w * cell, h * cell]:
+        err(f"layers.json: crater.extent_m is {crater.get('extent_m')} but the grid gives {[w * cell, h * cell]}")
+    b = crater.get("bounds_latlon", {})
+    if not all(k in b for k in ("south", "west", "north", "east")) or not (b["south"] < b["north"] and b["west"] < b["east"]):
+        err("layers.json: crater.bounds_latlon needs south < north and west < east")
+    for key in ("source", "dem", "hazard"):
+        if not crater.get(key):
+            err(f"layers.json: crater has no '{key}'")
+    check_raster(out, crater.get("dem", "crater/dem.tif"), w, h)
+    check_raster(out, crater.get("hazard", "crater/hazard.tif"), w, h, allowed={0, 1, 2})
+    for layer in crater.get("layers", []):
+        lid = layer.get("id", "?")
+        for key in ("id", "title", "file", "source"):
+            if not layer.get(key):
+                err(f"layers.json: crater layer '{lid}' has no '{key}'")
+        path = out / layer.get("file", "")
+        if not path.is_file():
+            err(f"layers.json: crater layer '{lid}' points to {layer.get('file')}, which does not exist")
+        elif Image.open(path).size != (w, h):
+            err(f"{layer.get('file')}: image is {Image.open(path).size} but the crater grid is {w}x{h}")
+
+
 def check_geojson(out, name, geometry_type, extent):
     data = load_json(out, name)
     if data is None:
@@ -154,6 +186,7 @@ def main():
         w, h, extent = grid
         check_raster(out, "dem.tif", w, h)
         check_raster(out, "hazard.tif", w, h, allowed={0, 1, 2})
+        check_crater(out, index)
     else:
         extent = None
     check_geojson(out, "route.geojson", "LineString", extent)

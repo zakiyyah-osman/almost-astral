@@ -1,0 +1,82 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "rover",
+        "name": "Rover",
+        "kind": "rover",
+        "why": "Start and safe haven.",
+        "photo": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1000,
+          900
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "stop1",
+        "name": "Clay-bearing outcrop",
+        "kind": "stop",
+        "why": "Clay minerals form in the presence of water and can preserve traces of it.",
+        "photo": "stop1-clay-search-jigging-cove.jpg",
+        "photo_caption": "Example from Jezero: rock slabs at \"Jigging Cove\", where Perseverance searched for clay-bearing rocks.",
+        "photo_credit": "NASA/JPL-Caltech/ASU",
+        "photo_source": "https://science.nasa.gov/solar-system/continuing-the-quest-for-clays/"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          500,
+          1500
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "stop2",
+        "name": "Delta front layers",
+        "kind": "stop",
+        "why": "Tilted layers of sand and mud laid down where a river entered the lake show where and how the water moved.",
+        "photo": "stop2-kodiak-delta.jpg",
+        "photo_caption": "Example from Jezero: Kodiak, a butte of layered rock left from the river delta.",
+        "photo_credit": "NASA/JPL-Caltech/ASU/MSSS",
+        "photo_source": "https://photojournal.jpl.nasa.gov/catalog/PIA24802"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1400,
+          1760
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "stop3",
+        "name": "Carbonate margin",
+        "kind": "stop",
+        "why": "Carbonates form when carbon-dioxide-rich water reacts with rock and can trap evidence of past conditions.",
+        "photo": "stop3-margin-core-turquoise-bay.jpg",
+        "photo_caption": "Example from Jezero: a rock core drilled in the Margin Unit, which NASA says may contain carbonate minerals.",
+        "photo_credit": "NASA/JPL-Caltech/ASU",
+        "photo_source": "https://science.nasa.gov/missions/mars-2020-perseverance/a-tale-of-turquoise-bay-sampling-unique-bedrock-at-the-margin-unit/"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1600,
+          500
+        ]
+      }
+    }
+  ]
+}

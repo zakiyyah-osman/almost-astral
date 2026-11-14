@@ -17,5 +17,9 @@ export async function loadData() {
     optional(index.vectors?.waypoints),
     optional(index.plan),
   ])
-  return { ...index, route, waypoints, plan }
+  // Whole-crater layers (layers.json "crater", from data/build_real.py crater) join the layer list,
+  // so they get the same switches and opacity sliders; scope and bounds tell the map where they go.
+  const crater = index.crater
+  const craterLayers = (crater?.layers ?? []).map((l) => ({ ...l, scope: 'crater', bounds: crater.bounds_latlon }))
+  return { ...index, layers: [...index.layers, ...craterLayers], route, waypoints, plan }
 }

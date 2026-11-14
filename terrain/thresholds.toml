@@ -1,15 +1,24 @@
 # Hazard thresholds. Change them here; do not hard-code them in the scripts.
 # Starting values only: check them against real data and the literature.
+# Used by terrain/hazards.py. A cell takes the worst class any rule gives it.
 
 [slope_deg]
 yellow = 10   # careful above this slope
-red = 20      # do not enter above this slope
+red = 20      # do not enter above this slope (cliffs are the steepest of these)
 
 [roughness]
-yellow = 0.5  # TODO: choose the unit once roughness is computed
+# Unit: metres, RMS height difference from a plane fitted to the 3 x 3 cells (15 m x 15 m)
+# around each cell of dem.tif. Values kept from the starting values above; on the real
+# HiRISE DTM (14 Nov) 0.5 m flags about 0.4% of cells and 1.0 m about 0.01%.
+# A 5 m grid cannot see single boulders smaller than a cell.
+yellow = 0.5
 red = 1.0
 
 [thermal_inertia]
-# Low thermal inertia means loose sand or dust. TODO: choose values for the real data.
-yellow_below = 150
-red_below = 100
+# Low thermal inertia means loose sand or dust. Unit: J m^-2 K^-1 s^-1/2 (THEMIS, 100 m pixels).
+# yellow_below = 250: roughly fine-to-medium sand at Mars pressure (grain size vs thermal inertia,
+#   Presley and Christensen 1997, JGR 102; Fergason et al. 2006, JGR 111). Team choice from those;
+#   about 0.2% of the site on 14 Nov. THEMIS absolute accuracy is about 20%.
+# red_below = 150: dust-mantled ground (Putzig et al. 2005, Icarus 173). No cell in our site is this low.
+yellow_below = 250
+red_below = 150
