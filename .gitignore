@@ -10,6 +10,11 @@ __pycache__/
 # Raw datasets are too big for Git (keep the folder itself)
 data/raw/*
 !data/raw/.gitkeep
+# Raw downloads saved anywhere else by mistake (for example web/data/raw/). Files over 50 MB cannot
+# be ignored by size: python data/validate.py fails if Git could commit one.
+web/data/
+**/raw/*
+!data/raw/.gitkeep
 
 # Secrets
 .env
