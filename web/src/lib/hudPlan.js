@@ -5,42 +5,60 @@
 import { centreOf } from './terrain.js'
 
 const NEIGH = [
-  [-1, 0], [1, 0], [0, -1], [0, 1],
-  [-1, -1], [-1, 1], [1, -1], [1, 1],
+  [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
+  [-1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [1, 1, Math.SQRT2],
 ]
 const r1 = (v) => Math.round(v * 10) / 10
 
-// The way home from cell i: step down the time field (minutes to the nearest shelter) until it reaches 0.
-// timeField is a shortest-path field, so each step to the lowest neighbour follows a fastest path.
-export function pathHome(cost, field, i) {
-  const { width, height, cellM } = cost
+// The way home from cell i, following a shortest-path field (minutes to the nearest shelter) to 0.
+// field comes from timeField(cost, shelters, w); pass the same w here. Each step goes to the neighbour j
+// that minimises field[j] + the cost of stepping to it. That is exactly the step the field was built from,
+// so the walked path costs what the field says. (Just stepping to the lowest neighbour is not enough on
+// an 8-direction grid: it ignores how far each step is and ends up on a slower path.)
+// walk_min is the real walking time along the path, without the risk weight.
+export function pathHome(cost, field, i, w = 0) {
+  const { width, height, cellM, blocked, timeRate, riskRate } = cost
+  const rate = (k) => timeRate[k] * (1 + w * riskRate[k])
   const cells = [i]
   let cur = i
   for (let guard = 0; guard < width * height && field[cur] > 0; guard++) {
     const r = Math.floor(cur / width)
     const c = cur % width
-    let best = cur
-    for (const [dr, dc] of NEIGH) {
+    let best = -1
+    let bestCost = Infinity
+    for (const [dr, dc, f] of NEIGH) {
       const rr = r + dr
       const cc = c + dc
       if (rr < 0 || cc < 0 || rr >= height || cc >= width) continue
       const j = rr * width + cc
-      if (field[j] < field[best]) best = j
+      if (blocked[j] || !Number.isFinite(field[j])) continue
+      const through = field[j] + ((rate(cur) + rate(j)) / 2) * f * cellM
+      if (through < bestCost) {
+        bestCost = through
+        best = j
+      }
     }
-    if (best === cur) break // nowhere lower: should not happen on a finite field
+    if (best < 0) break // nowhere to go: should not happen on a finite field
     cells.push(best)
     cur = best
   }
   const path = cells.map((k) => centreOf(k, width, height, cellM))
   let m = 0
-  for (let k = 1; k < path.length; k++) m += Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1])
-  return { path, distance_m: m }
+  let walk = 0
+  for (let k = 1; k < cells.length; k++) {
+    const len = Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1])
+    m += len
+    walk += ((timeRate[cells[k]] + timeRate[cells[k - 1]]) / 2) * len
+  }
+  return { path, distance_m: m, walk_min: walk }
 }
 
 // plan: the live plan from planOuting. track: its samples ({ i, d, x, y, z, slope, hazard, t }).
 // field: minutes from each cell to the nearest shelter. ingress: minutes to get inside.
 // spacingM: how often along the route to store a storm return.
-export function hudPlan(plan, track, field, cost, ingress = 0, spacingM = 100) {
+// storm: optional { field, w }: the storm return then follows timeField(cost, shelters, w) instead, so it stays
+// off careful and no-go ground when that costs little time. return_min is always the real walking time.
+export function hudPlan(plan, track, field, cost, ingress = 0, spacingM = 100, storm = null) {
   if (!plan || !track?.length || !field) return plan
   const rows = track
     .filter((p) => Number.isFinite(field[p.i]))
@@ -58,12 +76,12 @@ export function hudPlan(plan, track, field, cost, ingress = 0, spacingM = 100) {
   let next = 0
   for (const p of track) {
     if (p.d < next || !Number.isFinite(field[p.i])) continue
-    const home = pathHome(cost, field, p.i)
+    const home = pathHome(cost, storm?.field ?? field, p.i, storm?.field ? storm.w : 0)
     points.push({
       x: r1(p.x),
       y: r1(p.y),
       route_distance_m: r1(p.d),
-      return_min: r1(field[p.i] + ingress),
+      return_min: r1(home.walk_min + ingress),
       return_distance_m: Math.round(home.distance_m),
       path: home.path.map(([x, y]) => [r1(x), r1(y)]),
     })
@@ -73,6 +91,6 @@ export function hudPlan(plan, track, field, cost, ingress = 0, spacingM = 100) {
   return {
     ...plan,
     track: rows,
-    storm_replan: { sample_spacing_m: spacingM, source: 'web route-finder (HiRISE terrain, walking model)', points },
+    storm_replan: { sample_spacing_m: spacingM, source: 'web route-finder (HiRISE terrain, walking model, risk-weighted)', points },
   }
 }
