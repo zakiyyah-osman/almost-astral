@@ -3,10 +3,98 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { clock } from '../hud/sim.js'
 import { graticule } from '../lib/graticule.js'
+import { MARS_RADIUS_M, xyToLatLon, latLonToXY, lon180, siteBounds } from '../lib/geo.js'
+import { TREK_LAYERS, TREK_ATTRIBUTION, CRATER } from '../lib/marsTrek.js'
 
-// The site is a flat grid in metres, so we use Leaflet's CRS.Simple.
-// A point at x metres east and y metres north is L.latLng(y, x): y comes first.
-const toLatLng = (c) => L.latLng(c[1], c[0])
+// Two ways to draw the site:
+// - Real site (layers.json has site.center_lat / center_lon_east): a Mars map in latitude and
+//   longitude (Leaflet EPSG4326, with the Mars radius so the scale bar is right), NASA Mars Trek
+//   imagery underneath, and our 2 km square placed on it with geo.js. Start on the whole crater.
+// - Fake site (no centre): the flat CRS.Simple grid, a point at (x, y) is L.latLng(y, x).
+// Everything coming in and going out of this component stays in local site metres (x east, y north),
+// so the route finder, the mission builder and the HUD do not change.
+
+const MARS_CRS = L.extend({}, L.CRS.EPSG4326, { R: MARS_RADIUS_M })
+const BLANK_TILE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==' // 1 x 1 see-through
+const BOX_MAX_ZOOM = 14 // the "Delta front site" box shows below this zoom
+
+function makeGeo(site) {
+  const [w, h] = site.extent_m
+  if (site.center_lat == null || site.center_lon_east == null) {
+    return {
+      real: false,
+      toLL: (x, y) => L.latLng(y, x),
+      toXY: (ll) => ({ x: ll.lng, y: ll.lat }),
+      bounds: L.latLngBounds([0, 0], [h, w]),
+    }
+  }
+  const b = siteBounds(site)
+  return {
+    real: true,
+    toLL: (x, y) => {
+      const ll = xyToLatLon(x, y, site)
+      return L.latLng(ll.lat, lon180(ll.lon))
+    },
+    toXY: (ll) => latLonToXY(ll.lat, ll.lng, site),
+    bounds: L.latLngBounds([b.south, b.west], [b.north, b.east]),
+  }
+}
+
+function craterBounds() {
+  const r = (CRATER.diameterKm * 1000) / 2 / MARS_RADIUS_M / (Math.PI / 180) // degrees of latitude
+  const rl = r / Math.cos((CRATER.lat * Math.PI) / 180)
+  return L.latLngBounds([CRATER.lat - r, CRATER.lon - rl], [CRATER.lat + r, CRATER.lon + rl])
+}
+
+// A crater-wide image with the site square made see-through, so the detailed site layers take over
+// there. Both grids are equirectangular, so latitude and longitude map linearly onto pixels.
+// Resolves to a data URL, or null if the image cannot be read.
+function withSiteHole(src, bounds, site) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const w = bounds.getEast() - bounds.getWest()
+        const h = bounds.getNorth() - bounds.getSouth()
+        const x0 = ((site.getWest() - bounds.getWest()) / w) * canvas.width
+        const x1 = ((site.getEast() - bounds.getWest()) / w) * canvas.width
+        const y0 = ((bounds.getNorth() - site.getNorth()) / h) * canvas.height
+        const y1 = ((bounds.getNorth() - site.getSouth()) / h) * canvas.height
+        ctx.clearRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1)
+        resolve(canvas.toDataURL('image/png'))
+      } catch {
+        resolve(null)
+      }
+    }
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
+}
+
+// Camera pins for the ground photos (lib/photos.js records). Tapping one opens the photo with its
+// sol, camera and credit.
+const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+const cameraIcon = L.divIcon({ className: 'pin-icon', html: '<span class="photo-pin" aria-label="Ground photo"></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
+
+function photoPins(photos) {
+  const group = L.layerGroup()
+  for (const p of photos) {
+    const html =
+      `<figure class="photo-pop"><img src="${escapeHtml(p.url)}" alt="Perseverance ${escapeHtml(p.camera)} image, sol ${escapeHtml(p.sol)}" loading="lazy" />` +
+      `<figcaption><b>Sol ${escapeHtml(p.sol)}</b> · ${escapeHtml(p.camera)}${p.date_utc ? ` · ${escapeHtml(String(p.date_utc).slice(0, 10))}` : ''}<br />` +
+      `Taken where the rover stood, about 2 m up. <span class="credit">Credit: ${escapeHtml(p.credit)}</span><br />` +
+      `<small>${escapeHtml(p.image_id)}</small></figcaption></figure>`
+    L.marker([p.lat, lon180(p.lon)], { icon: cameraIcon, keyboard: false, title: `Ground photo, sol ${p.sol}` })
+      .bindPopup(html, { maxWidth: 340, minWidth: 260, className: 'photo-popup' })
+      .addTo(group)
+  }
+  return group
+}
 
 const pinIcon = (label, kind, selected) =>
   L.divIcon({
@@ -16,6 +104,24 @@ const pinIcon = (label, kind, selected) =>
     iconAnchor: [14, 14],
   })
 
+// A small Leaflet control holding a button.
+function button(position, html, onClick) {
+  const Ctl = L.Control.extend({
+    onAdd() {
+      const el = L.DomUtil.create('button', 'map-btn')
+      el.type = 'button'
+      el.innerHTML = html
+      L.DomEvent.on(el, 'click', (e) => {
+        L.DomEvent.stop(e)
+        onClick()
+      })
+      L.DomEvent.disableClickPropagation(el)
+      return el
+    },
+  })
+  return new Ctl({ position })
+}
+
 // Props:
 //  route        the active route (GeoJSON), drawn bold
 //  refRoute     the team planner's route.geojson, drawn thin for comparison (or null)
@@ -24,12 +130,12 @@ const pinIcon = (label, kind, selected) =>
 //  missionPins  the custom mission's own points [{ x, y, label, kind, title }] (start, side quests, destination)
 //  targets      mineral areas to pick as side quests [{ id, x, y, color, mineral, areaM2 }]
 //  picking      'start' | 'quest' | 'dest' | null: the next map click (or pin click) sets that point (onPick)
-//  onInspect    gets { x, y } when the map is clicked and nothing is being picked
+//  onInspect    gets { x, y } when the map is clicked inside the site and nothing is being picked
 //  inspect      { x, y }: the point being inspected, marked with a cross
 //  gridOn       draw latitude and longitude lines for the part of the map on screen
 //  onView       gets { centre: { x, y } } whenever the map stops moving
 //  sizeKey      changes whenever the map's box changes size without a new layout (sidebar dragged)
-//  onHover      gets { x, y } under the pointer, or null
+//  onHover      gets { x, y } under the pointer inside the site, or null
 //  probe        { x, y }: a point to ring (from the profile chart)
 //  astronaut    null, or { x, y, storm, trail } while the HUD simulation runs
 //  layoutKey    changes whenever the page layout changes the map's size
@@ -38,6 +144,8 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
   const refit = useRef(() => {})
   const resizeOnly = useRef(() => {})
   const mapRef = useRef(null)
+  const geoRef = useRef(null)
+  const focus = useRef('site') // 'crater' or 'site': what a layout change refits to
   const overlays = useRef({})
   const groups = useRef({})
   const astro = useRef({ marker: null, trail: null })
@@ -53,49 +161,115 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     else if (id) sel?.(id)
   }
 
-  // The map and the image layers: rebuilt only when the site itself changes.
+  // The map, the base imagery and the image layers: rebuilt only when the site itself changes.
   useEffect(() => {
-    const [w, h] = data.site.extent_m
-    const bounds = [[0, 0], [h, w]]
-    const map = L.map(elRef.current, { crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25, attributionControl: false })
-    map.createPane('layers').style.zIndex = 300 // below the route and markers
+    const geo = makeGeo(data.site)
+    geoRef.current = geo
+    const site = geo.bounds
+    const inside = (ll) => site.contains(ll)
+
+    const map = geo.real
+      ? L.map(elRef.current, { crs: MARS_CRS, minZoom: 3, maxZoom: 18, zoomSnap: 0.25, wheelPxPerZoomLevel: 90, attributionControl: false, worldCopyJump: false })
+      : L.map(elRef.current, { crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25, attributionControl: false })
+    map.createPane('craterLayers').style.zIndex = 290 // crater-wide layers sit under the site layers
+    map.createPane('layers').style.zIndex = 300 // above the base tiles, below the route and markers
     map.createPane('grid').style.zIndex = 350
     map.getPane('grid').style.pointerEvents = 'none'
-    map.fitBounds(bounds)
     L.control.scale({ imperial: false }).addTo(map)
+
+    const crater = geo.real ? craterBounds() : site
+    const fit = (target, animate) => map.fitBounds(target === 'site' ? site : crater, { animate, padding: target === 'site' ? [12, 12] : [0, 0] })
+    const flyTo = (target) => {
+      focus.current = target
+      map.flyToBounds(target === 'site' ? site : crater, { duration: 1.6, padding: target === 'site' ? [12, 12] : [0, 0] })
+    }
+
+    if (geo.real) {
+      L.control.attribution({ prefix: false }).addAttribution(TREK_ATTRIBUTION).addTo(map)
+      TREK_LAYERS.forEach((t, i) =>
+        L.tileLayer(t.url, {
+          maxZoom: 18,
+          noWrap: true,
+          errorTileUrl: BLANK_TILE, // a missing tile (404/400) means no coverage: show nothing
+          zIndex: i,
+          crossOrigin: true,
+          ...t.options, // zoom limits, tile size and bounds (no requests outside the mosaic)
+        }).addTo(map),
+      )
+
+      // The site box: visible when zoomed out; a click flies down to the site.
+      const box = L.rectangle(site, { color: '#ffd166', weight: 2, fill: true, fillOpacity: 0.08, className: 'site-box' })
+        .bindTooltip('Delta front site', { permanent: true, direction: 'top', className: 'site-box-label' })
+        .on('click', () => flyTo('site'))
+      const showBox = () => {
+        const want = map.getZoom() < BOX_MAX_ZOOM
+        if (want && !map.hasLayer(box)) box.addTo(map)
+        if (!want && map.hasLayer(box)) box.remove()
+      }
+      map.on('zoomend', showBox)
+      // Zooming by hand also decides what a layout change refits to.
+      map.on('zoomend', () => {
+        if (!map._flying) focus.current = map.getZoom() >= BOX_MAX_ZOOM - 1 && map.getBounds().intersects(site) ? 'site' : 'crater'
+      })
+
+      button('topright', 'Back to crater', () => flyTo('crater')).addTo(map)
+      button('topright', 'Go to site', () => flyTo('site')).addTo(map)
+
+      focus.current = 'crater'
+      fit('crater', false)
+      showBox()
+    } else {
+      fit('site', false)
+    }
+
     data.layers.forEach((layer, i) => {
-      overlays.current[layer.id] = L.imageOverlay(`./${layer.file}`, bounds, { pane: 'layers', zIndex: i })
+      if (layer.scope === 'photos') {
+        if (geo.real) overlays.current[layer.id] = photoPins(data.photos ?? [])
+        return
+      }
+      if (layer.scope === 'crater') {
+        if (!geo.real || !layer.bounds) return // needs the lat/lon map
+        const b = layer.bounds
+        const bounds = L.latLngBounds([b.south, lon180(b.west)], [b.north, lon180(b.east)])
+        const overlay = L.imageOverlay(`./${layer.file}`, bounds, { pane: 'craterLayers', zIndex: i })
+        overlays.current[layer.id] = overlay
+        withSiteHole(`./${layer.file}`, bounds, site).then((url) => url && overlay.setUrl(url))
+        return
+      }
+      overlays.current[layer.id] = L.imageOverlay(`./${layer.file}`, site, { pane: 'layers', zIndex: i })
     })
     groups.current = { grid: L.layerGroup().addTo(map), routes: L.layerGroup().addTo(map), targets: L.layerGroup().addTo(map), pins: L.layerGroup().addTo(map) }
 
     map.on('click', (e) => {
+      if (!inside(e.latlng)) return
       const { picking: p, onPick: pick, onInspect: insp } = cb.current
-      const pt = { x: e.latlng.lng, y: e.latlng.lat }
+      const pt = geo.toXY(e.latlng)
       if (p && pick) pick(p, pt)
       else insp?.(pt)
     })
     map.on('moveend resize', () => {
-      const c = map.getCenter()
-      cb.current.onView?.({ centre: { x: c.lng, y: c.lat } })
+      cb.current.onView?.({ centre: geo.toXY(map.getCenter()) })
       drawGrid.current()
     })
     let frame = 0
     map.on('mousemove', (e) => {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => cb.current.onHover?.({ x: e.latlng.lng, y: e.latlng.lat }))
+      frame = requestAnimationFrame(() => cb.current.onHover?.(inside(e.latlng) ? geo.toXY(e.latlng) : null))
     })
     map.on('mouseout', () => cb.current.onHover?.(null))
 
-    // A new layout (HUD opened, visor, big text): refit the whole site, once, without animation.
+    // A new layout (HUD opened, visor, big text): refit, once, without animation, to the site or the
+    // crater, whichever was last chosen.
     let timer = 0
     refit.current = () => {
       clearTimeout(timer)
       timer = setTimeout(() => {
         map.invalidateSize({ animate: false })
-        map.fitBounds(bounds, { animate: false })
+        fit(focus.current, false)
         drawGrid.current()
       }, 60)
     }
+    refit.current.flyTo = flyTo
     // The box only changed size (window resized, sidebar dragged): keep the user's zoom and the centre.
     let sizeFrame = 0
     resizeOnly.current = () => {
@@ -133,14 +307,13 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const [w, h] = data.site.extent_m
     for (const l of extraLayers) {
-      if (!overlays.current[l.id] && l.url) overlays.current[l.id] = L.imageOverlay(l.url, [[0, 0], [h, w]], { pane: 'layers', zIndex: data.layers.length + 1 })
+      if (!overlays.current[l.id] && l.url) overlays.current[l.id] = L.imageOverlay(l.url, geoRef.current.bounds, { pane: 'layers', zIndex: data.layers.length + 1 })
     }
     for (const [id, state] of Object.entries(layerState)) {
       const overlay = overlays.current[id]
       if (!overlay) continue
-      overlay.setOpacity(state.opacity)
+      overlay.setOpacity?.(state.opacity) // photo pins are a layer group: no opacity
       if (state.on && !map.hasLayer(overlay)) overlay.addTo(map)
       if (!state.on && map.hasLayer(overlay)) overlay.remove()
     }
@@ -160,24 +333,24 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     const g = groups.current.grid
     if (!map || !g) return
     const site = data.site
+    const { toLL, toXY } = geoRef.current
     drawGrid.current = () => {
       g.clearLayers()
       if (!gridOn || site.center_lat == null) return
       const b = map.getBounds()
-      const view = { x0: b.getWest(), x1: b.getEast(), y0: b.getSouth(), y1: b.getNorth() }
+      const sw = toXY(b.getSouthWest())
+      const ne = toXY(b.getNorthEast())
+      const view = { x0: sw.x, x1: ne.x, y0: sw.y, y1: ne.y }
       const { lats, lons, decimals } = graticule(view, site)
       const style = { pane: 'grid', color: '#f3e9e1', weight: 1, opacity: 0.22, interactive: false }
-      const size = map.getSize()
       const at = (px, py) => map.containerPointToLatLng([px, py])
       for (const l of lats) {
-        L.polyline([[l.y, view.x0], [l.y, view.x1]], style).addTo(g)
-        const ll = at(4, 0)
-        L.marker([l.y, ll.lng], { pane: 'grid', interactive: false, keyboard: false, icon: L.divIcon({ className: 'grid-label lat', html: `${l.v.toFixed(decimals)}°N`, iconSize: null }) }).addTo(g)
+        L.polyline([toLL(view.x0, l.y), toLL(view.x1, l.y)], style).addTo(g)
+        L.marker([toLL(0, l.y).lat, at(4, 0).lng], { pane: 'grid', interactive: false, keyboard: false, icon: L.divIcon({ className: 'grid-label lat', html: `${l.v.toFixed(decimals)}°N`, iconSize: null }) }).addTo(g)
       }
       for (const l of lons) {
-        L.polyline([[view.y0, l.x], [view.y1, l.x]], style).addTo(g)
-        const ll = at(0, 4)
-        L.marker([ll.lat, l.x], { pane: 'grid', interactive: false, keyboard: false, icon: L.divIcon({ className: 'grid-label lon', html: `${l.v.toFixed(decimals)}°E`, iconSize: null }) }).addTo(g)
+        L.polyline([toLL(l.x, view.y0), toLL(l.x, view.y1)], style).addTo(g)
+        L.marker([at(0, 4).lat, toLL(l.x, 0).lng], { pane: 'grid', interactive: false, keyboard: false, icon: L.divIcon({ className: 'grid-label lon', html: `${l.v.toFixed(decimals)}°E`, iconSize: null }) }).addTo(g)
       }
     }
     drawGrid.current()
@@ -187,20 +360,22 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
   useEffect(() => {
     const g = groups.current.routes
     if (!g) return
+    const toLL = (c) => geoRef.current.toLL(c[0], c[1])
     g.clearLayers()
     if (refRoute) {
-      L.geoJSON(refRoute, { coordsToLatLng: toLatLng, interactive: false, style: { color: '#c9b8ad', weight: 2, opacity: 0.8, dashArray: '2 6' } }).addTo(g)
+      L.geoJSON(refRoute, { coordsToLatLng: toLL, interactive: false, style: { color: '#c9b8ad', weight: 2, opacity: 0.8, dashArray: '2 6' } }).addTo(g)
     }
     if (route) {
-      L.geoJSON(route, { coordsToLatLng: toLatLng, interactive: false, style: { color: '#1a0e09', weight: 7, opacity: 0.7 } }).addTo(g)
-      L.geoJSON(route, { coordsToLatLng: toLatLng, interactive: false, style: { color: '#ffffff', weight: 3, opacity: 0.95, dashArray: '6 6' } }).addTo(g)
+      L.geoJSON(route, { coordsToLatLng: toLL, interactive: false, style: { color: '#1a0e09', weight: 7, opacity: 0.7 } }).addTo(g)
+      L.geoJSON(route, { coordsToLatLng: toLL, interactive: false, style: { color: '#ffffff', weight: 3, opacity: 0.95, dashArray: '6 6' } }).addTo(g)
     }
   }, [route, refRoute, data])
 
-  // Pins: rover and stops, landing suggestions, custom start and end.
+  // Pins: rover and stops, landing suggestions, the custom mission's own points.
   useEffect(() => {
     const g = groups.current.pins
     if (!g) return
+    const { toLL } = geoRef.current
     g.clearLayers()
     let n = 0
     for (const f of waypoints?.features ?? []) {
@@ -210,19 +385,19 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       const t = arrivals?.[f.properties.id]
       const label = rover ? `${f.properties.name} · start` : `${f.properties.name}${t != null ? ` · T+${clock(t)}` : ''}`
       const [x, y] = f.geometry.coordinates
-      L.marker(toLatLng(f.geometry.coordinates), { icon: pinIcon(rover ? 'R' : ++n, rover ? 'rover' : 'stop', f.properties.id === selectedStop), keyboard: false })
+      L.marker(toLL(x, y), { icon: pinIcon(rover ? 'R' : ++n, rover ? 'rover' : 'stop', f.properties.id === selectedStop), keyboard: false })
         .bindTooltip(label, { permanent: !missionPins?.length, direction: 'right', offset: [14, 0], className: 'stop-label' })
         .on('click', pinClick(x, y, f.properties.name, f.properties.id))
         .addTo(g)
     }
     for (const s of landing ?? []) {
-      L.marker(toLatLng([s.x, s.y]), { icon: pinIcon(s.label, 'landing', s.id === selectedStop), keyboard: false })
+      L.marker(toLL(s.x, s.y), { icon: pinIcon(s.label, 'landing', s.id === selectedStop), keyboard: false })
         .bindTooltip(s.title, { direction: 'top', offset: [0, -14], className: 'stop-label' })
         .on('click', pinClick(s.x, s.y, `${s.label} landing spot`, s.id))
         .addTo(g)
     }
     for (const p of missionPins ?? []) {
-      L.marker(toLatLng([p.x, p.y]), { icon: pinIcon(p.label, p.kind), keyboard: false, zIndexOffset: 500 })
+      L.marker(toLL(p.x, p.y), { icon: pinIcon(p.label, p.kind), keyboard: false, zIndexOffset: 500 })
         .bindTooltip(p.title, { permanent: true, direction: 'right', offset: [14, 0], className: 'stop-label' })
         .on('click', pinClick(p.x, p.y, p.name))
         .addTo(g)
@@ -233,10 +408,11 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
   useEffect(() => {
     const g = groups.current.targets
     if (!g) return
+    const { toLL } = geoRef.current
     g.clearLayers()
     for (const t of targets ?? []) {
       const icon = L.divIcon({ className: 'pin-icon', html: `<span class="target" style="--c:${t.color}"></span>`, iconSize: [16, 16], iconAnchor: [8, 8] })
-      L.marker(toLatLng([t.x, t.y]), { icon, keyboard: false })
+      L.marker(toLL(t.x, t.y), { icon, keyboard: false })
         .bindTooltip(`${t.mineral} · ${Math.round(t.areaM2).toLocaleString()} m²${t.detourMin != null ? ` · about ${Math.round(t.detourMin)} min off the route` : ''}`, { direction: 'top', offset: [0, -8], className: 'stop-label' })
         .on('click', pinClick(t.x, t.y, `${t.mineral} area`))
         .addTo(g)
@@ -252,7 +428,7 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       inspectMark.current = null
       return
     }
-    const ll = L.latLng(inspect.y, inspect.x)
+    const ll = geoRef.current.toLL(inspect.x, inspect.y)
     if (!inspectMark.current) {
       const icon = L.divIcon({ className: 'pin-icon', html: '<span class="inspect-mark"></span>', iconSize: [26, 26], iconAnchor: [13, 13] })
       inspectMark.current = L.marker(ll, { icon, interactive: false, keyboard: false }).addTo(map)
@@ -273,12 +449,12 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       probeDot.current = null
       return
     }
-    const ll = L.latLng(probe.y, probe.x)
+    const ll = geoRef.current.toLL(probe.x, probe.y)
     if (!probeDot.current) probeDot.current = L.circleMarker(ll, { radius: 9, color: '#ffffff', weight: 3, fillColor: '#e0714f', fillOpacity: 0.9, interactive: false }).addTo(map)
     else probeDot.current.setLatLng(ll)
   }, [probe, data])
 
-  // The moving astronaut and the trail behind them.
+  // The moving astronaut and the trail behind them. When the walk starts, go to the site.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -289,15 +465,17 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       a.marker = a.trail = null
       return
     }
+    const { toLL, real } = geoRef.current
     const colour = astronaut.storm ? '#ff6b57' : '#5eead4'
-    const latlng = L.latLng(astronaut.y, astronaut.x)
+    const latlng = toLL(astronaut.x, astronaut.y)
     const icon = L.divIcon({ className: 'pin-icon', html: `<span class="astro${astronaut.storm ? ' storm' : ''}"></span>`, iconSize: [22, 22], iconAnchor: [11, 11] })
     if (!a.marker) {
+      if (real && focus.current !== 'site') refit.current.flyTo?.('site')
       a.trail = L.polyline([], { color: colour, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(map)
       a.marker = L.marker(latlng, { icon, zIndexOffset: 1000, interactive: false, keyboard: false }).addTo(map)
     }
     a.marker.setLatLng(latlng).setIcon(icon)
-    a.trail.setStyle({ color: colour }).setLatLngs(astronaut.trail.map((p) => L.latLng(p[1], p[0])))
+    a.trail.setStyle({ color: colour }).setLatLngs(astronaut.trail.map((p) => toLL(p[0], p[1])))
   }, [astronaut, data])
 
   return <div ref={elRef} className="map" />
