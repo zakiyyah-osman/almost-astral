@@ -9,8 +9,8 @@ Where the terrain model has no value the cell is never green (see
 [missing_data] in thresholds.toml).
 
 Run:
-    python terrain/hazards.py                  # rebuild everything
-    python terrain/hazards.py --check-route    # also report hazard along route.geojson
+    python terrain/hazard_map.py                  # rebuild everything
+    python terrain/hazard_map.py --check-route    # also report hazard along route.geojson
 """
 import argparse
 import json

@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import hazards as hz  # noqa: E402
+import hazard_map as hz  # noqa: E402  (terrain/hazard_map.py; the hazards/ package is the older pipeline)
 
 THR = hz.load_thresholds()
 CELL = 5.0
