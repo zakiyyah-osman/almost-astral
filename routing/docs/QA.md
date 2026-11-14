@@ -13,7 +13,7 @@ Most checks read the planner's output files and recompute the answer a second wa
 
 ### Options and assumptions
 
-- **Command-line options** are those in DESIGN section 2. `plan_route.py` takes `--in DIR`, `--out DIR` and `--config FILE`. `analysis.py` takes `--in DIR`, `--config FILE` and `--reports DIR`. Every synthetic-site check passes `--in` and `--out`, so `data/out/` is written only in group H.
+- **Command-line options** are those in DESIGN section 2. `plan_route.py` takes `--in DIR`, `--out DIR`, `--config FILE` and `--start X,Y`. `analysis.py` takes `--in DIR`, `--config FILE`, `--reports DIR` and `--start X,Y`. `export_landing.py` takes `--in DIR`, `--out DIR` and `--config FILE`. Every synthetic-site check passes `--in` and `--out`, so `data/out/` is written only in group H.
 - **Slope method.** Nahla's slope method is still an open question (DESIGN section 12). The audit uses central differences and allows 1° over the limit, so a method difference at the edge of a steep band does not give a false failure.
 
 ### Setup (once per session, PowerShell, from the repository root)
@@ -31,16 +31,12 @@ foreach ($k in "flat","plane10","yellow_all","yellow_patch","wall","ridge","ring
   python $QA\qa_tools.py site $k $QA\sites\$k
 }
 
-# The starts always come from the config ([starts.L1], [starts.L2], [starts.L3]; L1 is the default),
-# so the QA runs use a copy of routing/config.toml with the three starts on the QA sites: all in the
-# west, clear of every feature. Every Cfg copy is made from it. The copy still holds the hashes of the
-# real data/out files, so every QA plan has two "not the file the starts were computed on" warnings:
-# that is expected and not a failure.
-python $QA\qa_tools.py config $QA\cfg\base1.toml starts.L1 "[26.25, 101.25]"
-python $QA\qa_tools.py config $QA\cfg\base2.toml starts.L2 "[26.25, 76.25]"  $QA\cfg\base1.toml
-python $QA\qa_tools.py config $QA\cfg\base.toml  starts.L3 "[26.25, 126.25]" $QA\cfg\base2.toml
+# There are no configured starts: every QA run passes the QA start with --start (the start waypoint of
+# the QA sites, which the planner itself ignores). Every Cfg copy is made from a plain copy of the config.
+New-Item -ItemType Directory -Force $QA\cfg | Out-Null
+Copy-Item routing\config.toml $QA\cfg\base.toml
 $CFG = "$QA\cfg\base.toml"
-function Plan($site, $tag = $site, $cfg = $CFG)  { python routing/plan_route.py --in $QA\sites\$site --out $QA\out\$tag --config $cfg; "exit code $LASTEXITCODE" }
+function Plan($site, $tag = $site, $cfg = $CFG)  { python routing/plan_route.py --in $QA\sites\$site --out $QA\out\$tag --config $cfg --start 26.25,101.25; "exit code $LASTEXITCODE" }
 function Audit($site, $tag = $site, $cfg = $CFG) { python $QA\qa_tools.py audit $QA\sites\$site $QA\out\$tag $cfg }
 function Hash($tag)                              { python $QA\qa_tools.py hash $QA\out\$tag }
 # Cfg writes $QA\cfg\<tag>.toml, a copy of $CFG with one value changed, and returns its path
@@ -53,7 +49,7 @@ A parameter check is written `Plan flat a5 (Cfg a5 walking.v_flat_kmh 4.7)`: bui
 
 ### The synthetic sites
 
-All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Start (waypoint kind `start`, and `starts.L1`, the default, in `$CFG`) at `[26.25, 101.25]`, `stop1` "QA East" at `[276.25, 101.25]`, `stop2` "QA North-East" at `[276.25, 151.25]`. The round trip on open flat ground is 570.7 m on an 8-neighbour grid.
+All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Start (waypoint kind `start`, and passed as `--start 26.25,101.25` by `Plan`) at `[26.25, 101.25]`, `stop1` "QA East" at `[276.25, 101.25]`, `stop2` "QA North-East" at `[276.25, 151.25]`. The round trip on open flat ground is 570.7 m on an 8-neighbour grid.
 
 | Site | Terrain | Hazard | Tests |
 | --- | --- | --- | --- |
@@ -176,8 +172,8 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Sta
 | G1 | `Plan ring g` | Non-zero exit. The message contains `stop2`, `QA North-East`, the coordinates `276.25, 151.25` and the word unreachable (or an equal reason). It does not blame `stop1`. Hashes unchanged. No traceback. | |
 | G2 | `Plan red_stop g` | Non-zero exit. The message contains `stop1`, `QA East`, `276.25, 101.25` and says the cell is red. Hashes unchanged. | |
 | G3 | In `$QA\sites\ridge\waypoints.geojson` move `stop1` to `[151.25, 101.25]` (on the scarp). `Plan ridge g`. Move it back. | Non-zero exit naming `stop1`, reason slope over the limit or inside the buffer. | |
-| G4 | In a copy of `flat`, set `stop1`'s `kind` to `"start"` (two starts) and run. Undo, then set the start's `kind` to `"rover"` (the old name) and run. Then run with `--config (Cfg g4 starts.L1 "[151.25, 101.25]")` on `ridge` (the default start on the scarp). | Two starts: non-zero exit, "at most one" start, nothing written. `"rover"`: exit 0, `plan.json` `warnings` says the kind is deprecated, and `legs`, `start.id` and the route files never contain the word `rover` (the id is `start`). Start on the scarp: non-zero exit, the message gives the start, its coordinates and the reason (slope over the limit or the buffer). Nothing written. | |
-| G4b | `Plan ridge g (Cfg g4b starts.L3 "[151.25, 101.25]")` (L3, which is not the default, on the scarp). | Non-zero exit. The message names `start 'L3'` and its coordinates, and the reason (slope over the limit or the buffer); it does not name L1 or L2. Nothing written: every start is checked, not only the default. | |
+| G4 | In a copy of `flat`, set `stop1`'s `kind` to `"start"` (two starts) and run. Undo, then set the start's `kind` to `"rover"` (the old name) and run. Then `python routing/plan_route.py --in $QA\sites\ridge --out $QA\out\g4 --config $CFG --start 151.25,101.25` (a start on the scarp). | Two starts: non-zero exit, "at most one" start, nothing written. `"rover"`: exit 0, `plan.json` `warnings` says the kind is deprecated and that the start waypoint is ignored, and `legs`, `start.id` and the route files never contain the word `rover` (the id is `start`). Start on the scarp: non-zero exit, the message gives `start (--start)`, its coordinates and the reason (slope over the limit or the buffer). Nothing written. | |
+| G4b | `python routing/plan_route.py --in $QA\sites\flat --out $QA\out\g4b --config $CFG` (no `--start`). Then `python routing/plan_route.py --in $QA\sites\flat --out $QA\out\g4c --config $CFG --start 5000,10`. | No `--start`: exit 0; `plan.json` `start.kind` is `demo`, `start.name` "Demo start", `start.source` begins "demo start", the output line says `demo start at`, and `warnings` say the demo start was used and the stops are unverified. The start cell is the nearest safe landing cell to the grid centre (`flat` is all safe away from its edges, so it is the cell holding the grid centre, (151.25, 101.25) m). Outside the grid: non-zero exit, "outside the site grid", nothing written. | |
 | G5 | In a copy of `flat`, delete `hazard.tif`. Then restore it and set `site.grid.width` to `100` in `layers.json`. | Each: non-zero exit with a message naming the file or the size mismatch. Nothing written. No traceback. | |
 | G6 | `Plan flat g` | Back to exit code 0: the good case still works after the failure tests. | |
 
@@ -229,6 +225,21 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Sta
 
 ---
 
+## K. Landing safety and the browser's cost surface
+
+Run when: `export_landing.py` exists. Independent checks: they read the files and the manifest and recompute with numpy and a plain heap search, not with `routing/` code.
+
+| ID | Do | Pass when | P/F |
+| --- | --- | --- | --- |
+| K1 | `python routing/export_landing.py --in $QA\sites\flat --out $QA\land\flat --config $CFG`. Read `manifest.json`. | Exit 0. One tile of 120 x 80; `grid.cell_m` 2.5; dtypes as DESIGN 16; `fake` true (the QA sites mark their layers FAKE); `golden_cases.json` `skipped` explains that `flat` has no unreachable cell; `thresholds` are the `[landing]` entries, all type `assumption`; `roughness_note` names the 25 m window and the 50 m pad; `height_range_note` says team assumption. Every file's bytes and SHA-256 match the manifest. | |
+| K2 | On K1's files: `landing_safety.u8` as a 80 x 120 array. | Every cell within 30 m (12 cells) of the edge is 2 (outside coverage) and every other cell is 0 (flat, green). `nearest_safe` of a safe cell is the cell itself, distance 0. | |
+| K3 | `export_landing.py` on `wall` into `$QA\land\wall`. Recompute, for 20 random cells, the nearest code-0 cell by brute force (centre distances x 2.5 m). | `nearest_safe_dist` equals the brute-force minimum (float32), and the cell it names has code 0 at that distance. No cell within 30 m of a red cell is 0 or 1. | |
+| K4 | On K3's files, take `time_rate.f64`, `risk_rate.f64`, `mask.u8` and run a heap Dijkstra written from DESIGN 15.2 (not from the code) for every case of `golden_cases.json`. | Same cells as each case; distance, walk and risk minutes within 1e-9 relative; the `unreachable` case has no path; the `over_budget` case is over its own `budget` and its pair under the normal budget is not. | |
+| K5 | `export_landing.py` on `flat` with `(Cfg k5 landing.tile_size_m 50)` into `$QA\land\k5`. Stitch the tiles by their `row0`, `col0`, `shape`. | 4 x 6 tiles (20 cells each), covering every cell once. The stitched grids equal K1's byte for byte, including `nearest_safe`. | |
+| K6 | Hash `data\out\*`, run K1, hash again. | `data/out/` is unchanged: `--out` was given. | |
+
+---
+
 ## Full run
 
 Run everything in this order at the end, about 30 minutes:
@@ -239,7 +250,7 @@ Run everything in this order at the end, about 30 minutes:
 4. Read-the-number rows: `B6`, `B8`, `C2`, `C5`, `D1`, `D2`, `D8`, `D11`, `E2`, `E6`, `F1`, `F7`, `F13`.
 5. Config-change rows, each with its own `Cfg` copy: `A5`–`A8`, `C6`, `C7`, `D3`, `D12`, `F4`–`F6`, `F9`. Then `F11`. Finish with `git diff routing/config.toml`: no difference, because no check edits it.
 6. Group G.
-7. Group I, then group H, then group J.
+7. Group I, then group K, then group H, then group J.
 
 Sign-off: date, commit hash, who ran it, count of `P`, `F` and empty rows.
 
@@ -276,7 +287,7 @@ W, H, CELL = 120, 80, 2.5            # QA grid: not square, not 400, not 5
 ROUTES = {"fastest": "route_fastest.geojson", "balanced": "route.geojson",
           "safest": "route_safest.geojson"}
 OUTPUTS = [*ROUTES.values(), "plan.json", "shelter_time.png"]
-TYPES = {"observation", "proxy", "scenario"}
+TYPES = {"observation", "proxy", "scenario", "assumption"}
 
 
 # ---------------------------------------------------------------- fixtures
@@ -375,7 +386,9 @@ def audit(src, out, config="routing/config.toml"):
     plan = read_json(out / "plan.json")
     cfg ={k: v["value"] for k, v in plan.get("assumptions", {}).items()}
     wps = {f["properties"]["id"]: f for f in read_json(src / "waypoints.geojson")["features"]}
-    start_wp = next(f for f in wps.values() if f["properties"]["kind"] in ("start", "rover"))
+    start_wps = [f for f in wps.values() if f["properties"]["kind"] in ("start", "rover")]
+    # the planner never uses the start waypoint: the start is --start or the demo start, recorded in plan.json
+    home_xy = plan.get("start", {}).get("xy_m") or start_wps[0]["geometry"]["coordinates"]
 
     def rc(x, y):                                # contract: row 0 is the north edge
         return rows - 1 - int(y // cell), int(x // cell)
@@ -419,7 +432,7 @@ def audit(src, out, config="routing/config.toml"):
         rep("G02", inside, f"{name}: every vertex inside 0..{cols * cell} x 0..{rows * cell} m")
         on_centre = all(abs((x / cell) % 1 - 0.5) < 1e-6 and abs((y / cell) % 1 - 0.5) < 1e-6 for x, y in xy)
         rep("G03", on_centre, f"{name}: vertices are cell centres")
-        home = rc(*start_wp["geometry"]["coordinates"])
+        home = rc(*home_xy)
         rep("G04", rc(*xy[0]) == home and rc(*xy[-1]) == home, f"{name}: starts and ends at the start cell")
 
         cells, straight = [rc(*xy[0])], True
@@ -557,7 +570,7 @@ def audit(src, out, config="routing/config.toml"):
         for (r0, c0), (r1, c1) in zip(path, path[1:]):
             k = max(abs(r1 - r0), abs(c1 - c0)) or 1
             full += [(r0 + (r1 - r0) // k * i, c0 + (c1 - c0) // k * i) for i in range(1, k + 1)]
-        ok &= path[-1] == rc(*start_wp["geometry"]["coordinates"]) and not any(blocked[c] for c in full)
+        ok &= path[-1] == rc(*home_xy) and not any(blocked[c] for c in full)
         ok &= p["return_min"] >= ing and p["return_min"] <= p["elapsed_min"] + ing + 0.15
     rep("S06", ok, f"{len(pts)} storm return paths end at the start, avoid blocked cells, beat walking back the way they came")
     worst = plan.get("storm_replan", {}).get("worst")

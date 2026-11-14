@@ -1,9 +1,9 @@
 """Waypoints, stop order and the three profile routes (DESIGN sections 4.6 and 4.7).
 
-The tour is start -> stops -> start. The start is the default one of the [starts.<id>] in
-routing/config.toml (see start.py) and its id is always "start", whatever the waypoint file calls it; a waypoint of
-kind 'start' in waypoints.geojson is only compared with it. The old kind 'rover' is still read
-as 'start', with a deprecation warning. The stop order is chosen
+The tour is start -> stops -> start. The start comes from the command line (--start x,y) or, without
+it, is the demo start: the safe landing cell nearest the grid centre (landing.py). Its id is always
+"start". A waypoint of kind 'start' (or the old 'rover', read as 'start' with a deprecation
+warning) is never used as the start; it only gives a warning that it is ignored. The stop order is chosen
 once, on the balanced planning cost, and used for all three profiles; the profiles differ only
 in the risk weight w.
 """
@@ -59,7 +59,10 @@ class Waypoint:
     y: float
     cell: tuple             # (row, col) of the cell containing (x, y)
     deprecated_kind: object = None      # 'rover' when the file used the old kind name
-    landing_id: object = None           # the id of the start in the config ('L1'), for the start only
+    landing_id: object = None           # always None now (kept for the plan.json start.landing_id key)
+    start_kind: object = None           # the start only: "cli" (--start) or "demo" (demo start)
+    landing_status: object = None       # the start only: its landing-safety code name (landing.py)
+    label: object = None                # the start only: how messages name it ("demo start", "start (--start)")
 
     def describe(self):
         return f"{self.kind} {self.id!r} ({self.name}) at ({self.x:g}, {self.y:g}) m"
@@ -189,8 +192,7 @@ def deprecation_warnings(waypoints):
 def split_waypoints(waypoints):
     """(start waypoint or None, stops). At most one start and at least one stop are required.
 
-    The start waypoint is optional: the start itself is the default [starts.<id>] of config.toml
-    (resolve_start).
+    The start waypoint is never used as the start (choose_start); it is only reported as ignored.
     """
     starts = [w for w in waypoints if w.kind == KIND_START]
     stops = [w for w in waypoints if w.kind == KIND_STOP]
@@ -203,32 +205,55 @@ def split_waypoints(waypoints):
     return (starts[0] if starts else None), stops
 
 
-def resolve_start(cfg: Config, cost: Cost, hazard=None, waypoint=None):
-    """(the start Waypoint, warnings): the default start of the config, after checking every start.
+DEMO_LABEL, CLI_LABEL = "demo start", "start (--start)"
+UNVERIFIED_STOPS = (
+    f"the stops in {WAYPOINTS_FILE} are unverified (Zakiyyah's file, not yet confirmed as real science "
+    "targets): treat this outing plan as a demonstration"
+)
 
-    All the configured starts are checked (start.validate_starts), so a bad L3 is found even
-    though only the default one is planned from; the first bad start raises a StartError that
-    names it. The id of the returned start is always "start" and `landing_id` is the config id
-    ('L1'). A start waypoint from waypoints.geojson is only compared with the default start: if
-    it lies more than half a cell from it, a warning says so and the config value is used.
-    Starts on careful ground give warnings.
+
+def choose_start(cfg: Config, site, cost: Cost, start_xy=None, waypoint=None):
+    """(the start Waypoint, warnings).
+
+    With `start_xy` ((x, y) metres, from --start) that point is the start. Without it the start is
+    the demo start: the centre of the safe landing cell nearest the grid centre (landing.py, on
+    the whole site grid). Either way the cell must be passable (start.check_start); careful ground
+    gives a warning, and so does a --start point that is not a safe or marginal landing spot. A
+    start waypoint in waypoints.geojson is ignored, with a warning.
     """
-    infos = start_mod.validate_starts(cfg, cost, hazard)
-    spec = start_mod.default_start(cfg)
-    info = infos[spec.id]
-    warnings = [w for i in infos.values() for w in i.warnings]
-    xy = info.xy
+    import landing as landing_mod
+    rules = landing_mod.Rules.from_config(cfg)
+    codes = landing_mod.classify(landing_mod.measure(site.dem, site.slope, site.hazard, cost, rules), rules)
+    warnings = []
+    grid = cost.grid
+    if start_xy is None:
+        kind, name, label = "demo", "Demo start", DEMO_LABEL
+        rows, cols, _ = landing_mod.nearest_safe(codes, grid.cell_m)
+        centre = grid.xy_to_cell(grid.extent_m[0] / 2.0, grid.extent_m[1] / 2.0)
+        cell = (int(rows[centre]), int(cols[centre]))
+        x, y = grid.cell_centre(*cell)
+        warnings.append(
+            f"no --start given: the walk starts at the demo start ({x:g}, {y:g}) m, the safe landing cell "
+            "nearest the grid centre"
+        )
+    else:
+        kind, name, label = "cli", START_NAME, CLI_LABEL
+        x, y = float(start_xy[0]), float(start_xy[1])
+        cell = start_mod.start_cell(grid, (x, y), name=label)
+    warnings.extend(start_mod.check_start(cost, cell, (x, y), site.hazard, label))
+    status = landing_mod.CODE_NAMES[int(codes[cell])]
+    if kind == "cli" and int(codes[cell]) not in landing_mod.ACCEPTED:
+        warnings.append(f"{label} ({x:g}, {y:g}) m is not a safe landing spot: landing safety '{status}'")
     if waypoint is not None:
-        if not start_mod.is_near((waypoint.x, waypoint.y), xy, cost.grid.cell_m):
-            msg = (
-                f"{WAYPOINTS_FILE} puts its start waypoint at ({waypoint.x:g}, {waypoint.y:g}) m, "
-                f"more than half a cell from the default start {spec.id!r} ({xy[0]:g}, {xy[1]:g}) m "
-                "in routing/config.toml; the config value is used"
-            )
-            log.warning(msg)
-            warnings.append(msg)
+        msg = (
+            f"{WAYPOINTS_FILE} has a start waypoint {waypoint.id!r} at ({waypoint.x:g}, {waypoint.y:g}) m; it is "
+            "ignored: the start comes from --start or the demo start"
+        )
+        log.warning(msg)
+        warnings.append(msg)
     return Waypoint(
-        start_mod.START_ID, START_NAME, KIND_START, xy[0], xy[1], info.cell, landing_id=spec.id,
+        start_mod.START_ID, name, KIND_START, x, y, (int(cell[0]), int(cell[1])),
+        start_kind=kind, landing_status=status, label=label,
     ), tuple(warnings)
 
 
@@ -243,7 +268,7 @@ def check_waypoints(cost: Cost, start: Waypoint, stops, searcher: Searcher):
 
     A blocked start raises start.StartError; a stop problem raises RouteError naming the stop.
     """
-    start_mod.check_start(cost, start.cell, (start.x, start.y), name=start.landing_id)
+    start_mod.check_start(cost, start.cell, (start.x, start.y), name=start.label)
     for wp in stops:
         reason = block_reason(cost, wp.cell)
         if reason:

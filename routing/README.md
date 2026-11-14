@@ -1,8 +1,8 @@
 # routing/ (Person 3: route planning and safety)
 
-Plans the walk between the science stops and checks that it is safe: three routes (fastest, balanced, safest), a map of the minutes back to the start from every cell (a safety layer, not a route the user can pick), the EVA timeline with its budgets, and, as a safety figure, the fastest way back to the start from sampled points of the walk (the storm re-plan). It also exports reach grids, so the app can show the three one-way paths from a start the user picks (landing spot L1, L2 or L3) to any point the user clicks. No return-route option is built or exported.
+Plans the walk between the science stops and checks that it is safe: three routes (fastest, balanced, safest), a map of the minutes back to the start from every cell (a safety layer, not a route the user can pick), the EVA timeline with its budgets, and, as a safety figure, the fastest way back to the start from sampled points of the walk (the storm re-plan). It also judges where a lander can come down safely and exports the cost surface, so the app can let the user click any landing zone (moved to the nearest safe spot if needed), click a destination and get the three one-way walking paths. No return-route option is built or exported.
 
-The walker is an astronaut on foot. The walk starts from one of the **starts** listed in [config.toml](config.toml) as `[starts.<id>]`. For now there are three, landing spots L1 (1112.5, 607.5) m, L2 (1007.5, 367.5) m and L3 (1187.5, 1227.5) m, copied from the output of `web/src/lib/landing.js`. They are temporary: they change when the data does (the config records which `dem.tif` and `hazard.tif` they were computed on and warns when those change) and when the full Jezero dataset is loaded.
+The walker is an astronaut on foot. There are no fixed starts: the app's start is the landing spot the user picks, and the full outing starts at `--start x,y` or at the demo start (below).
 
 Everything is in metres on the local site grid (see [../CONTRACT.md](../CONTRACT.md)). The grid size and cell size are read from `data/out/layers.json`, so switching sites only means new data.
 
@@ -24,12 +24,12 @@ From the repository root, in this order:
 
 ```bash
 python data/make_fake.py             # rebuilds the fake data in data/out/
-python routing/plan_route.py         # routes, back-to-start map and plan
-python routing/export_reach.py       # reach grids for point-to-point routes, into data/out/reach/
+python routing/plan_route.py         # routes, back-to-start map and plan (demo start; or --start x,y)
+python routing/export_landing.py     # landing safety and the cost surface, into data/out/landing/
 python data/validate.py              # checks data/out/ against CONTRACT.md
 ```
 
-`make_fake.py` overwrites `route.geojson`, `plan.json` and `shelter_time.png` with fake versions, so run `plan_route.py` after it every time. Once the real data is in `data/out/`, run `plan_route.py` and `export_reach.py` after any change to `dem.tif`, `hazard.tif`, `waypoints.geojson` or `routing/config.toml`.
+`make_fake.py` overwrites `route.geojson`, `plan.json` and `shelter_time.png` with fake versions, so run `plan_route.py` after it every time. Once the real data is in `data/out/`, run `plan_route.py` and `export_landing.py` after any change to `dem.tif`, `hazard.tif`, `waypoints.geojson` or `routing/config.toml`.
 
 ### Options
 
@@ -38,6 +38,7 @@ python data/validate.py              # checks data/out/ against CONTRACT.md
 | `--in DIR` | folder the inputs are read from | `data/out` |
 | `--out DIR` | folder the outputs are written to | the `--in` folder |
 | `--config FILE` | parameter file | `routing/config.toml` |
+| `--start X,Y` | start of the walk in metres on the site grid (`plan_route.py`, `analysis.py`) | the demo start |
 
 With `--in` and no `--out`, the outputs go into the `--in` folder, never into `data/out`, so a run on a test folder cannot overwrite the shared data by accident.
 
@@ -46,57 +47,71 @@ python routing/plan_route.py --in data/out --out scratch_out     # reads data/ou
 python routing/plan_route.py --config routing/config.toml        # the same parameter file as the default
 ```
 
-The command prints the status, the start, the totals, the three profiles and any warning. A plan that goes over a budget is still written, with status `over_budget` and a warning, so the map stays usable. If the start or a stop is on a blocked cell, a stop cannot be reached, or an input is missing or malformed, the run stops with a message that names the problem, exits with a non-zero code and writes nothing.
+The command prints the status, the start, the totals, the three profiles and any warning. A plan that goes over a budget is still written, with status `over_budget` and a warning, so the map stays usable. If the start is outside the grid, the start or a stop is on a blocked cell, a stop cannot be reached, or an input is missing or malformed, the run stops with a message that names the problem, exits with a non-zero code and writes nothing.
 
-## The starts
+## The start
 
-`[starts.L1]`, `[starts.L2]`, `[starts.L3]` in `config.toml` are the starts (each `value = [x, y]` in metres on the site grid); `start.default` (L1) says which one `plan_route.py` plans the full outing from. Add or remove `[starts.<id>]` tables freely: an id starts with a letter and uses letters, digits, `_` or `-`.
-
-- `plan_route.py` plans from the **default** start only, so the plan, the minutes-back-to-start map and `plan.json` measure from it. `plan.json` `start.landing_id` records which one (`"L1"`); the start's `id` in legs and routes stays `start`.
-- `export_reach.py` exports one set of grids for **every** start.
-- Both scripts check **every** start first. **Error** (non-zero exit, nothing written), naming the start and the reason: outside the grid (or outside the exported area), no DEM data, red cell, slope over the limit (20 deg), inside the cliff buffer, or a sealed gap. For example `start 'L2' (1007.5, 367.5) m, cell (326, 201), is on a blocked cell: red hazard cell. Set starts.L2 in routing/config.toml to passable ground.`
-- **Warning only** (in `plan.json` and `reach.json` `warnings`, naming the start): a start on yellow ground or on slope above 10 deg.
-- **Warning only**: `waypoints.geojson` has a start waypoint more than half a cell from the default start. The config value is used, and the start's id in every output is `start`, whatever id the file uses.
-- **Warning only**: `dem.tif` or `hazard.tif` is not the file the starts were computed on (`start.dem_sha256`, `start.hazard_sha256`). Rerun `web/src/lib/landing.js`, put its three spots in `[starts.*]` and the new hashes in the config.
-
-In `waypoints.geojson`, the start waypoint's `kind` is now `start`, and the old `rover` is still accepted and read as `start`, with a deprecation warning. The shared file keeps `rover` for now, because `data/validate.py` (the contract check) still accepts only `rover` and `stop`.
-
-## Reach export (point-to-point routes)
+There are no fixed starts and no landing-spot coordinates anywhere in `routing/`. In the app, the user clicks a landing zone and the browser uses the landing export below. For the full outing, `plan_route.py` and `analysis.py` take the start on the command line:
 
 ```bash
-python routing/export_reach.py                       # reads data/out, writes data/out/reach/
-python routing/export_reach.py --in DIR              # reads DIR, writes DIR/reach/
-python routing/export_reach.py --in DIR --out DIR2   # reads DIR, writes DIR2
-python routing/export_reach.py --config FILE         # another parameter file
+python routing/plan_route.py --start 1017.5,1112.5   # x,y in metres on the site grid
+python routing/plan_route.py                         # no --start: the demo start
 ```
 
-One search per profile and start gives the best path from that start to every cell. The output is one folder per start, named by its id, and one manifest beside them:
+- With no `--start`, the walk starts at the **demo start**: the centre of the safe landing cell nearest the grid centre. `plan.json` `start` says `"kind": "demo"`, `"name": "Demo start"`, and the command line prints `demo start at (x, y) m`.
+- `plan.json` `start` keeps its keys (`id` is always `start`; `landing_id` is now always `null`) and adds `kind` (`cli` or `demo`), `landing_status` (the landing-safety code name of the start cell) and a `source` that says which of the two it was.
+- **Error** (non-zero exit, nothing written): the start is outside the grid or on a blocked cell (no DEM data, red, slope over 20°, cliff buffer, sealed gap).
+- **Warning only**: a start on yellow ground or on slope above 10°, or a `--start` point that is not a safe or marginal landing spot.
+- A waypoint of kind `start` (or the old `rover`, still read with a deprecation warning) is **never** used as the start; a warning says it is ignored.
+- The stops in `waypoints.geojson` are unverified, so `plan.json` always carries a warning that the outing plan is a demonstration.
+
+## Landing export (landing safety and the browser's cost surface)
+
+```bash
+python routing/export_landing.py                       # reads data/out, writes data/out/landing/
+python routing/export_landing.py --in DIR --out DIR2 --config FILE
+```
+
+**Landing safety.** For every cell, a lander pad of radius `landing.pad_radius_m` (25 m) centred there is judged on the real layers only. Codes in `landing_safety.u8`; when several failures apply the lowest code wins:
+
+| Code | Name | The pad ... |
+| --- | --- | --- |
+| 0 | safe | passes every rule |
+| 1 | marginal | passes, but within 20% (`landing.marginal_pct`) of a limit |
+| 2 | outside_coverage | or its 30 m clearance circle does not fit inside the data |
+| 3 | no_data | has a cell with no DEM or slope value |
+| 4 | hazard_or_clearance | has a non-green or unwalkable cell, or a red / over-limit-slope / cliff-buffer cell lies within 30 m (`landing.hazard_clearance_m`) |
+| 5 | too_steep | best-fit plane tilts more than 5° (`landing.max_pad_slope_deg`) |
+| 6 | height_range | more than 1.0 m from lowest to highest once the tilt is removed (`landing.max_height_range_m`) |
+| 7 | too_rough | more than 0.25 m RMS about that plane (`landing.max_roughness_m`) |
+
+Every limit is in metres or degrees and is a **team assumption pending Nahla** (type `assumption` in `config.toml`). Roughness is computed from `dem.tif`, because `layers.json` lists no roughness layer. Its scale differs from terrain's (RMS about the local mean in a 25 m window, `terrain/thresholds.toml`), so the two numbers are not directly comparable. The 1.0 m height range is a team assumption, not a sourced lander clearance. THEMIS thermal inertia only sets a warning bit (`landing_warn.u8`: 1 = below `landing.ti_warn_below` on the pad, 2 = no value), and only while `layers.json` marks the thermal layer as real.
+
+**Nearest safe cell.** `nearest_safe.u16` holds, for every cell, the row and column (window rows/cols) of the nearest safe cell; `nearest_safe_dist.f32` the distance in metres. A click on a safe or marginal cell stays; any other click moves to the centre of that cell (straight line: a lander comes down from above).
+
+**Cost surface.** `time_rate.f64`, `risk_rate.f64` and `mask.u8` are exactly what `cost.build` makes (float64, so the browser's numbers are the same bits). They do not depend on the profile: the browser computes `time_rate × (1 + w × risk_rate)` for w = 0, 1, 5. The exact search rule is DESIGN section 15; `golden_cases.json` holds 10 landing/destination pairs × 3 profiles (one unreachable, one over budget under its own smaller test budget) to test against.
+
+**Files** (all little-endian, row 0 = north, no header):
 
 ```
-data/out/reach/
-  reach.json                 the manifest: the starts, the grid, encodings, profile weights, budget rule, hashes
-  L1/ L2/ L3/                one folder per start, each with:
-      {fastest,balanced,safest}_time.f32   walking minutes from the start along that profile's path (float32, NaN where unreachable)
-      {fastest,balanced,safest}_dist.f32   metres along that path
-      {fastest,balanced,safest}_risk.f32   risk-minutes along that path
-      {fastest,balanced,safest}_dir.u8     the step back toward the start, codes 0-8 (0 = the start or no path)
-      reason.u8                            0 reachable; otherwise why not: 1 no data, 2 red, 3 slope, 4 buffer, 5 sealed, 6 walled off
+data/out/landing/
+  manifest.json          grid, window, tiles, dtypes, code tables, thresholds, budget rule, edge rule, hashes
+  golden_cases.json      reference paths and totals
+  tiles/<ti>_<tj>/       landing_safety.u8  landing_warn.u8  nearest_safe.u16  nearest_safe_dist.f32
+                         time_rate.f64  risk_rate.f64  mask.u8
 ```
 
-`reach.json` lists the starts (`starts[]`: `id`, `xy_m`, `cell`, `default`, `warnings` and the file paths), so **the front end reads the landing spots from it** instead of computing them. Reason 6 (walled off) depends on the start, so every start has its own `reason.u8`; today all three starts reach the same cells, so it is the same for all three.
+On the 400 x 400 site this is one tile, **4,506,482 bytes (4.51 MB) in 9 files**. For a bigger grid, `landing.window_centre_m` / `landing.window_size_m` choose a window and `landing.tile_size_m` (5120 m, 1024 cells at 5 m) cuts it into tiles; the manifest lists each tile's index, origin, shape and files. The safety codes are computed on the whole site grid and `nearest_safe` on the whole window before tiling, so both are right across tile edges. Paths never leave the window. Crater-scale processing itself is not built yet; only the formats and functions are ready for it.
 
-All grids are little-endian, row 0 = north, `width x height` values, no header. On the 400 x 400 site each start is 6.4 MB (each `.f32` file 640,000 bytes, each `.u8` file 160,000 bytes), so the three starts are **19.21 MB** with the manifest. `reach.crop_m` (a box in metres, or `"full"`) and `reach.downsample` (whole cells per export cell) in `config.toml` shrink it.
+The user gets one-way paths only. A destination is over budget when `walk_min + ingress_min + stop_min > usable_min`, i.e. when its walking time is above `budget.walk_limit_min` in the manifest (212 min: 252 - 15 - 25). `budget.destination_stop = false` leaves the stop out.
 
-After writing, the export deletes the 13 grid files of the old one-start layout and the grid files of any start folder that is no longer in the config, and lists them. Other files are left alone.
-
-The user gets one-way paths only, from the start to the destination. A destination is over budget when `time + ingress_min + stop_min > usable_min`, i.e. when its walking time is above `budget.walk_limit_min` in the manifest (212 min with the current values: 252 - 15 - 25). No return walk is counted. `reach.destination_stop = false` leaves the stop out.
-
-`export_reach.trace(folder, start_id, profile, x, y)` is the reference traceback the app copies: it returns the path as a GeoJSON `LineString` from that start, with `distance_m`, `walk_min`, `risk_min`, `needed_min`, `over_budget` and the cells. The algorithm is written out step by step in [docs/DESIGN.md](docs/DESIGN.md) section 13.
+Reference functions, which the app must reproduce:
 
 ```python
 import sys; sys.path.insert(0, "routing")
-import export_reach
-export_reach.trace("data/out/reach", "L2", "safest", 500.0, 1500.0)
+import export_landing
+export_landing.landing_check(1000.0, 1000.0)                        # {status, reasons, chosen_xy_m, moved_m, ...}
+export_landing.route((1017.5, 1112.5), (1500.0, 1300.0), "safest")  # a GeoJSON Feature
 ```
 
 ## Sweep and sensitivity
@@ -145,7 +160,7 @@ Added fields:
 - `sweep[]`: the w-sweep table (see above), one row per weight.
 - `track[]`: the balanced route sampled every `track.spacing_m` and at each stop, for the slope profile and the timeline: `distance_m`, `x`, `y`, `elev_m`, `slope_deg`, `hazard`, `elapsed_min` (clock time, including time at stops already visited) and `shelter_min` (minutes back to the start, ingress included). Stop arrivals also carry `stop`.
 - `storm_replan`: the fastest way back from points of the route. `points[]` have `x`, `y`, `route_distance_m`, `elapsed_min`, `return_min`, `return_distance_m` and `path` (a list of `[x, y]` ending at the start); `worst` is the index of the point with the longest way back.
-- `start`: the start actually used: `id` (always `start`), `name`, `landing_id` (the default start, for example `L1`), `xy_m`, `cell`, `source`.
+- `start`: the start actually used: `id` (always `start`), `name` ("Start" or "Demo start"), `landing_id` (always `null` now), `xy_m`, `cell`, `source`, `kind` (`cli` or `demo`) and `landing_status`.
 - `shelter_map`: the legend for `shelter_time.png` (`label` "Minutes back to start", the colour stops, `colour_max_min`, `contour_interval_min`, `includes_ingress`), because the app cannot read minutes back out of a picture. The exact value at each point of the walk is in `track[].shelter_min`.
 - `radiation`: the background rate, the median and storm hours found in `radiation.csv`, and `solar_event`. The solar-event dose stays in milligray and is never added to `radiation_dose_usv`.
 - `assumptions`: every parameter from `routing/config.toml`, with its value, unit, type and source.
@@ -156,7 +171,7 @@ The same inputs always give the same file: there is no timestamp. `plan.json` is
 
 ## Parameters
 
-Every number the model uses is in [config.toml](config.toml), each with a `value`, a `unit`, a `type` (`observation`, `proxy` or `scenario`) and a `source`. The loader rejects a missing or misspelt parameter, a value out of range, and a walking speed above the walk-run limit for Mars gravity. Do not relax the slope limits because gravity is low: traction drops with it too.
+Every number the model uses is in [config.toml](config.toml), each with a `value`, a `unit`, a `type` (`observation`, `proxy`, `scenario` or `assumption`) and a `source`. The loader rejects a missing or misspelt parameter, a value out of range, and a walking speed above the walk-run limit for Mars gravity. Do not relax the slope limits because gravity is low: traction drops with it too.
 
 ## Tests
 
@@ -164,7 +179,7 @@ Every number the model uses is in [config.toml](config.toml), each with a `value
 python -m pytest routing/tests
 ```
 
-Most tests use small synthetic grids; each one gets a copy of `config.toml` with its starts (and the hashes of its own `dem.tif` and `hazard.tif`) on its own points (`config_for` in `tests/conftest.py`). `test_end_to_end.py` reads the real `data/out/`, so run `plan_route.py` first.
+Most tests use small synthetic grids and pass each site's start with `--start` (`with_start` in `tests/conftest.py`). `tests/replay.py` is a plain Dijkstra written only from the documented edge rule; it stands in for the browser and must reproduce the golden cases. `test_end_to_end.py` and the real-site golden test read `data/out/`, so run `plan_route.py` and `export_landing.py` first.
 
 ## More
 

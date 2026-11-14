@@ -1,19 +1,19 @@
 v_flat_kmh,slope_max_deg,w,status,walk_min,total_min,risk_min,failed_stop,reason
-2.7,15,0.0,infeasible,,,,rover,"rover 'rover' (Rover) at (1000, 900) m is on a blocked cell: inside the 5 m buffer around over-limit slopes"
-2.7,15,1.0,infeasible,,,,rover,"rover 'rover' (Rover) at (1000, 900) m is on a blocked cell: inside the 5 m buffer around over-limit slopes"
-2.7,15,5.0,infeasible,,,,rover,"rover 'rover' (Rover) at (1000, 900) m is on a blocked cell: inside the 5 m buffer around over-limit slopes"
-2.7,20,0.0,ok,137.8,227.8,39.5,,
-2.7,20,1.0,ok,139.4,229.4,0.0,,
-2.7,20,5.0,ok,139.5,229.5,0.0,,
-2.7,25,0.0,ok,137.3,227.3,27.1,,
-2.7,25,1.0,ok,138.6,228.6,0.0,,
-2.7,25,5.0,ok,138.7,228.7,0.0,,
-3.4,15,0.0,infeasible,,,,rover,"rover 'rover' (Rover) at (1000, 900) m is on a blocked cell: inside the 5 m buffer around over-limit slopes"
-3.4,15,1.0,infeasible,,,,rover,"rover 'rover' (Rover) at (1000, 900) m is on a blocked cell: inside the 5 m buffer around over-limit slopes"
-3.4,15,5.0,infeasible,,,,rover,"rover 'rover' (Rover) at (1000, 900) m is on a blocked cell: inside the 5 m buffer around over-limit slopes"
-3.4,20,0.0,ok,109.4,199.4,31.4,,
-3.4,20,1.0,ok,110.7,200.7,0.0,,
-3.4,20,5.0,ok,110.7,200.7,0.0,,
-3.4,25,0.0,ok,109.0,199.0,21.5,,
-3.4,25,1.0,ok,110.1,200.1,0.0,,
-3.4,25,5.0,ok,110.1,200.1,0.0,,
+2.7,15,0.0,ok,123.2,213.2,12.2,,
+2.7,15,1.0,ok,124.8,214.8,7.0,,
+2.7,15,5.0,ok,129.5,219.5,5.0,,
+2.7,20,0.0,ok,100.2,190.2,14.7,,
+2.7,20,1.0,ok,101.5,191.5,10.9,,
+2.7,20,5.0,ok,105.0,195.0,9.4,,
+2.7,25,0.0,ok,99.8,189.8,14.9,,
+2.7,25,1.0,ok,101.5,191.5,10.9,,
+2.7,25,5.0,ok,105.1,195.1,9.4,,
+3.4,15,0.0,ok,97.8,187.8,9.7,,
+3.4,15,1.0,ok,99.1,189.1,5.6,,
+3.4,15,5.0,ok,102.9,192.9,4.0,,
+3.4,20,0.0,ok,79.5,169.5,11.7,,
+3.4,20,1.0,ok,80.6,170.6,8.7,,
+3.4,20,5.0,ok,83.4,173.4,7.5,,
+3.4,25,0.0,ok,79.3,169.3,11.9,,
+3.4,25,1.0,ok,80.6,170.6,8.7,,
+3.4,25,5.0,ok,83.4,173.4,7.4,,

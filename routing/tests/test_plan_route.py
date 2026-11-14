@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import plan_route
-from conftest import config_for, run_site, with_config, write_full_site
+from conftest import REPO_CONFIG, run_site, with_start, write_full_site
 
 REPO = Path(__file__).resolve().parents[2]
 REAL_OUT = REPO / "data" / "out"
@@ -55,7 +55,7 @@ def test_defaults_read_data_out_and_write_where_they_read():
 def test_in_only_writes_to_the_in_folder(tmp_path, capsys):
     site = make_site(tmp_path / "site")
     before = digest(REAL_OUT) if REAL_OUT.exists() else {}
-    assert plan_route.main([*with_config(site), "--in", str(site)]) == 0
+    assert plan_route.main([*with_start(site), "--in", str(site)]) == 0
     assert set(OUTPUTS) <= {p.name for p in site.iterdir()}
     assert json.loads((site / "plan.json").read_text(encoding="utf-8"))["status"] == "ok"
     assert (digest(REAL_OUT) if REAL_OUT.exists() else {}) == before      # data/out untouched
@@ -67,7 +67,7 @@ def test_out_writes_elsewhere_and_leaves_the_inputs_alone(tmp_path):
     site = make_site(tmp_path / "site")
     before = digest(site)
     out = tmp_path / "elsewhere"
-    assert plan_route.main([*with_config(site), "--in", str(site), "--out", str(out)]) == 0
+    assert plan_route.main([*with_start(site), "--in", str(site), "--out", str(out)]) == 0
     assert sorted(p.name for p in out.iterdir()) == sorted(OUTPUTS)
     assert digest(site) == before
     assert (out / "plan.json").read_bytes() == run_site(site).files["plan.json"]
@@ -86,12 +86,12 @@ def test_in_out_config_options(tmp_path):
 
     # --in with --out: the copy is read and left as it was; the outputs land elsewhere.
     out = tmp_path / "out"
-    assert plan_route.main([*with_config(copy), "--in", str(copy), "--out", str(out)]) == 0
+    assert plan_route.main([*with_start(copy), "--in", str(copy), "--out", str(out)]) == 0
     assert set(OUTPUTS) <= {p.name for p in out.iterdir()}
     assert digest(copy) == copy_before
 
     # --in alone: outputs go into the copy, still not into data/out.
-    assert plan_route.main([*with_config(copy), "--in", str(copy)]) == 0
+    assert plan_route.main([*with_start(copy), "--in", str(copy)]) == 0
     assert digest(copy, OUTPUTS) == digest(out, OUTPUTS)
 
     # --config: another parameter file changes the result.
@@ -100,7 +100,7 @@ def test_in_out_config_options(tmp_path):
     tight = tmp_path / "tight.toml"
     tight.write_text(text.replace("value = 360\n", "value = 100\n", 1), encoding="utf-8")
     out2 = tmp_path / "out2"
-    assert plan_route.main([*with_config(copy), "--in", str(copy), "--out", str(out2), "--config", str(tight)]) == 0
+    assert plan_route.main([*with_start(copy), "--in", str(copy), "--out", str(out2), "--config", str(tight)]) == 0
     assert json.loads((out2 / "plan.json").read_text(encoding="utf-8"))["status"] == "over_budget"
     assert json.loads((out / "plan.json").read_text(encoding="utf-8"))["status"] == "ok"
 
@@ -110,10 +110,10 @@ def test_in_out_config_options(tmp_path):
 # ---- over budget and failures ------------------------------------------------
 def test_over_budget_is_still_written_with_a_warning(tmp_path, capsys):
     site = make_site(tmp_path / "site")
-    text = config_for(site).read_text(encoding="utf-8")
+    text = REPO_CONFIG.read_text(encoding="utf-8")
     cfg = tmp_path / "tight.toml"
     cfg.write_text(text.replace("value = 360\n", "value = 100\n", 1), encoding="utf-8")
-    assert plan_route.main([*with_config(site), "--in", str(site), "--config", str(cfg)]) == 0
+    assert plan_route.main([*with_start(site), "--in", str(site), "--config", str(cfg)]) == 0
     plan = json.loads((site / "plan.json").read_text(encoding="utf-8"))
     assert plan["status"] == "over_budget" and [c["ok"] for c in plan["checks"]][0] is False
     out = capsys.readouterr().out
@@ -127,7 +127,7 @@ def test_blocked_stop_fails_by_name_and_writes_nothing(tmp_path, capsys):
     hazard[17, 26] = 2
     site = make_site(tmp_path / "site", hazard=hazard)
     out = tmp_path / "out"
-    assert plan_route.main([*with_config(site), "--in", str(site), "--out", str(out)]) == 2
+    assert plan_route.main([*with_start(site), "--in", str(site), "--out", str(out)]) == 2
     err = capsys.readouterr().err
     assert "stop2" in err and "South stop" in err and "red hazard cell" in err
     assert not out.exists()                                        # nothing written
@@ -139,7 +139,7 @@ def test_unreachable_stop_fails_and_overwrites_nothing(tmp_path, capsys):
     hazard[:, 15] = 2
     site = make_site(tmp_path / "site", hazard=hazard)
     (site / "plan.json").write_text('{"old": true}', encoding="utf-8")
-    assert plan_route.main([*with_config(site), "--in", str(site)]) == 2
+    assert plan_route.main([*with_start(site), "--in", str(site)]) == 2
     assert "cannot be reached" in capsys.readouterr().err
     assert (site / "plan.json").read_text(encoding="utf-8") == '{"old": true}'
 
@@ -162,7 +162,7 @@ def test_malformed_inputs_exit_non_zero_with_a_message(tmp_path, capsys, breakag
         data = json.loads((site / "waypoints.geojson").read_text(encoding="utf-8"))
         data["features"][1]["properties"]["kind"] = "start"
         (site / "waypoints.geojson").write_text(json.dumps(data), encoding="utf-8")
-    assert plan_route.main([*with_config(site), "--in", str(site)]) == 2
+    assert plan_route.main([*with_start(site), "--in", str(site)]) == 2
     assert match in capsys.readouterr().err
     assert not any((site / n).exists() for n in OUTPUTS)
 
@@ -171,7 +171,7 @@ def test_bad_config_exits_non_zero(tmp_path, capsys):
     site = make_site(tmp_path / "site")
     cfg = tmp_path / "broken.toml"
     cfg.write_text("[walking.v_flat_kmh\n", encoding="utf-8")
-    assert plan_route.main([*with_config(site), "--in", str(site), "--config", str(cfg)]) == 2
+    assert plan_route.main([*with_start(site), "--in", str(site), "--config", str(cfg)]) == 2
     assert "broken.toml" in capsys.readouterr().err
     assert not (site / "plan.json").exists()
     assert plan_route.main(["--in", str(tmp_path / "missing_folder")]) == 2
@@ -181,7 +181,7 @@ def test_bad_config_exits_non_zero(tmp_path, capsys):
 # ---- the script and validate.py ----------------------------------------------
 def test_script_runs_and_validate_passes_without_warnings(tmp_path):
     site = make_site(tmp_path / "site")
-    run = subprocess.run([sys.executable, "-B", str(SCRIPT), *with_config(site), "--in", str(site)],
+    run = subprocess.run([sys.executable, "-B", str(SCRIPT), *with_start(site), "--in", str(site)],
                          capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     assert set(OUTPUTS) <= {p.name for p in site.iterdir()}
@@ -194,7 +194,7 @@ def test_validate_warns_only_about_fake_layers_not_plan_or_routes(tmp_path):
     site = tmp_path / "site"
     write_full_site(site, np.zeros(SHAPE, np.float32), np.zeros(SHAPE, np.uint8), CELL,
                     [("start", "Start", START_KIND, *centre(10, 2)), ("stop1", "A", "stop", *centre(3, 20))], fake=True)
-    assert plan_route.main([*with_config(site), "--in", str(site)]) == 0
+    assert plan_route.main([*with_start(site), "--in", str(site)]) == 0
     val = subprocess.run([sys.executable, "-B", str(VALIDATE), str(site)], capture_output=True, text=True)
     assert val.returncode == 0
     assert "plan.json" not in val.stdout and "route.geojson" not in val.stdout
@@ -204,5 +204,5 @@ def test_summary_mentions_fake_inputs(tmp_path, capsys):
     site = tmp_path / "site"
     write_full_site(site, np.zeros(SHAPE, np.float32), np.zeros(SHAPE, np.uint8), CELL,
                     [("start", "Start", START_KIND, *centre(10, 2)), ("stop1", "A", "stop", *centre(3, 20))], fake=True)
-    plan_route.main([*with_config(site), "--in", str(site)])
+    plan_route.main([*with_start(site), "--in", str(site)])
     assert "fake data" in capsys.readouterr().out

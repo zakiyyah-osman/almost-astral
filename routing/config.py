@@ -10,14 +10,13 @@ is out of range, and a walking speed at or above the walk-run limit (DESIGN sect
 import copy
 import difflib
 import math
-import re
 import tomllib
 from pathlib import Path
 
 DEFAULT_PATH = Path(__file__).resolve().parent / "config.toml"
 
 REQUIRED_KEYS = ("value", "unit", "type", "source")
-PARAM_TYPES = ("observation", "proxy", "scenario")
+PARAM_TYPES = ("observation", "proxy", "scenario", "assumption")
 
 # Every parameter of DESIGN section 10. A file with one missing or one more is rejected.
 EXPECTED_PARAMS = (
@@ -38,8 +37,10 @@ EXPECTED_PARAMS = (
     "shelter_map.contour_interval_min", "shelter_map.colour_max_min",
     "track.spacing_m",
     "search.connectivity",
-    "start.default", "start.dem_sha256", "start.hazard_sha256",
-    "reach.crop_m", "reach.downsample", "reach.destination_stop",
+    "budget.destination_stop",
+    "landing.pad_radius_m", "landing.max_pad_slope_deg", "landing.max_roughness_m",
+    "landing.max_height_range_m", "landing.hazard_clearance_m", "landing.marginal_pct",
+    "landing.ti_warn_below", "landing.window_centre_m", "landing.window_size_m", "landing.tile_size_m",
 )
 
 # Parameters whose value is not a single number.
@@ -47,16 +48,14 @@ LIST_PARAMS = {
     "profiles.sweep_w", "sensitivity.v_flat_kmh", "sensitivity.slope_max_deg", "sensitivity.w",
 }
 STRING_PARAMS = {"timeline.stop_order": ("as_listed", "optimise")}
-BOOL_PARAMS = {"reach.destination_stop"}
-SHA256_PARAMS = {"start.dem_sha256", "start.hazard_sha256"}     # 64 lower-case hex digits
-START_DEFAULT = "start.default"             # the id of the default start
-STARTS_SECTION = "starts"                   # [starts.<id>] tables: [x, y] in metres, any number of them
-START_ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
-CROP_PARAM = "reach.crop_m"                 # "full", or [x0, y0, x1, y1] in metres
-CROP_FULL = "full"
+BOOL_PARAMS = {"budget.destination_stop"}
+WINDOW_CENTRE = "landing.window_centre_m"   # "site", or [x, y] in metres
+WINDOW_SIZE = "landing.window_size_m"       # "full", or [width, height] in metres
+SITE_CENTRE = "site"
+FULL_WINDOW = "full"
 # Parameters whose value is not a number or a list of numbers.
-NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, *SHA256_PARAMS, START_DEFAULT, CROP_PARAM)
-INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity", "reach.downsample"}
+NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, WINDOW_CENTRE, WINDOW_SIZE)
+INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity"}
 ALLOWED_VALUES = {"search.connectivity": (4, 8)}
 
 
@@ -95,7 +94,14 @@ RANGES = {
     "storm.sample_spacing_m": _POS,
     "shelter_map.contour_interval_min": _POS,
     "track.spacing_m": _POS,
-    "reach.downsample": _range(1),
+    "landing.pad_radius_m": _POS,
+    "landing.max_pad_slope_deg": _range(0, 90, lo_in=False, hi_in=False),
+    "landing.max_roughness_m": _POS,
+    "landing.max_height_range_m": _POS,
+    "landing.hazard_clearance_m": _NONNEG,
+    "landing.marginal_pct": _range(0, 100, hi_in=False),
+    "landing.ti_warn_below": _NONNEG,
+    "landing.tile_size_m": _POS,
 }
 
 
@@ -133,7 +139,6 @@ class Config:
         self.raw = copy.deepcopy(raw)
         self._check_names()
         self._validate_parameters()
-        self._check_starts()
         self._check_profile_weights()
         self._check_gravity()
 
@@ -183,8 +188,6 @@ class Config:
         for section, params in self.raw.items():
             if not isinstance(params, dict):
                 raise ConfigError(f"[{section}] must be a table of parameters")
-            if section == STARTS_SECTION:
-                continue                    # any number of [starts.<id>] tables, checked in _check_starts
             found.extend(f"{section}.{name}" for name in params)
         missing = [k for k in EXPECTED_PARAMS if k not in found]
         unknown = [k for k in found if k not in EXPECTED_PARAMS]
@@ -231,14 +234,10 @@ class Config:
     @classmethod
     def _check_value(cls, label, value):
         """Finite numbers (not bool) in range, lists of them for list parameters, one string."""
-        if label.startswith(STARTS_SECTION + "."):
-            cls._check_start_xy(label, value)
-        elif label in SHA256_PARAMS:
-            if not (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)):
-                raise ConfigError(f"{label}: must be a sha256 as 64 lower-case hex digits, got {value!r}")
-        elif label == START_DEFAULT:
-            if not (isinstance(value, str) and START_ID.fullmatch(value)):
-                raise ConfigError(f"{label}: must be the id of a start, as text, got {value!r}")
+        if label == WINDOW_CENTRE:
+            cls._check_pair(label, value, SITE_CENTRE, positive=False)
+        elif label == WINDOW_SIZE:
+            cls._check_pair(label, value, FULL_WINDOW, positive=True)
         elif label in STRING_PARAMS:
             allowed = STRING_PARAMS[label]
             if value not in allowed:
@@ -246,8 +245,6 @@ class Config:
         elif label in BOOL_PARAMS:
             if not isinstance(value, bool):
                 raise ConfigError(f"{label}: must be true or false, got {value!r}")
-        elif label == CROP_PARAM:
-            cls._check_crop(label, value)
         elif label in LIST_PARAMS:
             if not isinstance(value, list) or not value or not all(_is_number(v) for v in value):
                 raise ConfigError(f"{label}: must be a non-empty list of numbers, got {value!r}")
@@ -257,54 +254,17 @@ class Config:
             cls._check_number(label, value)
 
     @staticmethod
-    def _check_start_xy(label, value):
-        """A start: [x, y] in metres, two finite numbers that are not negative."""
+    def _check_pair(label, value, word, positive):
+        """The text `word`, or two finite numbers in metres: > 0 when `positive`, else >= 0."""
+        if value == word:
+            return
         ok = isinstance(value, list) and len(value) == 2 and all(_is_number(v) and math.isfinite(v) for v in value)
         if not ok:
-            raise ConfigError(f"{label}: must be [x, y], two finite numbers in metres, got {value!r}")
-        if min(value) < 0:
-            raise ConfigError(f"{label}: x and y must be 0 or more, got {value!r}")
-
-    def _check_starts(self):
-        """At least one [starts.<id>] with a valid id, and start.default names one of them."""
-        starts = self.raw.get(STARTS_SECTION)
-        if not isinstance(starts, dict) or not starts:
-            raise ConfigError("no starts: add at least one [starts.<id>] table with value = [x, y]")
-        for sid in starts:
-            if not START_ID.fullmatch(sid):
-                raise ConfigError(
-                    f"[starts.{sid}]: a start id must begin with a letter and use only letters, digits, "
-                    "'_' or '-'"
-                )
-        default = self.value(START_DEFAULT)
-        if default not in starts:
-            raise ConfigError(
-                f"{START_DEFAULT} = {default!r} is not one of the starts: {', '.join(starts)}"
-            )
-
-    def starts(self):
-        """The starts as {id: (x, y)} in metres, in config order."""
-        return {sid: (float(p["value"][0]), float(p["value"][1])) for sid, p in self.raw[STARTS_SECTION].items()}
-
-    def default_start_id(self):
-        return self.value(START_DEFAULT)
-
-    @staticmethod
-    def _check_crop(label, value):
-        """"full", or [x0, y0, x1, y1]: finite metres with x0 < x1 and y0 < y1 (the grid is checked later)."""
-        if value == CROP_FULL:
-            return
-        ok = (
-            isinstance(value, list) and len(value) == 4
-            and all(_is_number(v) and math.isfinite(v) for v in value)
-        )
-        if not ok:
-            raise ConfigError(
-                f'{label}: must be "{CROP_FULL}" or [x0, y0, x1, y1] of finite numbers in metres, got {value!r}'
-            )
-        x0, y0, x1, y1 = value
-        if not (0 <= x0 < x1 and 0 <= y0 < y1):
-            raise ConfigError(f"{label}: need 0 <= x0 < x1 and 0 <= y0 < y1, got {value!r}")
+            raise ConfigError(f'{label}: must be "{word}" or two finite numbers in metres, got {value!r}')
+        if positive and min(value) <= 0:
+            raise ConfigError(f"{label}: both values must be > 0, got {value!r}")
+        if not positive and min(value) < 0:
+            raise ConfigError(f"{label}: both values must be 0 or more, got {value!r}")
 
     def _check_profile_weights(self):
         """w_fastest is exactly 0 (risk ignored) and w_fastest <= w_balanced <= w_safest."""

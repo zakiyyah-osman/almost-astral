@@ -26,6 +26,11 @@ ROUTE_FILES = {
     "safest": "route_safest.geojson",
 }
 ROUTE_SOURCE = "routing model over dem.tif and hazard.tif"
+START_SOURCES = {
+    "cli": "command line: plan_route.py --start x,y",
+    "demo": ("demo start: the safe landing cell nearest the grid centre (routing/landing.py, [landing] "
+             "thresholds in routing/config.toml); no --start was given"),
+}
 COORD_DECIMALS = 3          # metres; cell centres can be fractions of a metre on a fine grid
 
 
@@ -178,8 +183,9 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
         "start": {
             "id": tour.start.id, "name": tour.start.name, "landing_id": tour.start.landing_id,
             "xy_m": xy((tour.start.x, tour.start.y)), "cell": [int(v) for v in tour.start.cell],
-            "source": f"routing/config.toml starts.{tour.start.landing_id}, the default start "
-                      "(a landing spot, temporary)",
+            "source": START_SOURCES.get(tour.start.start_kind, "set in code"),
+            "kind": tour.start.start_kind,
+            "landing_status": tour.start.landing_status,
         },
         "inputs": {
             "site": layers.get("site", {}).get("name"),
@@ -231,7 +237,7 @@ def write_files(out_dir, files):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
-        path = out_dir / name                   # a name may hold folders: "L1/fastest_time.f32"
+        path = out_dir / name                   # a name may hold folders: "tiles/0_0/mask.u8"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     return [out_dir / name for name in files]

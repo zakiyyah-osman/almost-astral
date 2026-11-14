@@ -1,0 +1,328 @@
+{
+  "format_version": 1,
+  "generated_by": "routing/export_landing.py",
+  "site": "Jezero crater, delta front (eastern lobe)",
+  "fake": false,
+  "fake_rule": "true while any layer source in layers.json contains FAKE (same as plan.json inputs_fake)",
+  "grid": {
+    "width": 400,
+    "height": 400,
+    "cell_m": 5.0,
+    "origin_m": [0.0, 0.0],
+    "extent_m": [2000.0, 2000.0],
+    "row0": "north edge",
+    "window": {
+      "centre_m": "site",
+      "size_m": "full",
+      "site_rows": [0, 400],
+      "site_cols": [0, 400]
+    },
+    "site_grid": {
+      "width": 400,
+      "height": 400,
+      "cell_m": 5.0
+    }
+  },
+  "layout": {
+    "order": "row-major inside each tile, row 0 = north edge, index = row * tile_width + col",
+    "header": "none: raw values only",
+    "window_cell_of_point": "col = floor((x - origin_x) / cell_m), row = height - 1 - floor((y - origin_y) / cell_m)",
+    "window_cell_centre": "x = origin_x + (col + 0.5) * cell_m, y = origin_y + (height - row - 0.5) * cell_m",
+    "tile_of_cell": "the tile whose row0 <= row < row0 + shape[0] and col0 <= col < col0 + shape[1]",
+    "nearest_safe": "two uint16 per cell: [2 * i] = row, [2 * i + 1] = col, in WINDOW rows/cols (not tile rows/cols)",
+    "search_bound": "paths never leave the window: the browser only searches inside it"
+  },
+  "byte_order": "little",
+  "grids": {
+    "landing_safety": {
+      "file": "landing_safety.u8",
+      "dtype": "uint8",
+      "values_per_cell": 1,
+      "meaning": "safety code (safety_codes)"
+    },
+    "landing_warn": {
+      "file": "landing_warn.u8",
+      "dtype": "uint8",
+      "values_per_cell": 1,
+      "meaning": "warning bits (warning_bits)"
+    },
+    "nearest_safe": {
+      "file": "nearest_safe.u16",
+      "dtype": "uint16",
+      "values_per_cell": 2,
+      "meaning": "row, col of the nearest safe cell, window rows/cols"
+    },
+    "nearest_safe_dist": {
+      "file": "nearest_safe_dist.f32",
+      "dtype": "float32",
+      "values_per_cell": 1,
+      "meaning": "m, cell centre to cell centre"
+    },
+    "time_rate": {
+      "file": "time_rate.f64",
+      "dtype": "float64",
+      "values_per_cell": 1,
+      "meaning": "min/m, -1 where blocked"
+    },
+    "risk_rate": {
+      "file": "risk_rate.f64",
+      "dtype": "float64",
+      "values_per_cell": 1,
+      "meaning": "risk-min per min walked, 0 where blocked"
+    },
+    "mask": {
+      "file": "mask.u8",
+      "dtype": "uint8",
+      "values_per_cell": 1,
+      "meaning": "0 passable, else the blocked reason (mask_codes)"
+    }
+  },
+  "tile_size_m": 5120,
+  "tile_cells": 1024,
+  "tiles": [
+    {
+      "index": [0, 0],
+      "row0": 0,
+      "col0": 0,
+      "shape": [400, 400],
+      "origin_m": [0.0, 0.0],
+      "files": {
+        "landing_safety": "tiles/0_0/landing_safety.u8",
+        "landing_warn": "tiles/0_0/landing_warn.u8",
+        "nearest_safe": "tiles/0_0/nearest_safe.u16",
+        "nearest_safe_dist": "tiles/0_0/nearest_safe_dist.f32",
+        "time_rate": "tiles/0_0/time_rate.f64",
+        "risk_rate": "tiles/0_0/risk_rate.f64",
+        "mask": "tiles/0_0/mask.u8"
+      }
+    }
+  ],
+  "safety_codes": [
+    {
+      "code": 0,
+      "name": "safe",
+      "text": "safe: the pad passes every rule"
+    },
+    {
+      "code": 1,
+      "name": "marginal",
+      "text": "marginal: passes, but within 20% of at least one limit"
+    },
+    {
+      "code": 2,
+      "name": "outside_coverage",
+      "text": "outside coverage: the 30 m circle around this point does not fit inside the data"
+    },
+    {
+      "code": 3,
+      "name": "no_data",
+      "text": "no data: a pad cell has no DEM or slope value"
+    },
+    {
+      "code": 4,
+      "name": "hazard_or_clearance",
+      "text": "hazard: a pad cell is not green or cannot be walked on, or a red, over-limit-slope or cliff-buffer cell is within 30 m"
+    },
+    {
+      "code": 5,
+      "name": "too_steep",
+      "text": "too steep: the pad tilts more than 5 deg"
+    },
+    {
+      "code": 6,
+      "name": "height_range",
+      "text": "height range: more than 1 m between the highest and lowest point once the tilt is removed"
+    },
+    {
+      "code": 7,
+      "name": "too_rough",
+      "text": "too rough: more than 0.25 m RMS about the pad's best-fit plane"
+    }
+  ],
+  "safety_order": "the lowest failure code wins: outside_coverage > no_data > hazard_or_clearance > too_steep > height_range > too_rough",
+  "safety_counts": {
+    "safe": 30564,
+    "marginal": 15243,
+    "outside_coverage": 9456,
+    "hazard_or_clearance": 66518,
+    "too_steep": 7731,
+    "height_range": 30326,
+    "too_rough": 162
+  },
+  "warning_bits": [
+    {
+      "bit": 1,
+      "name": "low_thermal_inertia"
+    },
+    {
+      "bit": 2,
+      "name": "no_thermal_inertia_data"
+    }
+  ],
+  "landing_rule": "a click on a safe (0) or marginal (1) cell stays where it is; any other click moves to the centre of nearest_safe, a straight-line move (the lander comes down from above)",
+  "thresholds": {
+    "pad_radius_m": {
+      "value": 25,
+      "unit": "m",
+      "type": "assumption",
+      "source": "Team assumption (Tushaar), pending Nahla: radius of the circular lander pad that must be safe"
+    },
+    "max_pad_slope_deg": {
+      "value": 5,
+      "unit": "deg",
+      "type": "assumption",
+      "source": "Team assumption (Tushaar), pending Nahla: tilt of the best-fit plane through the pad's DEM cells"
+    },
+    "max_roughness_m": {
+      "value": 0.25,
+      "unit": "m (RMS of the DEM about the pad's best-fit plane)",
+      "type": "assumption",
+      "source": "Team assumption (Tushaar), pending Nahla: half of the yellow (careful) roughness of 0.5 m in terrain/thresholds.toml [roughness], so a pad is clearly smoother than ground that is only walkable with care. Scale differs: terrain measures RMS about the local mean in a 5 x 5 cell (25 m) window on the 5 m grid; this is RMS about a plane over the whole pad (50 m across) on the same grid"
+    },
+    "max_height_range_m": {
+      "value": 1.0,
+      "unit": "m (highest minus lowest DEM cell on the pad, after removing the best-fit plane)",
+      "type": "assumption",
+      "source": "Team assumption (Tushaar), pending Nahla: catches a single step, mound or pit that the RMS roughness averages away; not a sourced lander clearance"
+    },
+    "hazard_clearance_m": {
+      "value": 30,
+      "unit": "m (from the pad centre)",
+      "type": "assumption",
+      "source": "Team assumption (Tushaar), pending Nahla: no red cell, over-limit slope cell or cliff-buffer cell this close to the pad centre"
+    },
+    "marginal_pct": {
+      "value": 20,
+      "unit": "percent of a limit",
+      "type": "assumption",
+      "source": "Team assumption (Tushaar): a pad that passes but is within this share of any limit is marked marginal"
+    },
+    "ti_warn_below": {
+      "value": 150,
+      "unit": "J m^-2 K^-1 s^-1/2",
+      "type": "assumption",
+      "source": "terrain/thresholds.toml [thermal_inertia] yellow_below (loose sand; terrain's starting value, not checked against Jezero data). Used only for a warning flag, never a hard rule, and only while layers.json marks the thermal layer as real"
+    }
+  },
+  "roughness_source": "computed from dem.tif: RMS about the best-fit plane over the pad",
+  "roughness_note": "Scale caveat: terrain's roughness (terrain/thresholds.toml [roughness], terrain/hazard_map.py) is the RMS about the local mean in a 5 x 5 cell (25 m) window on the 5 m grid; the older terrain/hazards pipeline (terrain/config/hazards.yaml) used a 5 m window on 1 m data. Ours is the RMS about one best-fit plane over the whole pad (50 m across) on the 5 m grid, so the numbers are not directly comparable. The limit is a team assumption pending Nahla.",
+  "height_range_note": "landing.max_height_range_m (1.0 m by default) is a team assumption, not a sourced lander clearance: the highest minus the lowest pad cell after removing the best-fit plane.",
+  "thermal_inertia": {
+    "checked": true,
+    "source": "thermal_inertia.tif (layer 'thermal' in layers.json)"
+  },
+  "mask_codes": [
+    {
+      "code": 0,
+      "name": "reachable",
+      "text": "reachable"
+    },
+    {
+      "code": 1,
+      "name": "nodata",
+      "text": "no DEM data"
+    },
+    {
+      "code": 2,
+      "name": "red",
+      "text": "red hazard cell"
+    },
+    {
+      "code": 3,
+      "name": "slope",
+      "text": "slope over the limit (20 deg)"
+    },
+    {
+      "code": 4,
+      "name": "buffer",
+      "text": "inside the 5 m buffer around over-limit slopes"
+    },
+    {
+      "code": 5,
+      "name": "sealed",
+      "text": "sealed gap between blocked cells"
+    },
+    {
+      "code": 6,
+      "name": "walled_off",
+      "text": "passable, but walled off from the start by blocked cells"
+    }
+  ],
+  "mask_note": "codes 1-5 are stored; 0 reachable and 6 walled off are results of a search, never stored",
+  "profiles": {
+    "fastest": {
+      "w": 0.0
+    },
+    "balanced": {
+      "w": 1.0
+    },
+    "safest": {
+      "w": 5.0
+    }
+  },
+  "search": {
+    "connectivity": 8,
+    "edge_rule": {
+      "neighbours": "8 (search.connectivity); a neighbour outside the window or with mask != 0 is never entered",
+      "step_length_m": "straight: cell_m; diagonal: sqrt(cell_m * cell_m + cell_m * cell_m)",
+      "planning_rate": "p = time_rate * (1 + w * risk_rate), float64, in that order",
+      "step_cost": "L * (p_from + p_to) / 2, float64, in that order",
+      "update": "relax a neighbour only when g + step_cost < its current g (strictly less)",
+      "totals": "along the found path, from the landing cell, summed in path order in float64: distance_m += step_m; walk_min += step_m * (time_rate_a + time_rate_b) / 2; risk_min += step_m * (time_rate_a * risk_rate_a + time_rate_b * risk_rate_b) / 2; where step_m is cell_m straight and cell_m * sqrt(2) diagonal",
+      "sealed_gaps": "already closed in the mask (cost.py), so no corner check is needed",
+      "see": "routing/docs/DESIGN.md section 15"
+    }
+  },
+  "budget": {
+    "eva_max_min": 360,
+    "reserve_pct": 30,
+    "usable_min": 252.0,
+    "ingress_min": 15,
+    "stop_min": 25,
+    "destination_stop": true,
+    "walk_limit_min": 212.0,
+    "rule": "one way only: needed_min = walk_min + ingress_min + stop_min; over budget when needed_min > usable_min, i.e. when walk_min > walk_limit_min. No return walk is counted."
+  },
+  "golden_cases": "golden_cases.json",
+  "config_sha256": "35840654e19ad39c7359c9c118dddee08e2900d0bde772640a77001f1050f642",
+  "inputs_sha256": {
+    "dem.tif": "33f8e75891c43440beb248355acff907b160b029e6835d18ac2dabdf53a6fae4",
+    "hazard.tif": "b75b7f6e01cb347cd93ecb469fe5f7c18048bd405d3a199b3dd667d3751d60da",
+    "thermal_inertia.tif": "78a49e0ee1bdc974acf7fb3731d3d475c939ac1a075a6ec0882fe9a206c9877e"
+  },
+  "files": {
+    "tiles/0_0/landing_safety.u8": {
+      "bytes": 160000,
+      "sha256": "dc6f2ba6dcc63c69c5274988986188dc51b9cac65f845c5077a3421af854b8ed"
+    },
+    "tiles/0_0/landing_warn.u8": {
+      "bytes": 160000,
+      "sha256": "b9ce164d30e4101b009fe4be765a070593cfbdd48f897853de159a8c177fabe8"
+    },
+    "tiles/0_0/nearest_safe.u16": {
+      "bytes": 640000,
+      "sha256": "2fcaac61b5a1312429108cbdbbc599e18b57c672dca484df90d1c20b79629681"
+    },
+    "tiles/0_0/nearest_safe_dist.f32": {
+      "bytes": 640000,
+      "sha256": "bfe8947d9204d45a6c1a7799f90048a9f6b9fad75fbc902bab45672158511c70"
+    },
+    "tiles/0_0/time_rate.f64": {
+      "bytes": 1280000,
+      "sha256": "8f12d1ed82aa57cccd76aeb9f89716dab43b286c8e4286513d4ad5fa8879b7eb"
+    },
+    "tiles/0_0/risk_rate.f64": {
+      "bytes": 1280000,
+      "sha256": "dbb7a5ac670794ba1fd666fe9a41d8a98fa09fc543d692e8691ae963d0247f1b"
+    },
+    "tiles/0_0/mask.u8": {
+      "bytes": 160000,
+      "sha256": "8fd66aa907485511e9158734230dbb2a6c02cc7b739c9bc56b72431f7a5bc83d"
+    },
+    "golden_cases.json": {
+      "bytes": 174525,
+      "sha256": "c7a9f46ce2f338cfd9eea161ee86fa581a97e6e1867ba424d26e03adb1fcfca5"
+    }
+  },
+  "warnings": []
+}

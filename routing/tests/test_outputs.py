@@ -153,19 +153,13 @@ def test_added_fields_use_one_decimal(result):
 
 def test_assumptions_match_config(result):
     plan = load(result, "plan.json")
-    # the site's own config sets the starts and the data hashes; everything else is the shipped config
-    def rest(a):
-        return {k: v for k, v in a.items() if not k.startswith(("start.", "starts."))}
-    expected = rest(CFG.assumptions())
-    assert rest(plan["assumptions"]) == expected
-    assert plan["assumptions"]["start.default"]["value"] == "L1"
-    assert plan["assumptions"]["starts.L1"]["value"] == list(centre(10, 2))
-    assert [k for k in plan["assumptions"] if k.startswith("starts.")] == ["starts.L1"]
+    assert plan["assumptions"] == CFG.assumptions()          # the whole config, copied
+    assert not any(k.startswith(("start.", "starts.", "reach.")) for k in plan["assumptions"])
     assert plan["assumptions"]["walking.v_flat_kmh"] == {
         "value": 2.7, "unit": "km/h", "type": "scenario",
         "source": "NASA Apollo planning value for walkbacks over 1 hour",
     }
-    assert len(plan["assumptions"]) == len(expected) + 4      # start.default, the two hashes, starts.L1
+    assert plan["assumptions"]["landing.pad_radius_m"]["type"] == "assumption"
 
 
 def test_two_runs_identical(tmp_path):
@@ -193,7 +187,11 @@ def test_plan_has_no_top_level_fake_key_and_tracks_fake_inputs(tmp_path):
 
 def test_plan_sections(result):
     plan = load(result, "plan.json")
-    assert plan["status"] == "ok" and plan["warnings"] == []
+    assert plan["status"] == "ok"
+    # only the start and stop notes: the start waypoint is ignored, (10, 2) is too close to the edge
+    # for a lander pad, and the stops are unverified
+    expected = ("is not a safe landing spot", "it is ignored", "are unverified")
+    assert len(plan["warnings"]) == 3 and all(any(e in w for e in expected) for w in plan["warnings"])
     assert [c["id"] for c in plan["checks"]] == ["reserve", "abort", "radiation"]
     for c in plan["checks"]:
         assert set(c) == {"id", "ok", "value", "limit", "unit", "message"} and c["ok"] is True

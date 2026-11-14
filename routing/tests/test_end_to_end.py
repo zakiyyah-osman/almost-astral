@@ -89,14 +89,12 @@ def test_plan_status_ok(real):
     assert plan["status"] == "ok"
     assert all(c["ok"] for c in plan["checks"])
     assert all(p["status"] == "ok" for p in plan["profiles"].values())
-    # Only the expected start warnings while waypoints.geojson still has the old rover point:
-    # its kind 'rover' is deprecated, and its position is not the default start (the config wins).
-    # A data-hash warning (the starts were computed on other data) is not a failure either.
-    expected = ("uses kind 'rover', which is deprecated", "more than half a cell from the default start",
-                "is not the file the starts were computed on")
+    # Only the expected notes: waypoints.geojson still has the old rover point (deprecated kind, and
+    # ignored as a start), the demo start is used, and the stops are unverified.
+    expected = ("uses kind 'rover', which is deprecated", "it is ignored", "the walk starts at the demo start",
+                "are unverified")
     assert all(any(e in w for e in expected) for w in plan["warnings"]), plan["warnings"]
-    default = CFG.default_start_id()
-    assert plan["start"]["landing_id"] == default and plan["start"]["xy_m"] == list(CFG.starts()[default])
+    assert plan["start"]["kind"] == "demo" and plan["start"]["landing_status"] == "safe"
 
 
 def test_runs_on_120x80_grid(wide_site, tmp_path):

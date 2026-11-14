@@ -1,7 +1,10 @@
 """The w-sweep and the sensitivity runs (DESIGN section 4.8).
 
     python routing/analysis.py                                  # reads data/out, writes routing/reports
-    python routing/analysis.py --in DIR --config FILE --reports DIR
+    python routing/analysis.py --in DIR --config FILE --reports DIR --start X,Y
+
+The start is --start, or the demo start (the safe landing cell nearest the grid centre), as in
+plan_route.py.
 
 As a script this writes CSV files into --reports and nothing else: it has no --out and never
 writes to data/out. plan_route.py calls `sweep` for the `sweep` block of plan.json, and this
@@ -125,13 +128,13 @@ def write_csv(path, fields, rows):
     return path
 
 
-def run(in_dir, config_path=None):
+def run(in_dir, config_path=None, start_xy=None):
     """(sweep rows, sensitivity rows) for the site in `in_dir`. Writes nothing."""
     cfg = config_mod.load_config(config_path)
     site = grid_mod.load_site(in_dir)
     start_wp, stops = tour_mod.split_waypoints(tour_mod.load_waypoints(in_dir, site.grid))
     model = cost_mod.build(site.dem, site.hazard, site.slope, site.grid, cost_mod.Params.from_config(cfg))
-    start, _ = tour_mod.resolve_start(cfg, model, site.hazard, start_wp)
+    start, _ = tour_mod.choose_start(cfg, site, model, start_xy, start_wp)
     plan = tour_mod.plan_routes(model, start, stops, cfg)
     rad = timeline_mod.radiation_info(cfg, in_dir)
     return sweep(model, start, plan.order, cfg), sensitivity(site, start, stops, cfg, rad)
@@ -145,6 +148,15 @@ def write_reports(reports_dir, sweep_rows, sensitivity_rows):
     ]
 
 
+def _parse_xy(text):
+    """'x,y' in metres -> (x, y), for --start (the same rule as plan_route.parse_xy)."""
+    try:
+        x, y = (float(v) for v in str(text).split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--start must be x,y in metres, got {text!r}") from None
+    return (x, y)
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Run the w-sweep and the sensitivity runs; write CSV reports.")
     p.add_argument("--in", dest="in_dir", type=Path, default=DEFAULT_IN,
@@ -153,13 +165,15 @@ def parse_args(argv):
                    help="parameter file (default: routing/config.toml)")
     p.add_argument("--reports", dest="reports", type=Path, default=DEFAULT_REPORTS,
                    help="folder the CSV reports are written to (default: routing/reports)")
+    p.add_argument("--start", dest="start", type=_parse_xy, default=None, metavar="X,Y",
+                   help="start of the walk in metres (default: the demo start)")
     return p.parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        sweep_rows, sens_rows = run(args.in_dir, args.config)
+        sweep_rows, sens_rows = run(args.in_dir, args.config, args.start)
     except config_mod.ConfigError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

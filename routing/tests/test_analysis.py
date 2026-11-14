@@ -14,7 +14,7 @@ import plan_route
 import timeline
 import tour
 from config import load_config
-from conftest import config_for, run_site, with_config, write_full_site
+from conftest import REPO_CONFIG, run_site, with_start, write_full_site
 
 REPO = Path(__file__).resolve().parents[2]
 REAL_OUT = REPO / "data" / "out"
@@ -109,7 +109,7 @@ def test_sweep_csv_has_the_same_rows_as_plan_json(tmp_path):
     folder = make_site(tmp_path / "s", hazard=band_hazard())
     plan = json.loads(run_site(folder).files["plan.json"])
     reports = tmp_path / "reports"
-    assert analysis.main([*with_config(folder), "--in", str(folder), "--reports", str(reports)]) == 0
+    assert analysis.main([*with_start(folder), "--in", str(folder), "--reports", str(reports)]) == 0
     rows = read_csv(reports / "sweep.csv")
     assert len(rows) == 7
     assert list(rows[0]) == list(analysis.SWEEP_FIELDS)
@@ -123,18 +123,18 @@ def test_in_config_reports_options(tmp_path, capsys):
     site_before, shared_before, repo_reports_before = digest(folder), digest(REAL_OUT), digest(REPO_REPORTS)
     reports = tmp_path / "my_reports"
 
-    assert analysis.main([*with_config(folder), "--in", str(folder), "--reports", str(reports)]) == 0
+    assert analysis.main([*with_start(folder), "--in", str(folder), "--reports", str(reports)]) == 0
     assert sorted(p.name for p in reports.iterdir()) == ["sensitivity.csv", "sweep.csv"]
     assert len(read_csv(reports / "sweep.csv")) == 7 and len(read_csv(reports / "sensitivity.csv")) == 18
 
     # --config changes what is run.
-    text = config_for(folder).read_text(encoding="utf-8")
+    text = REPO_CONFIG.read_text(encoding="utf-8")
     old = "value = [0.0, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0]\n"
     assert old in text
     cfg_file = tmp_path / "short_sweep.toml"
     cfg_file.write_text(text.replace(old, "value = [0.0, 2.0]\n", 1), encoding="utf-8")
     reports2 = tmp_path / "reports2"
-    assert analysis.main([*with_config(folder), "--in", str(folder), "--config", str(cfg_file), "--reports", str(reports2)]) == 0
+    assert analysis.main([*with_start(folder), "--in", str(folder), "--config", str(cfg_file), "--reports", str(reports2)]) == 0
     assert [r["w"] for r in read_csv(reports2 / "sweep.csv")] == ["0.0", "2.0"]
     assert len(read_csv(reports2 / "sensitivity.csv")) == 18
 
@@ -148,12 +148,12 @@ def test_bad_input_or_config_writes_no_reports(tmp_path, capsys):
     folder = make_site(tmp_path / "site")
     (folder / "waypoints.geojson").unlink()
     reports = tmp_path / "reports"
-    assert analysis.main([*with_config(folder), "--in", str(folder), "--reports", str(reports)]) == 2
+    assert analysis.main([*with_start(folder), "--in", str(folder), "--reports", str(reports)]) == 2
     assert "waypoints.geojson" in capsys.readouterr().err and not reports.exists()
     ok = make_site(tmp_path / "ok")
     bad = tmp_path / "bad.toml"
     bad.write_text("[x\n", encoding="utf-8")
-    assert analysis.main([*with_config(ok), "--in", str(ok), "--config", str(bad), "--reports", str(reports)]) == 2
+    assert analysis.main([*with_start(ok), "--in", str(ok), "--config", str(bad), "--reports", str(reports)]) == 2
     assert not reports.exists()
 
 
@@ -253,7 +253,7 @@ def test_sensitivity_csv_has_18_rows_and_blank_cells_for_infeasible_runs(tmp_pat
     dem = (np.zeros((SHAPE[0], 1)) + ramp[None, :]).astype(np.float32)
     folder = make_site(tmp_path / "s", dem=dem, stop1=(3, 12), stop2=(10, 25))
     reports = tmp_path / "reports"
-    assert analysis.main([*with_config(folder), "--in", str(folder), "--reports", str(reports)]) == 0
+    assert analysis.main([*with_start(folder), "--in", str(folder), "--reports", str(reports)]) == 0
     rows = read_csv(reports / "sensitivity.csv")
     assert len(rows) == 18 and list(rows[0]) == list(analysis.SENSITIVITY_FIELDS)
     infeasible = [r for r in rows if r["status"] == "infeasible"]

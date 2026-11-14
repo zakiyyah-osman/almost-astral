@@ -1,9 +1,11 @@
 """Plan the walk and write the route files, the minutes-back-to-start map and the EVA plan.
 
-The walk starts and ends at the default start of routing/config.toml (start.default, landing spot L1
-for now). Every configured start is checked, but only the default one is planned from.
+The walk starts and ends at the point given with --start x,y (metres on the site grid). Without
+--start it uses the demo start: the safe landing cell nearest the grid centre (landing.py), labelled
+"demo start" in plan.json and in the output below.
 
-    python routing/plan_route.py                      # reads and writes data/out
+    python routing/plan_route.py                      # reads and writes data/out, demo start
+    python routing/plan_route.py --start 1017.5,1112.5   # starts at that point
     python routing/plan_route.py --in DIR             # reads DIR, writes DIR
     python routing/plan_route.py --in DIR --out DIR2  # reads DIR, writes DIR2
     python routing/plan_route.py --config FILE        # another parameter file
@@ -17,6 +19,7 @@ non-zero exit code, and nothing is written. A plan that goes over a budget is st
 with status "over_budget" and a warning.
 """
 import argparse
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +30,6 @@ import cost
 import grid as grid_mod
 import outputs
 import shelter
-import start as start_mod
 import storm
 import timeline
 import tour
@@ -43,8 +45,22 @@ class RunResult:
     warnings: tuple
 
 
-def run(in_dir, config_path=None):
-    """Compute every output from the inputs in `in_dir`. Writes nothing."""
+def parse_xy(text):
+    """'x,y' in metres -> (x, y) floats, for --start."""
+    try:
+        x, y = (float(v) for v in str(text).split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--start must be x,y in metres, got {text!r}") from None
+    if not all(math.isfinite(v) for v in (x, y)):
+        raise argparse.ArgumentTypeError(f"--start must be two finite numbers, got {text!r}")
+    return (x, y)
+
+
+def run(in_dir, config_path=None, start_xy=None):
+    """Compute every output from the inputs in `in_dir`. Writes nothing.
+
+    `start_xy` is the start in metres (--start); None uses the demo start.
+    """
     cfg = config_mod.load_config(config_path)
     site = grid_mod.load_site(in_dir)
     layers, grid, dem, hazard = site.layers, site.grid, site.dem, site.hazard
@@ -52,7 +68,7 @@ def run(in_dir, config_path=None):
 
     waypoints = tour.load_waypoints(in_dir, grid)
     start_wp, stops = tour.split_waypoints(waypoints)
-    start, start_warnings = tour.resolve_start(cfg, model, hazard, start_wp)
+    start, start_warnings = tour.choose_start(cfg, site, model, start_xy, start_wp)
     tour_plan = tour.plan_routes(model, start, stops, cfg)
 
     connectivity = cfg.value("search.connectivity")
@@ -70,7 +86,7 @@ def run(in_dir, config_path=None):
     legend = shelter.legend(
         cfg.value("shelter_map.colour_max_min"), cfg.value("shelter_map.contour_interval_min")
     )
-    warnings = [*tour.deprecation_warnings(waypoints), *start_warnings, *start_mod.staleness_warnings(cfg, in_dir),
+    warnings = [*tour.deprecation_warnings(waypoints), *start_warnings, tour.UNVERIFIED_STOPS,
                 *tour_plan.warnings, *rad.warnings]
     files = outputs.render_outputs(
         cfg, grid, layers, tour_plan, timelines, replan, sheltered.minutes, legend, rad, warnings, sweep_rows
@@ -88,7 +104,8 @@ def summary_lines(result: RunResult):
         f"dose {plan['radiation_dose_usv']} uSv"
     )
     start = plan["start"]
-    lines.append(f"start {start['landing_id']} at ({start['xy_m'][0]:g}, {start['xy_m'][1]:g}) m")
+    label = "demo start" if start["kind"] == "demo" else "start (--start)"
+    lines.append(f"{label} at ({start['xy_m'][0]:g}, {start['xy_m'][1]:g}) m, landing safety {start['landing_status']}")
     lines.append("stop order: " + " -> ".join(["start", *plan["stop_order"]["order"], "start"]))
     for name, p in plan["profiles"].items():
         lines.append(
@@ -114,6 +131,9 @@ def parse_args(argv):
                    help="folder the outputs are written to (default: the --in folder)")
     p.add_argument("--config", dest="config", type=Path, default=None,
                    help="parameter file (default: routing/config.toml)")
+    p.add_argument("--start", dest="start", type=parse_xy, default=None, metavar="X,Y",
+                   help="start of the walk in metres on the site grid (default: the demo start, the safe "
+                        "landing cell nearest the grid centre)")
     return p.parse_args(argv)
 
 
@@ -121,7 +141,7 @@ def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     out_dir = args.out_dir if args.out_dir is not None else args.in_dir
     try:
-        result = run(args.in_dir, args.config)
+        result = run(args.in_dir, args.config, args.start)
     except config_mod.ConfigError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

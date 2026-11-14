@@ -4,8 +4,10 @@
 - Create or edit files only in routing/. Read anything else; never edit it.
 - Never edit CONTRACT.md, requirements.txt, or other people's folders/outputs. If a change is needed there, stop and tell me.
 - Write to data/out/ only: route.geojson, shelter_time.png, plan.json (exactly per CONTRACT.md),
-  plus new files route_fastest.geojson and route_safest.geojson, and the folder data/out/reach/
-  (export_reach.py: reach.json + one folder of binary grids per start; Tushaar commits it, not the scripts).
+  plus new files route_fastest.geojson and route_safest.geojson, and the folder data/out/landing/
+  (export_landing.py: manifest.json, golden_cases.json and tiles/<ti>_<tj>/ binary grids: landing safety,
+  warnings, nearest safe cell and the cost surface; Tushaar commits it, not the scripts).
+  data/out/reach/ is gone (the old per-start export); do not recreate it.
 - plan.json: add fields freely, never rename or remove contract fields.
 
 ## Inputs (data/out/)
@@ -33,14 +35,15 @@ radiation.csv, layers.json. Read width/height/cell_m from layers.json site.grid.
 
 ## Safety and budgets
 - The walker is an astronaut on foot only. Users get one-way paths from the start to a destination; no return-route option.
-- Starts: [starts.<id>] in config.toml (landing spots L1, L2, L3, temporary, copied from web/src/lib/landing.js's
-  own output on the current data; start.default = L1). plan_route.py plans the full outing from the default start only;
-  export_reach.py exports one set of reach grids per start into data/out/reach/<id>/ plus one reach.json listing them.
-  Every start is checked by both: blocked (no data, red, slope, buffer, sealed) or outside the grid = error naming the
-  start; yellow / >10 deg = warning. dem.tif / hazard.tif not the ones the starts were computed on (start.dem_sha256,
-  start.hazard_sha256) = warning. Recompute L1-L3 with landing.js whenever the data change.
-  Waypoint kind 'start' (old 'rover' still accepted with a deprecation warning) is only compared with the default start;
-  the start's id in every output is always "start" (plan.json start.landing_id says which landing spot).
+- No fixed starts. The user clicks a landing zone; landing.py judges a lander pad centred on every cell
+  ([landing] in config.toml, every limit in metres or degrees, all team assumptions pending Nahla) and moves an
+  unsafe click to the nearest safe cell (straight line). The browser then runs its own Dijkstra on the exported
+  cost surface (DESIGN section 15 is the exact edge rule; golden_cases.json is the test). Never put landing-spot
+  coordinates in the config or the code.
+- plan_route.py / analysis.py: the start is --start x,y, or the "demo start" (the safe landing cell nearest the
+  grid centre). Blocked start = error; yellow / >10 deg / not a safe landing spot = warning. A start (or old
+  'rover') waypoint is never used as the start, only reported as ignored; the stops in waypoints.geojson are
+  unverified (warning in plan.json). The start's id in every output is "start".
 - Time back to the start: physical minutes back to the start from every cell, including ingress time.
 - Timeline: walk + stops + ingress, checked against eva_max_min, reserve_pct (30) and the radiation limit.
 - Radiation: background ≈ 0.64 mSv/day (Gale RAD, applied to Jezero as a scenario). Solar-event dose stays in Gy; never add it to Sv.
@@ -48,7 +51,7 @@ radiation.csv, layers.json. Read width/height/cell_m from layers.json site.grid.
 - A stop on a red cell or one that can't be reached → fail with a clear message naming the stop.
 
 ## Assumptions
-Every parameter lives in routing/config.toml with value, unit, type (observation / proxy / scenario) and source.
+Every parameter lives in routing/config.toml with value, unit, type (observation / proxy / scenario / assumption) and source.
 No magic numbers in code. plan.json carries an assumptions block copied from config.
 
 ## Site
