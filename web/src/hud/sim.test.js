@@ -17,8 +17,7 @@ import {
   spaceWeatherModel,
 } from './sim.js'
 
-// A fixed example outing (a copy of an earlier plan), so these tests do not change when the real plan in data/out does.
-const out = (f) => JSON.parse(readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8'))
+const out = (f) => JSON.parse(readFileSync(new URL(`../../../data/out/${f}`, import.meta.url), 'utf8'))
 const plan = out('plan.json')
 const waypoints = out('waypoints.geojson')
 const route = out('route.geojson')
