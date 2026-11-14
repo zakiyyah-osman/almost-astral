@@ -45,6 +45,36 @@ function craterBounds() {
   return L.latLngBounds([CRATER.lat - r, CRATER.lon - rl], [CRATER.lat + r, CRATER.lon + rl])
 }
 
+// A crater-wide image with the site square made see-through, so the detailed site layers take over
+// there. Both grids are equirectangular, so latitude and longitude map linearly onto pixels.
+// Resolves to a data URL, or null if the image cannot be read.
+function withSiteHole(src, bounds, site) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const w = bounds.getEast() - bounds.getWest()
+        const h = bounds.getNorth() - bounds.getSouth()
+        const x0 = ((site.getWest() - bounds.getWest()) / w) * canvas.width
+        const x1 = ((site.getEast() - bounds.getWest()) / w) * canvas.width
+        const y0 = ((bounds.getNorth() - site.getNorth()) / h) * canvas.height
+        const y1 = ((bounds.getNorth() - site.getSouth()) / h) * canvas.height
+        ctx.clearRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1)
+        resolve(canvas.toDataURL('image/png'))
+      } catch {
+        resolve(null)
+      }
+    }
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
+}
+
 const pinIcon = (label, kind, selected) =>
   L.divIcon({
     className: 'pin-icon',
@@ -162,7 +192,17 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       map.fitBounds(site)
     }
 
+    map.createPane('craterLayers').style.zIndex = 290 // crater-wide layers sit under the site layers
     data.layers.forEach((layer, i) => {
+      if (layer.scope === 'crater') {
+        if (!geo.real || !layer.bounds) return // needs the lat/lon map
+        const b = layer.bounds
+        const bounds = L.latLngBounds([b.south, lon180(b.west)], [b.north, lon180(b.east)])
+        const overlay = L.imageOverlay(`./${layer.file}`, bounds, { pane: 'craterLayers', zIndex: i })
+        overlays.current[layer.id] = overlay
+        withSiteHole(`./${layer.file}`, bounds, site).then((url) => url && overlay.setUrl(url))
+        return
+      }
       overlays.current[layer.id] = L.imageOverlay(`./${layer.file}`, site, { pane: 'layers', zIndex: i })
     })
     groups.current = { routes: L.layerGroup().addTo(map), pins: L.layerGroup().addTo(map) }

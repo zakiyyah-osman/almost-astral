@@ -18,6 +18,18 @@
     "label": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero"
   },
 
+  "crater": {
+    "dem": "raw/ctx/M20_JezeroCrater_CTXDEM_20m.tif",
+    "name": "Jezero crater (whole crater and rim)",
+    "center_lat": 18.38,
+    "center_lon_east": 77.58,
+    "size_m": 64000,
+    "cell_m": 40,
+    "_bounds_note": "64 km square centred on the USGS crater centre (18.38 N, 77.58 E; also in web/src/lib/geo.js). The rim crest is irregular: on the CTX DEM (14 Nov) it lies 16.5 to 31.5 km from this centre, so 32 km each way keeps all of it. 40 m cells: 1600 x 1600, about 10 MB as uncompressed float32 (the web app's TIFF reader needs uncompressed).",
+    "_example_note": "The DEM is the USGS Mars 2020 CTX DTM mosaic of Jezero, 20 m/pixel, equirectangular (lat_ts 18.4663) on the 3,396,190 m sphere; it covers 77.00-78.58 E, 17.58-19.29 N.",
+    "label": "USGS Mars 2020 CTX DEM mosaic, 20 m"
+  },
+
   "themis": {
     "file": "raw/themis/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.cub",
     "_example": "raw/themis/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.tif",

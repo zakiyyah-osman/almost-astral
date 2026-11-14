@@ -108,6 +108,52 @@
   "sources_notes": {
     "space_weather.csv": "NASA DONKI (CCMC space weather database), 2025-06-01 to 2025-12-31. mars_impact comes from DONKI's own model runs and instrument lists.",
     "radiation.csv": "ESTIMATE, not a measurement at this site: Curiosity RAD surface average at Gale, 0.64 mSv/day (Hassler et al. 2014, Science 343). Applied unchanged at Jezero, which sits about 2 km higher than Gale crater's floor under a thinner atmosphere, so the real dose is probably somewhat higher.",
-    "dem.tif": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif"
+    "dem.tif": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "crater/dem.tif": "USGS Mars 2020 CTX DEM mosaic, 20 m: M20_JezeroCrater_CTXDEM_20m.tif, resampled to 40 m cells (average of the 20 m pixels). Built 2026-11-14. Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show.",
+    "crater/hazard.tif": "Derived from USGS Mars 2020 CTX DEM mosaic, 20 m (M20_JezeroCrater_CTXDEM_20m.tif): slope only, rover-scale, 40 m from CTX DEM, misses boulders/small ledges. Built 2026-11-14. Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show."
+  },
+  "crater": {
+    "name": "Jezero crater (whole crater and rim)",
+    "grid": {
+      "width": 1600,
+      "height": 1600,
+      "cell_m": 40.0
+    },
+    "extent_m": [
+      64000.0,
+      64000.0
+    ],
+    "center_lat": 18.38,
+    "center_lon_east": 77.58,
+    "bounds_latlon": {
+      "south": 17.840141,
+      "west": 77.01112,
+      "north": 18.919859,
+      "east": 78.14888
+    },
+    "dem": "crater/dem.tif",
+    "hazard": "crater/hazard.tif",
+    "source": "USGS Mars 2020 CTX DEM mosaic, 20 m",
+    "built": "2026-11-14",
+    "scale_note": "rover-scale, 40 m from CTX DEM, misses boulders/small ledges",
+    "confidence": "Confidence: medium for broad terrain (crater walls, scarps, the delta front); low for anything smaller than a few cells. Slopes are averaged over 40 m, so they read lower than the 5 m site slopes, and boulders and small ledges do not show.",
+    "layers": [
+      {
+        "id": "crater_slope",
+        "title": "Crater slope (40 m)",
+        "file": "crater/slope.png",
+        "source": "Derived from USGS Mars 2020 CTX DEM mosaic, 20 m (M20_JezeroCrater_CTXDEM_20m.tif): slope in degrees, rover-scale, 40 m from CTX DEM, misses boulders/small ledges",
+        "default": false,
+        "opacity": 0.6
+      },
+      {
+        "id": "crater_hazard",
+        "title": "Crater hazards (40 m)",
+        "file": "crater/hazard.png",
+        "source": "Derived from USGS Mars 2020 CTX DEM mosaic, 20 m (M20_JezeroCrater_CTXDEM_20m.tif): careful over 10\u00b0, no-go over 20\u00b0 (terrain/thresholds.toml), rover-scale, 40 m from CTX DEM, misses boulders/small ledges",
+        "default": true,
+        "opacity": 0.5
+      }
+    ]
   }
 }
