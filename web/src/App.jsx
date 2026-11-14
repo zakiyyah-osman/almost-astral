@@ -12,6 +12,7 @@ import ModeCompare from './components/ModeCompare.jsx'
 import Icon from './components/Icon.jsx'
 import Tag from './components/Tag.jsx'
 import MineralKey from './components/MineralKey.jsx'
+import { MINERAL_CLASSES } from './lib/research.js'
 import { buildTimeline, doseTotal, parseTable, radiationModel } from './hud/sim.js'
 import { useTerrain, mineralAt } from './lib/useTerrain.js'
 import { PROFILES, timeField } from './lib/pathfind.js'
@@ -101,6 +102,7 @@ export default function App() {
   const [sideShut, setSideShut] = useState(() => stored('aa.sidebarShut', false))
   const [dragging, setDragging] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [mineralsShown, setMineralsShown] = useState([]) // minerals switched on in the Minerals card; none until picked
   const visor = visorOn && view === 'hud'
 
   useEffect(() => {
@@ -188,13 +190,16 @@ export default function App() {
   const planOpts = useMemo(() => ({ ingress: ingressOn, doseFor, cache: legCache }), [ingressOn, doseFor, legCache])
 
   // Minutes back to shelter from every cell: the start, and the destination too when it has a shelter.
-  const back = useMemo(() => {
-    if (!ready || !points) return null
+  const shelterCells = useMemo(() => {
+    if (!ready || !points) return []
     const shelters = [points[0]]
     if (mode === 'mission' && !mission.back) shelters.push(points[points.length - 1])
-    const cells = shelters.map((p) => cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)?.i).filter((i) => i != null)
-    return cells.length ? timeField(cost, cells) : null
+    return shelters.map((p) => cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)?.i).filter((i) => i != null)
   }, [ready, cost, points, mode, mission.back])
+  const back = useMemo(() => (shelterCells.length ? timeField(cost, shelterCells) : null), [cost, shelterCells])
+  // The solar-storm return: as fast as the route-finder's Balanced mode allows, but off careful and no-go
+  // ground where that costs little time, so the crew does not run along the edge of a red zone.
+  const stormField = useMemo(() => (shelterCells.length && params ? { field: timeField(cost, shelterCells, params.w_balanced), w: params.w_balanced } : null), [cost, shelterCells, params])
   const ingress = ingressOn ? params?.ingress_min ?? 0 : 0
 
   // All three modes for the active points, so the crew can compare them.
@@ -238,8 +243,8 @@ export default function App() {
   // The HUD walks the same route: the team outing or my mission, on the picked mode. Its slope,
   // height, time back and storm return are worked out from the terrain for this route.
   const hudData = useMemo(
-    () => (ok ? { ...data, plan: hudPlan(active.plan, active.track, back, cost, ingress), route: active.route, waypoints: activeWaypoints } : data),
-    [ok, data, active, back, cost, ingress, activeWaypoints],
+    () => (ok ? { ...data, plan: hudPlan(active.plan, active.track, back, cost, ingress, 100, stormField), route: active.route, waypoints: activeWaypoints } : data),
+    [ok, data, active, back, cost, ingress, activeWaypoints, stormField],
   )
   const hudKey = ok ? `${mode}-${profile}-${active.route.features[0].geometry.coordinates.length}-${active.plan.totals.total_min}` : 'files'
   const arrivals = useMemo(() => {
@@ -769,6 +774,7 @@ export default function App() {
                             <input type="range" min="0" max="1" step="0.05" value={layerState[l.id]?.opacity ?? 1} onChange={(e) => update(l.id, { opacity: Number(e.target.value) })} aria-label={`${l.title} opacity`} />
                           </label>
                         )}
+                        {on && l.id === 'minerals' && l.research && <MineralKey shown={mineralsShown} onChange={setMineralsShown} traced={l.research.traced} />}
                       </div>
                     )
                   })}
@@ -884,6 +890,7 @@ export default function App() {
             selectedStop={selectedStop}
             onSelectStop={selectStop}
             astronaut={view === 'hud' ? astronaut : null}
+            mineralsShown={layerState.minerals?.on ? mineralsShown : []}
             layoutKey={`${view}-${large}-${visor}`}
             sizeKey={`${shut}-${sideW}`}
           />
@@ -972,7 +979,7 @@ export default function App() {
                 </div>
               ))}
             {layerState.minerals?.on &&
-              (mineralLayer?.legend ?? []).map((e) => (
+              (mineralLayer?.research ? MINERAL_CLASSES.filter((c) => mineralsShown.includes(c.id)).map((c) => ({ label: c.short, color: c.color })) : mineralLayer?.legend ?? []).map((e) => (
                 <div key={e.label}>
                   <i style={{ background: e.color }} />
                   {e.label}
@@ -1031,7 +1038,6 @@ export default function App() {
               </div>
             )}
           </div>
-          {layerState.research?.on && <MineralKey hasMap={!!data.layers.find((l) => l.id === 'research')?.file} />}
         </div>
         {view === 'hud' && <HudView key={hudKey} data={hudData} onPosition={setAstronaut} large={large} onLarge={setLarge} visor={visor} onVisor={setVisor} />}
       </main>
