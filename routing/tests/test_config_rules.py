@@ -5,7 +5,8 @@ import math
 import pytest
 
 from config import (
-    EXPECTED_PARAMS, LIST_PARAMS, Config, ConfigError, load_config, walk_run_transition_kmh,
+    EXPECTED_PARAMS, LIST_PARAMS, NON_NUMERIC_PARAMS, Config, ConfigError, load_config,
+    walk_run_transition_kmh,
 )
 
 
@@ -29,7 +30,7 @@ def _set_bad(raw, key, bad):
         _set(raw, key, bad)
 
 
-NUMERIC_KEYS = [k for k in EXPECTED_PARAMS if k != "timeline.stop_order"]
+NUMERIC_KEYS = [k for k in EXPECTED_PARAMS if k not in NON_NUMERIC_PARAMS]
 
 
 # ---- NaN and inf -------------------------------------------------------------

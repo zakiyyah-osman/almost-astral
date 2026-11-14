@@ -31,21 +31,24 @@ foreach ($k in "flat","plane10","yellow_all","yellow_patch","wall","ridge","ring
   python $QA\qa_tools.py site $k $QA\sites\$k
 }
 
-$CFG = "routing/config.toml"
+# The start always comes from the config (start.xy_m), so the QA runs use a copy of
+# routing/config.toml with the start on the QA sites' start point. Every Cfg copy is made from it.
+python $QA\qa_tools.py config $QA\cfg\base.toml start.xy_m "[26.25, 101.25]"
+$CFG = "$QA\cfg\base.toml"
 function Plan($site, $tag = $site, $cfg = $CFG)  { python routing/plan_route.py --in $QA\sites\$site --out $QA\out\$tag --config $cfg; "exit code $LASTEXITCODE" }
 function Audit($site, $tag = $site, $cfg = $CFG) { python $QA\qa_tools.py audit $QA\sites\$site $QA\out\$tag $cfg }
 function Hash($tag)                              { python $QA\qa_tools.py hash $QA\out\$tag }
-# Cfg writes $QA\cfg\<tag>.toml, a copy of routing/config.toml with one value changed, and returns its path
-function Cfg($tag, $key, $value)                 { python $QA\qa_tools.py config $QA\cfg\$tag.toml $key $value }
+# Cfg writes $QA\cfg\<tag>.toml, a copy of $CFG with one value changed, and returns its path
+function Cfg($tag, $key, $value)                 { python $QA\qa_tools.py config $QA\cfg\$tag.toml $key $value $CFG }
 ```
 
-A parameter check is written `Plan flat a5 (Cfg a5 walking.v_flat_kmh 4.7)`: build the changed copy, then run site `flat` into `$QA\out\a5` with it. `routing/config.toml` is only read.
+A parameter check is written `Plan flat a5 (Cfg a5 walking.v_flat_kmh 4.7)`: build the changed copy, then run site `flat` into `$QA\out\a5` with it. `routing/config.toml` is only read (to make `$CFG`).
 
 `Audit` prints one `PASS` or `FAIL` line per check ID (`G01`, `H04`, ...) and ends with `ALL PASS` or the number failed. The tables below say which IDs matter in each group.
 
 ### The synthetic sites
 
-All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rover at `[26.25, 101.25]`, `stop1` "QA East" at `[276.25, 101.25]`, `stop2` "QA North-East" at `[276.25, 151.25]`. The round trip on open flat ground is 570.7 m on an 8-neighbour grid.
+All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Start (waypoint kind `start`, and `start.xy_m` in `$CFG`) at `[26.25, 101.25]`, `stop1` "QA East" at `[276.25, 101.25]`, `stop2` "QA North-East" at `[276.25, 151.25]`. The round trip on open flat ground is 570.7 m on an 8-neighbour grid.
 
 | Site | Terrain | Hazard | Tests |
 | --- | --- | --- | --- |
@@ -85,7 +88,7 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rov
 | B1 | Audit lines `C01`, `C02` | Rasters are `height x width` as in `layers.json`; `plan.json` `inputs.grid` repeats 120, 80, 2.5. | |
 | B2 | Audit lines `G01`, `G02` | Each route file is a `FeatureCollection` with one `LineString`; every vertex lies inside 0–300 m by 0–200 m. | |
 | B3 | Audit line `G03` | Every vertex is a cell centre: `x = (c + 0.5) × 2.5`, `y = (80 − r − 0.5) × 2.5`. | |
-| B4 | Audit lines `G04`, `G06` | The line starts and ends at the rover cell and visits `stop1` then `stop2`. A swapped x and y, or a north–south flip, fails here: the site is not square and the stops are not mirror images. | |
+| B4 | Audit lines `G04`, `G06` | The line starts and ends at the start cell and visits `stop1` then `stop2`. A swapped x and y, or a north–south flip, fails here: the site is not square and the stops are not mirror images. | |
 | B5 | Audit line `G05` | Every segment runs along one of the 8 grid directions (dropping vertices on straight runs must not change the line). | |
 | B6 | On `wall`: read the y values in `route.geojson`. | Some vertex has `y < 12.5` (the gap is at the **south** edge). If the route goes to `y > 187.5` instead, rows are read upside down. | |
 | B7 | `Audit flat`, lines `S01`, `S05` | `shelter_time.png` is 120 x 80 RGBA; track hazard classes equal `hazard.tif` at the same cell. | |
@@ -113,7 +116,7 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rov
 | ID | How to run | Expected | P/F |
 | --- | --- | --- | --- |
 | D1 | `Plan yellow_all; Audit yellow_all`. Read `profiles` in `plan.json`. | All three profiles: `distance_m` 571, `walk_min` 12.7, `risk_min` 12.7. Uniform risk cannot change the path, so the time must not move with w. `walk_min` of 25.4 (balanced) or 76.1 (safest) means planning cost leaked into a reported time. | |
-| D2 | Same run: `totals`, `sweep`, track point at `stop1`. | `totals.walk_min` 13, `totals.total_min` 78, every sweep row has `walk_min` 12.7. The track point at `[276.25, 101.25]` has `shelter_min` 20.6 (15 + 250 m at 45 m/min): the shelter map uses w = 0. | |
+| D2 | Same run: `totals`, `sweep`, track point at `stop1`. | `totals.walk_min` 13, `totals.total_min` 78, every sweep row has `walk_min` 12.7. The track point at `[276.25, 101.25]` has `shelter_min` 20.6 (15 + 250 m at 45 m/min): the back-to-start map uses w = 0. | |
 | D3 | `Plan yellow_all d3 (Cfg d3 profiles.w_safest 50)`. Compare with D1. | `route_safest.geojson` has the same coordinates, `distance_m` and `walk_min`; only `w` differs. `totals`, `legs`, `track` and `radiation_dose_usv` are unchanged. | |
 | D4 | Any audit, lines `T01`, `T02` | Distance and physical minutes recomputed from the route coordinates alone (no w involved) equal the reported values for each profile. | |
 | D5 | Any audit, lines `T03`, `T04`, `T05` | `yellow_min` matches the recomputation; `yellow_min + steep_min + near_red_min = risk_min`; `steep_min` is 0.0; each file's `w` equals its config value. | |
@@ -124,19 +127,19 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rov
 | D10 | Any audit, lines `P04`, `P05` | Down the sweep, `walk_min` never falls and `risk_min` never rises as w grows. The rows for w = 0, 1 and 5 equal the three profiles. | |
 | D11 | `Plan plane10`. Read `profiles.fastest.walk_min`. | 18.0 (12.68 min ÷ `exp(−0.35)` = 0.705). Same speed uphill and downhill. | |
 | D12 | `Plan flat d12 (Cfg d12 walking.v_flat_kmh 3.4)` | `walk_min` 10.1 (570.7 m at 56.7 m/min). Same coordinates as the 2.7 km/h run. | |
-| D13 | `Plan wall; python routing/analysis.py --in $QA\sites\wall --reports $QA\reports\wall`. Open `sweep.csv` and `sensitivity.csv` there. | Sweep: one row per value in `profiles.sweep_w`, equal to `sweep` in `$QA\out\wall\plan.json` (which `plan_route.py` wrote). Sensitivity: 18 rows (2 x 3 x 3); each has walk, total and risk minutes and a budget status, or `infeasible` with a stop id. Rows with `slope_max_deg` 15 never have a shorter walk than the matching rows with 25. | |
+| D13 | `Plan wall; python routing/analysis.py --in $QA\sites\wall --config $CFG --reports $QA\reports\wall`. Open `sweep.csv` and `sensitivity.csv` there. | Sweep: one row per value in `profiles.sweep_w`, equal to `sweep` in `$QA\out\wall\plan.json` (which `plan_route.py` wrote). Sensitivity: 18 rows (2 x 3 x 3); each has walk, total and risk minutes and a budget status, or `infeasible` with a stop id. Rows with `slope_max_deg` 15 never have a shorter walk than the matching rows with 25. | |
 
-## E. Shelter map and storm re-plan
+## E. Back-to-start map and storm re-plan
 
-**Run when:** shelter map and storm paths exist.
+**Run when:** back-to-start map and storm paths exist.
 
 | ID | How to run | Expected | P/F |
 | --- | --- | --- | --- |
-| E1 | `Audit flat`, lines `S03`, `S04` | The first track point is at the rover with `shelter_min` 15.0 (ingress only). Everywhere, `15 ≤ shelter_min ≤ elapsed_min + 15`. | |
+| E1 | `Audit flat`, lines `S03`, `S04` | The first track point is at the start with `shelter_min` 15.0 (ingress only). Everywhere, `15 ≤ shelter_min ≤ elapsed_min + 15`. | |
 | E2 | On `flat`: track point at `stop1`. | `shelter_min` 20.6. | |
-| E3 | `Audit wall`, line `S02`; open `$QA\out\wall\shelter_time.png`. | Red cells are fully transparent. Colours get "later" away from the rover, with a visible jump across the wall, and contour lines every 10 min. | |
+| E3 | `Audit wall`, line `S02`; open `$QA\out\wall\shelter_time.png`. | Red cells are fully transparent. Colours get "later" away from the start, with a visible jump across the wall, and contour lines every 10 min. | |
 | E4 | On `ring`'s inputs with `stop2` moved outside the ring (edit its coordinates to `[276.25, 51.25]`), `Plan ring e4`; open the PNG. | The inside of the ring is transparent (unreachable cells have no value). | |
-| E5 | Any audit, lines `S06`, `S07` | Each storm point's path ends at the rover, `return_min` is at least 15 and no worse than walking back the way they came; `worst` indexes the largest `return_min`. | |
+| E5 | Any audit, lines `S06`, `S07` | Each storm point's path ends at the start, `return_min` is at least 15 and no worse than walking back the way they came; `worst` indexes the largest `return_min`. | |
 | E6 | `plan.json` `shelter_map` | `includes_ingress` true, `contour_interval_min` 10, `colour_max_min` 60, and a list of colour stops. | |
 
 ## F. Timeline, budgets and radiation units
@@ -145,7 +148,7 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rov
 
 | ID | How to run | Expected | P/F |
 | --- | --- | --- | --- |
-| F1 | Audit lines `B01`, `B03`, `B04` | Legs chain rover → stop1 → stop2 → rover. `total_min = walk_min + stop_min + ingress_min`. On `flat`: walk 13, stops 50, ingress 15, total 78. | |
+| F1 | Audit lines `B01`, `B03`, `B04` | Legs chain start → stop1 → stop2 → start (the start's id is always `start`, whatever id `waypoints.geojson` uses). `total_min = walk_min + stop_min + ingress_min`. On `flat`: walk 13, stops 50, ingress 15, total 78. | |
 | F2 | Audit lines `B05`, `B06` | `usable_min` = 360 × (1 − 30/100) = 252. Checks `reserve`, `abort`, `radiation` are all present with value and limit. | |
 | F3 | Audit lines `B07`, `B08` | Each check's `ok` equals the audit's own recomputation. `status` is `ok`. Exit code 0. | |
 | F4 | `$c = Cfg f4 timeline.eva_max_min 100; Plan flat f4 $c; Audit flat f4 $c` | Exit code 0. All five files written. A warning is printed. `status` `over_budget`. `reserve` fails (77.7 > 70); `abort` still passes. `B07` and `B08` pass. | |
@@ -168,7 +171,7 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rov
 | G1 | `Plan ring g` | Non-zero exit. The message contains `stop2`, `QA North-East`, the coordinates `276.25, 151.25` and the word unreachable (or an equal reason). It does not blame `stop1`. Hashes unchanged. No traceback. | |
 | G2 | `Plan red_stop g` | Non-zero exit. The message contains `stop1`, `QA East`, `276.25, 101.25` and says the cell is red. Hashes unchanged. | |
 | G3 | In `$QA\sites\ridge\waypoints.geojson` move `stop1` to `[151.25, 101.25]` (on the scarp). `Plan ridge g`. Move it back. | Non-zero exit naming `stop1`, reason slope over the limit or inside the buffer. | |
-| G4 | In a copy of `flat`, set `stop1`'s `kind` to `"rover"` (two rovers) and run. Undo, then set the rover's `kind` to `"stop"` (no rover) and run. | Each: non-zero exit with a message about needing exactly one rover. Nothing written. | |
+| G4 | In a copy of `flat`, set `stop1`'s `kind` to `"start"` (two starts) and run. Undo, then set the start's `kind` to `"rover"` (the old name) and run. Then run with `--config (Cfg g4 start.xy_m "[151.25, 101.25]")` on `ridge` (start on the scarp). | Two starts: non-zero exit, "at most one" start, nothing written. `"rover"`: exit 0, `plan.json` `warnings` says the kind is deprecated, and `legs`, `start.id` and the route files never contain the word `rover` (the id is `start`). Start on the scarp: non-zero exit, the message gives the start, its coordinates and the reason (slope over the limit or the buffer). Nothing written. | |
 | G5 | In a copy of `flat`, delete `hazard.tif`. Then restore it and set `site.grid.width` to `100` in `layers.json`. | Each: non-zero exit with a message naming the file or the size mismatch. Nothing written. No traceback. | |
 | G6 | `Plan flat g` | Back to exit code 0: the good case still works after the failure tests. | |
 
@@ -197,7 +200,7 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rov
 | I3 | `$env:PYTHONHASHSEED = "12345"; Plan wall i2c; Remove-Item Env:PYTHONHASHSEED; Hash i2c` | Same five hashes as I2. | |
 | I4 | Run `python routing/plan_route.py` twice on `data/out/`, hashing after each (`python $QA\qa_tools.py hash data/out`). | Same hashes both times. | |
 | I5 | Search `plan.json` for a date, time or host name. | None, apart from the fixed solar-event date `2024-05-20`. | |
-| I6 | `Copy-Item $QA\sites\flat $QA\sites\i6 -Recurse`. Hash `data\out\*` as in H1. `python routing/plan_route.py --in $QA\sites\i6`. Hash `data\out\*` again. | With `--in` set and `--out` not set, the five outputs appear in `$QA\sites\i6`. Nothing in `data/out/` changed. | |
+| I6 | `Copy-Item $QA\sites\flat $QA\sites\i6 -Recurse`. Hash `data\out\*` as in H1. `python routing/plan_route.py --in $QA\sites\i6 --config $CFG`. Hash `data\out\*` again. | With `--in` set and `--out` not set, the five outputs appear in `$QA\sites\i6`. Nothing in `data/out/` changed. | |
 | I7 | Hash `data\out\*` and `routing\reports\*`. `python routing/analysis.py --in $QA\sites\wall --config (Cfg i7 profiles.w_safest 7) --reports $QA\reports\i7`. Hash both again. | `$QA\reports\i7` holds CSV files only (`sweep.csv`, `sensitivity.csv`). `data/out/`, `routing/reports/` and `$QA\sites\wall` are unchanged. `python routing/analysis.py --help` lists no `--out`. | |
 | I8 | Run the I7 command twice, into `$QA\reports\i8a` and `$QA\reports\i8b`. `Get-FileHash` both folders. | The CSV files are identical between the two runs. | |
 
@@ -207,15 +210,15 @@ All are 120 x 80 cells of 2.5 m (300 m x 200 m): not square, not 400, not 5. Rov
 
 | ID | Look at | Expected | P/F |
 | --- | --- | --- | --- |
-| J1 | Route line against the waypoint markers | The line starts and ends on the rover marker and passes each stop marker within half a cell diagonal (about 3.5 m at 5 m cells). Not mirrored, not rotated: a transposed line means `latLng(x, y)` was used in place of `latLng(y, x)`. | |
+| J1 | Route line against the waypoint markers | The line starts and ends on the start marker and passes each stop marker within half a cell diagonal (about 3.5 m at 5 m cells). Not mirrored, not rotated: a transposed line means `latLng(x, y)` was used in place of `latLng(y, x)`. | |
 | J2 | Route over the hazard layer, zoomed in | The line never crosses a red area and never cuts between two red areas that touch at a corner. | |
 | J3 | Route over the slope layer | The line avoids the steepest colour and keeps a visible margin from it. | |
-| J4 | Shelter-time layer | Aligned with the hazard layer (red areas are holes). Lowest colour at the rover, growing outward, with contour lines. The legend matches `plan.json` `shelter_map`. | |
+| J4 | Back-to-start layer | Aligned with the hazard layer (red areas are holes). Lowest colour at the start, growing outward, with contour lines. The legend matches `plan.json` `shelter_map`. | |
 | J5 | Three routes, if the app shows them | Fastest is the most direct, safest stays furthest from yellow and red. Balanced is the default. | |
 | J6 | Timeline and totals | Walk, stop, ingress and total minutes equal `plan.json` `totals`. Total includes ingress. | |
 | J7 | Budget and status display | Shows usable time 252 of 360 min and the `status`. With the F4 config on real data it shows the over-budget warning, not a blank map. | |
 | J8 | Radiation display | Background dose in µSv. The solar-event figure, if shown, is labelled mGy and is not summed with the µSv figure. | |
-| J9 | Slope profile or HUD track | Distance runs from 0 to the route length, elapsed time rises steadily, minutes to shelter are 15 at both ends. | |
+| J9 | Slope profile or HUD track | Distance runs from 0 to the route length, elapsed time rises steadily, minutes back to the start are 15 at both ends. | |
 | J10 | Browser console | No 404 for `route_fastest.geojson`, `route_safest.geojson`, `plan.json` or `shelter_time.png`; no errors reading added `plan.json` fields. | |
 
 ---
@@ -252,7 +255,7 @@ Extracted by the setup step. Needs only `numpy`, `rasterio` and `pillow` from `r
     python qa_tools.py site  <kind> <folder>     build a synthetic input site
     python qa_tools.py audit <in> <out> [config] check planner outputs against the inputs
     python qa_tools.py hash  <out>               print SHA-256 of every routing output
-    python qa_tools.py config <dest> <key> <value>
+    python qa_tools.py config <dest> <key> <value> [<source config>]
                                                  copy routing/config.toml to <dest> with one value changed
 """
 import csv, hashlib, json, math, re, sys, tomllib
@@ -280,7 +283,7 @@ def make_site(kind, folder):
     out.mkdir(parents=True, exist_ok=True)
     dem = np.zeros((H, W), np.float32)
     haz = np.zeros((H, W), np.uint8)
-    rover, stop1, stop2 = (39, 10), (39, 110), (19, 110)
+    start_rc, stop1, stop2 = (39, 10), (39, 110), (19, 110)
     if kind == "plane10":                       # 10 % slope everywhere, rising east
         dem += (np.arange(W) * CELL * 0.10).astype(np.float32)
     elif kind == "yellow_all":
@@ -313,7 +316,7 @@ def make_site(kind, folder):
     def wp(i, name, kind_, rc):
         return {"type": "Feature", "geometry": {"type": "Point", "coordinates": centre(*rc)},
                 "properties": {"id": i, "name": name, "kind": kind_, "why": "QA fixture", "photo": None}}
-    feats = [wp("rover", "QA Rover", "rover", rover), wp("stop1", "QA East", "stop", stop1),
+    feats = [wp("start", "QA Start", "start", start_rc), wp("stop1", "QA East", "stop", stop1),
              wp("stop2", "QA North-East", "stop", stop2)]
     (out / "waypoints.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}))
 
@@ -322,7 +325,7 @@ def make_site(kind, folder):
                        "extent_m": [W * CELL, H * CELL]},
               "layers": [{"id": "hazard", "title": "Hazards", "file": "hazard.png", "source": src,
                           "default": True, "opacity": 0.7},
-                         {"id": "shelter_time", "title": "Shelter time", "file": "shelter_time.png",
+                         {"id": "shelter_time", "title": "Minutes back to start", "file": "shelter_time.png",
                           "source": src, "default": False, "opacity": 0.7}],
               "vectors": {"route": "route.geojson", "waypoints": "waypoints.geojson"},
               "tables": {"weather": "weather.csv", "radiation": "radiation.csv"}, "plan": "plan.json"}
@@ -366,7 +369,7 @@ def audit(src, out, config="routing/config.toml"):
     plan = read_json(out / "plan.json")
     cfg ={k: v["value"] for k, v in plan.get("assumptions", {}).items()}
     wps = {f["properties"]["id"]: f for f in read_json(src / "waypoints.geojson")["features"]}
-    rover = next(f for f in wps.values() if f["properties"]["kind"] == "rover")
+    start_wp = next(f for f in wps.values() if f["properties"]["kind"] in ("start", "rover"))
 
     def rc(x, y):                                # contract: row 0 is the north edge
         return rows - 1 - int(y // cell), int(x // cell)
@@ -410,8 +413,8 @@ def audit(src, out, config="routing/config.toml"):
         rep("G02", inside, f"{name}: every vertex inside 0..{cols * cell} x 0..{rows * cell} m")
         on_centre = all(abs((x / cell) % 1 - 0.5) < 1e-6 and abs((y / cell) % 1 - 0.5) < 1e-6 for x, y in xy)
         rep("G03", on_centre, f"{name}: vertices are cell centres")
-        home = rc(*rover["geometry"]["coordinates"])
-        rep("G04", rc(*xy[0]) == home and rc(*xy[-1]) == home, f"{name}: starts and ends at the rover cell")
+        home = rc(*start_wp["geometry"]["coordinates"])
+        rep("G04", rc(*xy[0]) == home and rc(*xy[-1]) == home, f"{name}: starts and ends at the start cell")
 
         cells, straight = [rc(*xy[0])], True
         for a, b in zip(xy, xy[1:]):
@@ -484,8 +487,8 @@ def audit(src, out, config="routing/config.toml"):
 
     tt, bb = plan["totals"], plan["budgets"]
     legs = plan["legs"]
-    rep("B01", legs[0]["from"] == rover["properties"]["id"] == legs[-1]["to"]
-        and all(a["to"] == b["from"] for a, b in zip(legs, legs[1:])), "legs chain rover -> stops -> rover")
+    rep("B01", legs[0]["from"] == "start" == legs[-1]["to"]
+        and all(a["to"] == b["from"] for a, b in zip(legs, legs[1:])), "legs chain start -> stops -> start")
     bal = pr.get("balanced", {})
     rep("B02", abs(tt["walk_min"] - bal.get("walk_min", -9)) <= 0.5
         and abs(sum(l["walk_min"] for l in legs) - tt["walk_min"]) <= len(legs) / 2,
@@ -533,7 +536,7 @@ def audit(src, out, config="routing/config.toml"):
     rep("S02", not alpha[haz == 2].any(), "red cells are fully transparent in shelter_time.png")
     track = plan.get("track", [])
     rep("S03", bool(track) and abs(track[0]["shelter_min"] - ing) < 0.05 and track[0]["elapsed_min"] == 0,
-        f"track starts at the rover with shelter_min = ingress = {ing}")
+        f"track starts at the start with shelter_min = ingress = {ing}")
     rep("S04", bool(track) and all(p["shelter_min"] >= ing - 0.05 for p in track)
         and all(p["shelter_min"] <= p["elapsed_min"] + ing + 0.15 for p in track),
         "every track point: ingress <= shelter_min <= elapsed_min + ingress")
@@ -548,9 +551,9 @@ def audit(src, out, config="routing/config.toml"):
         for (r0, c0), (r1, c1) in zip(path, path[1:]):
             k = max(abs(r1 - r0), abs(c1 - c0)) or 1
             full += [(r0 + (r1 - r0) // k * i, c0 + (c1 - c0) // k * i) for i in range(1, k + 1)]
-        ok &= path[-1] == rc(*rover["geometry"]["coordinates"]) and not any(blocked[c] for c in full)
+        ok &= path[-1] == rc(*start_wp["geometry"]["coordinates"]) and not any(blocked[c] for c in full)
         ok &= p["return_min"] >= ing and p["return_min"] <= p["elapsed_min"] + ing + 0.15
-    rep("S06", ok, f"{len(pts)} storm return paths end at the rover, avoid blocked cells, beat walking back the way they came")
+    rep("S06", ok, f"{len(pts)} storm return paths end at the start, avoid blocked cells, beat walking back the way they came")
     worst = plan.get("storm_replan", {}).get("worst")
     rep("S07", bool(pts) and worst is not None and pts[worst]["return_min"] == max(p["return_min"] for p in pts),
         f"storm_replan.worst = {worst}")
@@ -600,7 +603,7 @@ if __name__ == "__main__":
         sys.exit(1 if audit(*args) else 0)
     elif cmd == "hash" and len(args) == 1:
         hashes(*args)
-    elif cmd == "config" and len(args) == 3:
+    elif cmd == "config" and len(args) in (3, 4):
         make_config(*args)
     else:
         sys.exit(__doc__)

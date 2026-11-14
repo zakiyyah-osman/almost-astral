@@ -4,7 +4,8 @@
 - Create or edit files only in routing/. Read anything else; never edit it.
 - Never edit CONTRACT.md, requirements.txt, or other people's folders/outputs. If a change is needed there, stop and tell me.
 - Write to data/out/ only: route.geojson, shelter_time.png, plan.json (exactly per CONTRACT.md),
-  plus new files route_fastest.geojson and route_safest.geojson.
+  plus new files route_fastest.geojson and route_safest.geojson, and the folder data/out/reach/
+  (export_reach.py: binary reach grids + reach.json; Tushaar commits it, not the scripts).
 - plan.json: add fields freely, never rename or remove contract fields.
 
 ## Inputs (data/out/)
@@ -20,7 +21,7 @@ radiation.csv, layers.json. Read width/height/cell_m from layers.json site.grid.
 - Soft constraints = penalties expressed in minutes: yellow cells, steep-but-legal slope, proximity to red.
 - Keep two quantities separate:
   - planning cost = physical time + w × risk (only chooses the path)
-  - physical walk time (used for timeline, shelter map, plan.json, budgets)
+  - physical walk time (used for timeline, back-to-start map, plan.json, budgets)
 - Three profiles: fastest (w = 0), balanced (default → route.geojson), safest (high w).
 - A w-sweep producing a time vs risk-exposure table; a sensitivity run over v_flat, slope limit and w.
 
@@ -31,7 +32,11 @@ radiation.csv, layers.json. Read width/height/cell_m from layers.json site.grid.
 - Do not relax slope limits for lower gravity: traction drops with g.
 
 ## Safety and budgets
-- Shelter time: physical minutes back to the rover from every cell, including ingress time.
+- The walker is an astronaut on foot only. Users get one-way paths from the start to a destination; no return-route option.
+- Start: start.xy_m in config.toml (landing spot L1, temporary) is the start for plan_route.py and
+  export_reach.py. Blocked start (no data, red, slope, buffer, sealed) = error; yellow / >10 deg = warning.
+  Waypoint kind 'start' (old 'rover' still accepted with a deprecation warning) is only compared with it; the start's id in every output is always "start".
+- Time back to the start: physical minutes back to the start from every cell, including ingress time.
 - Timeline: walk + stops + ingress, checked against eva_max_min, reserve_pct (30) and the radiation limit.
 - Radiation: background ≈ 0.64 mSv/day (Gale RAD, applied to Jezero as a scenario). Solar-event dose stays in Gy; never add it to Sv.
 - Storm re-plan: fastest return from sampled route points.

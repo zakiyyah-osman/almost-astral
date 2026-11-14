@@ -4,6 +4,7 @@ Each site fixture returns a Site with the folder, the arrays and the grid. Only 
 end-to-end test (phase 7) reads the real data/out/.
 """
 import json
+import re
 import sys
 from collections import namedtuple
 from pathlib import Path
@@ -18,6 +19,43 @@ if str(ROUTING) not in sys.path:
     sys.path.insert(0, str(ROUTING))
 
 Site = namedtuple("Site", "folder dem hazard width height cell_m")
+REPO_CONFIG = ROUTING / "config.toml"
+START_KINDS = ("start", "rover")
+_START_VALUE = re.compile(r"(\[start\.xy_m\]\s*\nvalue = )\[[^\]]*\]")
+
+
+def config_text(start_xy, text=None):
+    """The text of routing/config.toml (or `text`) with start.xy_m set to start_xy."""
+    text = REPO_CONFIG.read_text(encoding="utf-8") if text is None else text
+    new, n = _START_VALUE.subn(lambda m: f"{m.group(1)}[{float(start_xy[0])!r}, {float(start_xy[1])!r}]", text)
+    assert n == 1, "start.xy_m not found in the config text"
+    return new
+
+
+def config_for(folder):
+    """The config written next to a synthetic site by write_full_site (start = its start waypoint)."""
+    folder = Path(folder)
+    return folder.parent / f"{folder.name}.config.toml"
+
+
+def with_config(folder):
+    """["--config", <config_for(folder)>] when write_full_site wrote one, else []. Put it first:
+    a later --config on the same command line still wins."""
+    path = config_for(folder)
+    return ["--config", str(path)] if path.exists() else []
+
+
+def run_site(folder):
+    """plan_route.run on a synthetic site, with the config written next to it."""
+    import plan_route
+    path = config_for(folder)
+    return plan_route.run(folder, path if path.exists() else None)
+
+
+def write_config(path, start_xy, text=None):
+    path = Path(path)
+    path.write_text(config_text(start_xy, text), encoding="utf-8")
+    return path
 
 
 def write_site(folder, dem, hazard, cell_m, name="Synthetic test site"):
@@ -94,10 +132,13 @@ def write_waypoints(folder, items):
     return path
 
 
-def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False):
+def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False, start=None):
     """A complete input folder as plan_route.py and data/validate.py expect it.
 
     waypoints: (id, name, kind, x, y) tuples. Adds radiation.csv, weather.csv and one layer image.
+    Also writes config_for(folder): routing/config.toml with start.xy_m set to `start`, or else
+    to the first start waypoint (kind start, or the deprecated rover), because the start always comes
+    from the config.
     """
     from PIL import Image
 
@@ -121,4 +162,8 @@ def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False):
     weather = ["sol,local_hour,temp_c,pressure_pa,dust_tau", "40,12,-20,700,0.5"]
     (folder / "weather.csv").write_text("\n".join(weather) + "\n", encoding="utf-8")
     write_waypoints(folder, waypoints)
+    if start is None:
+        start = next(((x, y) for _, _, kind, x, y in waypoints if kind in START_KINDS), None)
+    if start is not None:
+        write_config(config_for(folder), start)
     return site

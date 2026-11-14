@@ -19,6 +19,7 @@ import config as config_mod
 import cost as cost_mod
 import grid as grid_mod
 import shelter as shelter_mod
+import start as start_mod
 import timeline as timeline_mod
 import tour as tour_mod
 from outputs import r1
@@ -37,7 +38,7 @@ OK, OVER_BUDGET, INFEASIBLE = "ok", "over_budget", "infeasible"
 
 
 # ---- the w-sweep -------------------------------------------------------------
-def sweep(model: cost_mod.Cost, rover, order, cfg, ws=None):
+def sweep(model: cost_mod.Cost, start, order, cfg, ws=None):
     """One row per w in profiles.sweep_w: the route for that weight over the given stop order.
 
     Rows have the distance, the physical walk minutes and the risk minutes with its three
@@ -47,7 +48,7 @@ def sweep(model: cost_mod.Cost, rover, order, cfg, ws=None):
     connectivity = cfg.value("search.connectivity")
     rows = []
     for w in ws:
-        route = tour_mod.build_route(Searcher(model, w, connectivity), rover, order, f"w={w:g}")
+        route = tour_mod.build_route(Searcher(model, w, connectivity), start, order, f"w={w:g}")
         rows.append({
             "w": float(w),
             "distance_m": r1(route.distance_m),
@@ -69,7 +70,7 @@ def _infeasible(v, slope_max, w, error):
     }
 
 
-def sensitivity(site: grid_mod.Site, rover, stops, cfg, rad: timeline_mod.RadiationInfo):
+def sensitivity(site: grid_mod.Site, start, stops, cfg, rad: timeline_mod.RadiationInfo):
     """Every combination of v_flat, slope limit and w (config section [sensitivity]).
 
     One row each: walk, total and risk minutes and the budget status, or `infeasible` with the
@@ -87,18 +88,18 @@ def sensitivity(site: grid_mod.Site, rover, stops, cfg, rad: timeline_mod.Radiat
         model = cost_mod.build(site.dem, site.hazard, site.slope, site.grid, params)
         balanced = Searcher(model, w_balanced, connectivity)
         try:
-            tour_mod.check_waypoints(model, rover, stops, balanced)
+            tour_mod.check_waypoints(model, start, stops, balanced)
             order = tour_mod.choose_order(
-                balanced, rover, stops, cfg.value("timeline.stop_order"),
+                balanced, start, stops, cfg.value("timeline.stop_order"),
                 cfg.value("timeline.optimise_max_stops"),
             ).order
-        except tour_mod.RouteError as e:
+        except (tour_mod.RouteError, start_mod.StartError) as e:
             rows.extend(_infeasible(v, slope_max, w, e) for w in ws)
             continue
-        sheltered = shelter_mod.shelter_time(model, rover.cell, cfg.value("timeline.ingress_min"), connectivity)
+        sheltered = shelter_mod.shelter_time(model, start.cell, cfg.value("timeline.ingress_min"), connectivity)
         for w in ws:
             try:
-                route = tour_mod.build_route(Searcher(model, w, connectivity), rover, order, f"w={w:g}")
+                route = tour_mod.build_route(Searcher(model, w, connectivity), start, order, f"w={w:g}")
             except tour_mod.RouteError as e:
                 rows.append(_infeasible(v, slope_max, w, e))
                 continue
@@ -128,11 +129,12 @@ def run(in_dir, config_path=None):
     """(sweep rows, sensitivity rows) for the site in `in_dir`. Writes nothing."""
     cfg = config_mod.load_config(config_path)
     site = grid_mod.load_site(in_dir)
-    rover, stops = tour_mod.split_waypoints(tour_mod.load_waypoints(in_dir, site.grid))
+    start_wp, stops = tour_mod.split_waypoints(tour_mod.load_waypoints(in_dir, site.grid))
     model = cost_mod.build(site.dem, site.hazard, site.slope, site.grid, cost_mod.Params.from_config(cfg))
-    plan = tour_mod.plan_routes(model, rover, stops, cfg)
+    start, _ = tour_mod.resolve_start(cfg, model, site.hazard, start_wp)
+    plan = tour_mod.plan_routes(model, start, stops, cfg)
     rad = timeline_mod.radiation_info(cfg, in_dir)
-    return sweep(model, rover, plan.order, cfg), sensitivity(site, rover, stops, cfg, rad)
+    return sweep(model, start, plan.order, cfg), sensitivity(site, start, stops, cfg, rad)
 
 
 def write_reports(reports_dir, sweep_rows, sensitivity_rows):

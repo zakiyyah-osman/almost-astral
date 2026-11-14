@@ -1,9 +1,9 @@
-"""Storm re-plan: the fastest way back to the rover from sampled points of the route (DESIGN section 7).
+"""Storm re-plan: the fastest way back to the start from sampled points of the route (DESIGN section 7).
 
 Samples are placed on the balanced route every storm.sample_spacing_m and at every stop. A
 sample sits on the route cell whose distance along the route is nearest to the wanted
-distance, so its position, its shelter time and its return path all refer to one cell.
-The return path is the traceback of the rover-rooted search of the shelter map: the fastest
+distance, so its position, its minutes back to the start and its return path all refer to one cell.
+The return path is the traceback of the start-rooted search of the back-to-start map: the fastest
 physical way back, ignoring risk weights, never crossing a blocked cell.
 """
 from dataclasses import dataclass
@@ -24,7 +24,7 @@ class StormPoint:
     elapsed_min: float          # clock on arrival, including time at stops already done
     return_min: float           # walk back plus ingress
     return_distance_m: float
-    path: tuple                 # return path as cells, from this sample to the rover
+    path: tuple                 # return path as cells, from this sample to the start
     stop: object = None         # stop id when the sample is the arrival at a stop
 
 
@@ -44,8 +44,8 @@ def storm_replan(cost: Cost, route: Route, shelter: Shelter, spacing_m, stop_min
     points = []
     for idx in sorted(wanted):
         cell = route.cells[idx]
-        back = shelter.tree.path_to(cell)                       # rover -> cell
-        return_cells = tuple(reversed(back.cells))              # cell -> rover
+        back = shelter.tree.path_to(cell)                       # start -> cell
+        return_cells = tuple(reversed(back.cells))              # cell -> start
         x, y = grid.cell_centre(*cell)
         points.append(StormPoint(
             cell=cell, x=x, y=y,

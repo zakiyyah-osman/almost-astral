@@ -37,14 +37,23 @@ EXPECTED_PARAMS = (
     "shelter_map.contour_interval_min", "shelter_map.colour_max_min",
     "track.spacing_m",
     "search.connectivity",
+    "start.xy_m",
+    "reach.crop_m", "reach.downsample", "reach.destination_stop",
 )
 
 # Parameters whose value is not a single number.
 LIST_PARAMS = {
     "profiles.sweep_w", "sensitivity.v_flat_kmh", "sensitivity.slope_max_deg", "sensitivity.w",
+    "start.xy_m",
 }
+LIST_LENGTHS = {"start.xy_m": 2}            # list parameters with a fixed number of elements
 STRING_PARAMS = {"timeline.stop_order": ("as_listed", "optimise")}
-INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity"}
+BOOL_PARAMS = {"reach.destination_stop"}
+CROP_PARAM = "reach.crop_m"                 # "full", or [x0, y0, x1, y1] in metres
+CROP_FULL = "full"
+# Parameters whose value is not a number or a list of numbers.
+NON_NUMERIC_PARAMS = (*STRING_PARAMS, *BOOL_PARAMS, CROP_PARAM)
+INT_PARAMS = {"crew.size", "timeline.optimise_max_stops", "search.connectivity", "reach.downsample"}
 ALLOWED_VALUES = {"search.connectivity": (4, 8)}
 
 
@@ -83,6 +92,8 @@ RANGES = {
     "storm.sample_spacing_m": _POS,
     "shelter_map.contour_interval_min": _POS,
     "track.spacing_m": _POS,
+    "start.xy_m": _NONNEG,
+    "reach.downsample": _range(1),
 }
 
 
@@ -219,13 +230,38 @@ class Config:
             allowed = STRING_PARAMS[label]
             if value not in allowed:
                 raise ConfigError(f"{label}: {value!r} is not one of {', '.join(allowed)}")
+        elif label in BOOL_PARAMS:
+            if not isinstance(value, bool):
+                raise ConfigError(f"{label}: must be true or false, got {value!r}")
+        elif label == CROP_PARAM:
+            cls._check_crop(label, value)
         elif label in LIST_PARAMS:
             if not isinstance(value, list) or not value or not all(_is_number(v) for v in value):
                 raise ConfigError(f"{label}: must be a non-empty list of numbers, got {value!r}")
             for v in value:
                 cls._check_number(label, v)
+            n = LIST_LENGTHS.get(label)
+            if n is not None and len(value) != n:
+                raise ConfigError(f"{label}: must have exactly {n} numbers, got {len(value)}: {value!r}")
         else:
             cls._check_number(label, value)
+
+    @staticmethod
+    def _check_crop(label, value):
+        """"full", or [x0, y0, x1, y1]: finite metres with x0 < x1 and y0 < y1 (the grid is checked later)."""
+        if value == CROP_FULL:
+            return
+        ok = (
+            isinstance(value, list) and len(value) == 4
+            and all(_is_number(v) and math.isfinite(v) for v in value)
+        )
+        if not ok:
+            raise ConfigError(
+                f'{label}: must be "{CROP_FULL}" or [x0, y0, x1, y1] of finite numbers in metres, got {value!r}'
+            )
+        x0, y0, x1, y1 = value
+        if not (0 <= x0 < x1 and 0 <= y0 < y1):
+            raise ConfigError(f"{label}: need 0 <= x0 < x1 and 0 <= y0 < y1, got {value!r}")
 
     def _check_profile_weights(self):
         """w_fastest is exactly 0 (risk ignored) and w_fastest <= w_balanced <= w_safest."""

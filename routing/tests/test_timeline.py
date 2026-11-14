@@ -35,18 +35,18 @@ def wp(wid, kind, cell):
 
 
 class Scenario:
-    def __init__(self, cfg=CFG, dem=None, hazard=None, rover_cell=(10, 2), stop_cells=((3, 20), (17, 26))):
+    def __init__(self, cfg=CFG, dem=None, hazard=None, start_cell=(10, 2), stop_cells=((3, 20), (17, 26))):
         self.cfg = cfg
         self.dem = np.zeros(SHAPE) if dem is None else dem
         self.hazard = np.zeros(SHAPE, np.uint8) if hazard is None else hazard
         grid = g.Grid(SHAPE[1], SHAPE[0], CELL)
         slope = g.slope_deg(self.dem, CELL)
         self.cost = cost.build(self.dem, self.hazard, slope, grid, P)
-        self.rover = wp("rover", "rover", rover_cell)
+        self.start = wp("start", "start", start_cell)
         self.stops = [wp(f"stop{i + 1}", "stop", c) for i, c in enumerate(stop_cells)]
-        self.plan = tour.plan_routes(self.cost, self.rover, self.stops, cfg)
+        self.plan = tour.plan_routes(self.cost, self.start, self.stops, cfg)
         self.route = self.plan.routes["balanced"]
-        self.shelter = shelter.shelter_time(self.cost, self.rover.cell, cfg.value("timeline.ingress_min"), 8)
+        self.shelter = shelter.shelter_time(self.cost, self.start.cell, cfg.value("timeline.ingress_min"), 8)
         self.rad = timeline.RadiationInfo(timeline.background_usv_h(cfg), None, (), (), timeline.solar_event(cfg))
 
     def timeline(self, route=None):
@@ -66,14 +66,14 @@ def test_total_is_walk_plus_stops_plus_ingress():
     assert tl.walk_min == pytest.approx(sum(l.walk_min for l in tl.legs))
 
 
-def test_legs_chain_rover_to_rover():
+def test_legs_chain_start_to_start():
     tl = Scenario().timeline()
-    assert [(l.from_id, l.to_id) for l in tl.legs] == [("rover", "stop1"), ("stop1", "stop2"), ("stop2", "rover")]
+    assert [(l.from_id, l.to_id) for l in tl.legs] == [("start", "stop1"), ("stop1", "stop2"), ("stop2", "start")]
     assert tl.legs[0].depart_min == 0.0
     for a, b in zip(tl.legs, tl.legs[1:]):
         assert b.depart_min == pytest.approx(a.arrive_min + a.stop_min)       # leaves after the stop
         assert b.from_id == a.to_id
-    assert [l.stop_min for l in tl.legs] == [STOP_MIN, STOP_MIN, 0.0]         # none on the way into the rover
+    assert [l.stop_min for l in tl.legs] == [STOP_MIN, STOP_MIN, 0.0]         # none on the way into the start
     for l in tl.legs:
         assert l.arrive_min == pytest.approx(l.depart_min + l.walk_min)
         assert l.distance_m > 0 and l.walk_min > 0
@@ -313,8 +313,8 @@ def test_track_spacing():
         assert abs(p.distance_m - nearest) <= CELL * math.sqrt(2) / 2 + 1e-9
     total = sc.route.distance_m
     assert len(regular) >= int(total // spacing)
-    assert tl.track[-1].distance_m == pytest.approx(total)              # ends back at the rover
-    assert (tl.track[-1].x, tl.track[-1].y) == (sc.rover.x, sc.rover.y)
+    assert tl.track[-1].distance_m == pytest.approx(total)              # ends back at the start
+    assert (tl.track[-1].x, tl.track[-1].y) == (sc.start.x, sc.start.y)
 
 
 def test_track_includes_the_stops():

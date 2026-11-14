@@ -156,7 +156,7 @@ source = "STOP_MIN in data/make_fake.py; to be replaced by the mission brief"
 value = 15
 unit = "min"
 type = "scenario"
-source = "Team choice, confirmed by Tushaar"
+source = "Team choice, confirmed by Tushaar: time to get back inside at the start"
 
 [timeline.eva_max_min]
 value = 360
@@ -208,7 +208,7 @@ unit = "m"
 type = "scenario"
 source = "Team choice: keeps plan.json small"
 
-# ---- shelter map --------------------------------------------------------
+# ---- back-to-start map (the keys keep the contract name shelter_map) ---
 [shelter_map.contour_interval_min]
 value = 10
 unit = "min"
@@ -234,3 +234,33 @@ value = 8
 unit = "neighbours"
 type = "scenario"
 source = "skimage.graph.MCP_Geometric with fully_connected=True"
+
+# ---- start --------------------------------------------------------------
+# The fixed start (and end) of every walk, in metres on the site grid: [x, y].
+# This is landing spot L1, and it is TEMPORARY. It is the first of the recommended landing
+# spots from web/src/lib/landing.js (recommendLanding), computed on data/out on 2026-11-14.
+# Recompute it when the full Jezero dataset is loaded.
+[start.xy_m]
+value = [1387.5, 712.5]
+unit = "m (site grid x, y)"
+type = "scenario"
+source = "Landing spot L1 from web/src/lib/landing.js recommendLanding (flat 50 m pad, shortest walk to the first and last stop), computed on data/out of 2026-11-14; temporary until the full Jezero dataset is loaded"
+
+# ---- reach export (export_reach.py) --------------------------------------
+[reach.crop_m]
+value = "full"
+unit = "\"full\" or [x0, y0, x1, y1] in m on the site grid"
+type = "scenario"
+source = "Team choice: the whole site.grid of layers.json until the full-crater grid is decided"
+
+[reach.downsample]
+value = 1
+unit = "site cells per export cell (whole number)"
+type = "scenario"
+source = "Team choice: 1 keeps the site resolution"
+
+[reach.destination_stop]
+value = true
+unit = "true | false"
+type = "scenario"
+source = "Team choice (Tushaar): the over-budget limit counts one stop of timeline.stop_min_default at the destination; false sets it to 0"

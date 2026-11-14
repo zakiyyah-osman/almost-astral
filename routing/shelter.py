@@ -1,9 +1,13 @@
-"""Minutes back to the rover from every cell, and its PNG layer (DESIGN section 6).
+"""Minutes back to the start from every cell, and its PNG layer (DESIGN section 6).
 
-The map is one MCP_Geometric run from the rover cell on the physical time rate (w = 0 is
+This is a safety layer only: it shows how long the walk back to the start would take from
+each cell. It is not a return route the user can choose.
+
+The map is one MCP_Geometric run from the start cell on the physical time rate (w = 0 is
 the time rate itself, so it is searched directly and does not go through a profile route).
-shelter_min = walk minutes + timeline.ingress_min. Blocked and unreachable cells have no
-value (NaN) and are fully transparent in the PNG.
+Minutes back to the start = walk minutes + timeline.ingress_min (plan.json key shelter_min,
+a contract name). Blocked and unreachable cells have no value (NaN) and are fully
+transparent in the PNG.
 """
 from dataclasses import dataclass
 
@@ -25,6 +29,7 @@ RAMP_RGB = (
 CELL_ALPHA = 210                    # coloured cells let the relief show through a little
 CONTOUR_RGBA = (30, 30, 30, 255)    # burned-in contour lines
 TRANSPARENT = (0, 0, 0, 0)
+LABEL = "Minutes back to start"     # legend title; the layer measures from start.xy_m
 
 
 @dataclass(frozen=True)
@@ -32,19 +37,19 @@ class Shelter:
     minutes: np.ndarray         # walk + ingress, NaN where blocked or unreachable
     walk_min: np.ndarray        # physical walk minutes only, same NaN cells
     ingress_min: float
-    rover_cell: tuple
-    tree: Tree                  # rover-rooted search on time_rate, for return paths
+    start_cell: tuple
+    tree: Tree                  # start-rooted search on time_rate, for return paths
 
 
-def shelter_time(cost: Cost, rover_cell, ingress_min, connectivity):
-    """Fastest physical walk back to the rover from every cell, plus the ingress time."""
-    tree = build_tree(cost, cost.time_rate, rover_cell, connectivity)
+def shelter_time(cost: Cost, start_cell, ingress_min, connectivity):
+    """Fastest physical walk back to the start from every cell, plus the ingress time."""
+    tree = build_tree(cost, cost.time_rate, start_cell, connectivity)
     walk = np.where(np.isfinite(tree.planning_cost) & ~cost.blocked, tree.planning_cost, np.nan)
     return Shelter(
         minutes=walk + ingress_min,
         walk_min=walk,
         ingress_min=float(ingress_min),
-        rover_cell=(int(rover_cell[0]), int(rover_cell[1])),
+        start_cell=(int(start_cell[0]), int(start_cell[1])),
         tree=tree,
     )
 
@@ -108,9 +113,10 @@ def write_png(path, minutes, colour_max_min, interval_min):
 
 
 def legend(colour_max_min, interval_min, file="shelter_time.png"):
-    """The plan.json shelter_map block: the web app cannot read minutes back out of a picture."""
+    """The legend block of the back-to-start map (plan.json key shelter_map): the web app cannot read minutes back out of a picture."""
     return {
         "file": file,
+        "label": LABEL,
         "includes_ingress": True,
         "contour_interval_min": interval_min,
         "colour_max_min": colour_max_min,

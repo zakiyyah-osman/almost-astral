@@ -1,4 +1,6 @@
-"""Plan the walk and write the route files, the shelter-time map and the EVA plan.
+"""Plan the walk and write the route files, the minutes-back-to-start map and the EVA plan.
+
+The walk starts and ends at start.xy_m in routing/config.toml (landing spot L1 for now).
 
     python routing/plan_route.py                      # reads and writes data/out
     python routing/plan_route.py --in DIR             # reads DIR, writes DIR
@@ -46,11 +48,13 @@ def run(in_dir, config_path=None):
     layers, grid, dem, hazard = site.layers, site.grid, site.dem, site.hazard
     model = cost.build(dem, hazard, site.slope, grid, cost.Params.from_config(cfg))
 
-    rover, stops = tour.split_waypoints(tour.load_waypoints(in_dir, grid))
-    tour_plan = tour.plan_routes(model, rover, stops, cfg)
+    waypoints = tour.load_waypoints(in_dir, grid)
+    start_wp, stops = tour.split_waypoints(waypoints)
+    start, start_warnings = tour.resolve_start(cfg, model, hazard, start_wp)
+    tour_plan = tour.plan_routes(model, start, stops, cfg)
 
     connectivity = cfg.value("search.connectivity")
-    sheltered = shelter.shelter_time(model, rover.cell, cfg.value("timeline.ingress_min"), connectivity)
+    sheltered = shelter.shelter_time(model, start.cell, cfg.value("timeline.ingress_min"), connectivity)
     rad = timeline.radiation_info(cfg, in_dir)
     timelines = {
         name: timeline.build_timeline(model, dem, hazard, route, sheltered, cfg, rad)
@@ -60,11 +64,11 @@ def run(in_dir, config_path=None):
         model, tour_plan.routes["balanced"], sheltered,
         cfg.value("storm.sample_spacing_m"), cfg.value("timeline.stop_min_default"),
     )
-    sweep_rows = analysis.sweep(model, rover, tour_plan.order, cfg)
+    sweep_rows = analysis.sweep(model, start, tour_plan.order, cfg)
     legend = shelter.legend(
         cfg.value("shelter_map.colour_max_min"), cfg.value("shelter_map.contour_interval_min")
     )
-    warnings = [*tour_plan.warnings, *rad.warnings]
+    warnings = [*tour.deprecation_warnings(waypoints), *start_warnings, *tour_plan.warnings, *rad.warnings]
     files = outputs.render_outputs(
         cfg, grid, layers, tour_plan, timelines, replan, sheltered.minutes, legend, rad, warnings, sweep_rows
     )
@@ -80,7 +84,9 @@ def summary_lines(result: RunResult):
         f"(walk {totals['walk_min']} + stops {totals['stop_min']} + ingress {totals['ingress_min']}), "
         f"dose {plan['radiation_dose_usv']} uSv"
     )
-    lines.append("stop order: " + " -> ".join(["rover", *plan["stop_order"]["order"], "rover"]))
+    start = plan["start"]
+    lines.append(f"start at ({start['xy_m'][0]:g}, {start['xy_m'][1]:g}) m")
+    lines.append("stop order: " + " -> ".join(["start", *plan["stop_order"]["order"], "start"]))
     for name, p in plan["profiles"].items():
         lines.append(
             f"  {name:<8} w={p['w']:g}  walk {p['walk_min']} min  {p['distance_m']} m  "
@@ -98,7 +104,7 @@ def summary_lines(result: RunResult):
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(description="Plan the walk: routes, shelter-time map and EVA plan.")
+    p = argparse.ArgumentParser(description="Plan the walk: routes, minutes-back-to-start map and EVA plan.")
     p.add_argument("--in", dest="in_dir", type=Path, default=DEFAULT_IN,
                    help="folder the inputs are read from (default: data/out)")
     p.add_argument("--out", dest="out_dir", type=Path, default=None,

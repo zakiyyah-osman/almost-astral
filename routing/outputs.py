@@ -29,6 +29,11 @@ ROUTE_SOURCE = "routing model over dem.tif and hazard.tif"
 COORD_DECIMALS = 3          # metres; cell centres can be fractions of a metre on a fine grid
 
 
+def inputs_fake(layers):
+    """True while any layer `source` in layers.json contains FAKE (plan.json inputs_fake, reach.json fake)."""
+    return any("FAKE" in str(layer.get("source", "")) for layer in layers.get("layers", []))
+
+
 def r1(x):
     """One decimal, as a plain float (None stays None)."""
     return None if x is None else round(float(x), 1)
@@ -61,7 +66,7 @@ def cells_to_xy(grid: Grid, cells):
 
 # ---- route files -------------------------------------------------------------
 def route_geojson(route: Route, grid: Grid):
-    """A FeatureCollection with one LineString: the whole walk, rover to stops and back."""
+    """A FeatureCollection with one LineString: the whole walk, start to stops and back."""
     return {
         "type": "FeatureCollection",
         "features": [{
@@ -139,7 +144,7 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
             "steep_min": r1(route.steep_min), "near_red_min": r1(route.near_red_min),
             "total_min": r1(t.total_min), "status": t.status,
         }
-    fake = any("FAKE" in str(layer.get("source", "")) for layer in layers.get("layers", []))
+    fake = inputs_fake(layers)
     return {
         "crew": cfg.value("crew.size"),
         "legs": [_leg(t) for t in tl.legs],
@@ -170,6 +175,11 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
             "solar_event": rad.solar_event,
         },
         "assumptions": cfg.assumptions(),
+        "start": {
+            "id": tour.start.id, "name": tour.start.name,
+            "xy_m": xy((tour.start.x, tour.start.y)), "cell": [int(v) for v in tour.start.cell],
+            "source": "routing/config.toml start.xy_m (landing spot L1, temporary)",
+        },
         "inputs": {
             "site": layers.get("site", {}).get("name"),
             "grid": {"width": grid.width, "height": grid.height, "cell_m": grid.cell_m},

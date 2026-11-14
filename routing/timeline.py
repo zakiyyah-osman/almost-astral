@@ -1,7 +1,7 @@
 """Legs, totals, track samples, budget checks and radiation (DESIGN section 8).
 
 Times are physical minutes: risk never inflates a reported time. The clock starts when the
-crew leaves the rover (egress is not counted); legs run rover -> stops -> rover.
+crew leaves the start (egress is not counted); legs run start -> stops -> start.
 
     walk_min    = sum of physical minutes over legs
     stop_min    = timeline.stop_min_default for each stop
@@ -44,7 +44,7 @@ class LegTimes:
     max_slope_deg: float
     depart_min: float
     arrive_min: float
-    stop_min: float             # time spent at the destination (0 for the return to the rover)
+    stop_min: float             # time spent at the destination (0 for the return to the start)
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ class TrackPoint:
     slope_deg: float
     hazard: int
     elapsed_min: float          # clock time, including time spent at stops already visited
-    shelter_min: float          # minutes back to the rover, ingress included
+    shelter_min: float          # minutes back to the start, ingress included
     stop: object = None         # stop id when this is the arrival at a stop
 
 
@@ -112,7 +112,7 @@ def solar_event(cfg: Config):
         "absorbed_dose_mgy": cfg.value("radiation.solar_event_dose_mgy"),
         "date": SOLAR_EVENT_DATE,
         "source": SOLAR_EVENT_SOURCE,
-        "note": "Whole-event absorbed dose if unsheltered. In Gy; not added to radiation_dose_usv.",
+        "note": "Whole-event absorbed dose if unprotected. In Gy; not added to radiation_dose_usv.",
     }
 
 
@@ -228,7 +228,7 @@ def _abort_check(track, legs, shelter: Shelter, route: Route, eva_max_min):
     verb = "within" if ok else "over"
     return Check(
         CHECK_ABORT, ok, worst, eva_max_min, "min",
-        f"At its worst, {where}, elapsed time plus the way back to shelter is {worst:.1f} min, "
+        f"At its worst, {where}, elapsed time plus the way back to the start is {worst:.1f} min, "
         f"{verb} the {eva_max_min:g} min limit.",
     )
 
