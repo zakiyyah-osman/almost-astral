@@ -1,0 +1,52 @@
+{
+  "format": "almost-astral crater grid, version 1",
+  "rows": 1600,
+  "cols": 1600,
+  "cell_m": 40.0,
+  "row0": "north",
+  "byte_order": "little",
+  "projection": {
+    "type": "equirectangular on a sphere",
+    "radius_m": 3396190,
+    "center_lat": 18.38,
+    "center_lon_east": 77.58,
+    "lat_ts": 18.38,
+    "note": "x = metres east of the west edge, y = metres north of the south edge"
+  },
+  "bounds_latlon": {
+    "south": 17.840141,
+    "west": 77.01112,
+    "north": 18.919859,
+    "east": 78.14888
+  },
+  "height": {
+    "file": "crater/height.i16",
+    "dtype": "int16",
+    "units": "m",
+    "nodata": -32768
+  },
+  "hazard": {
+    "file": "crater/hazard.u8",
+    "dtype": "uint8",
+    "classes": {
+      "0": "fine",
+      "1": "careful",
+      "2": "do not enter"
+    },
+    "nodata_class": 2
+  },
+  "slope": {
+    "file": "crater/slope.u8",
+    "dtype": "uint8",
+    "units": "deg",
+    "scale": 0.25,
+    "nodata": 255
+  },
+  "thresholds_deg": {
+    "careful_over": 10,
+    "no_go_over": 20
+  },
+  "label": "40 m, rover-scale",
+  "source": "USGS Mars 2020 CTX DEM mosaic, 20 m (M20_JezeroCrater_CTXDEM_20m.tif)",
+  "built": "2026-11-14"
+}

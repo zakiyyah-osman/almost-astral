@@ -673,3 +673,7 @@ body { -webkit-user-select: none; user-select: none; }
 input, textarea, [contenteditable], .coords b, .coords small, .point-head b { -webkit-user-select: text; user-select: text; }
 .coords { pointer-events: auto; }
 
+
+/* ---- whole-crater grid: readout tag ("40 m, rover-scale") and the route "Calculating…" line ---- */
+.readout .res, .inspect .res { color: var(--muted); font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.routing-busy { color: var(--accent-strong); }
