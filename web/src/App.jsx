@@ -11,6 +11,7 @@ import MissionBuilder from './components/MissionBuilder.jsx'
 import ModeCompare from './components/ModeCompare.jsx'
 import Icon from './components/Icon.jsx'
 import Tag from './components/Tag.jsx'
+import MineralKey from './components/MineralKey.jsx'
 import { buildTimeline, doseTotal, parseTable, radiationModel } from './hud/sim.js'
 import { useTerrain, mineralAt } from './lib/useTerrain.js'
 import { PROFILES, timeField } from './lib/pathfind.js'
@@ -1030,6 +1031,7 @@ export default function App() {
               </div>
             )}
           </div>
+          {layerState.research?.on && <MineralKey hasMap={!!data.layers.find((l) => l.id === 'research')?.file} />}
         </div>
         {view === 'hud' && <HudView key={hudKey} data={hudData} onPosition={setAstronaut} large={large} onLarge={setLarge} visor={visor} onVisor={setVisor} />}
       </main>

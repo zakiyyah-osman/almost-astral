@@ -5,6 +5,7 @@ import { clock } from '../hud/sim.js'
 import { graticule } from '../lib/graticule.js'
 import { MARS_RADIUS_M, xyToLatLon, latLonToXY, lon180, siteBounds } from '../lib/geo.js'
 import { TREK_LAYERS, TREK_ATTRIBUTION, CRATER } from '../lib/marsTrek.js'
+import { RESEARCH, REFERENCES, SAMPLE_GROUPS, MARKERS, squareBounds, squareToLatLon, classForPixel } from '../lib/research.js'
 
 // Two ways to draw the site:
 // - Real site (layers.json has site.center_lat / center_lon_east): a Mars map in latitude and
@@ -93,6 +94,84 @@ function photoPins(photos) {
       .bindPopup(html, { maxWidth: 340, minWidth: 260, className: 'photo-popup' })
       .addTo(group)
   }
+  return group
+}
+
+// The 12 km mineral research (lib/research.js): the square, the CRISM colour layer when the file is
+// there, and the rover sample stars. Hover a star for its name, click it for the finding and sources.
+// Clicking a coloured area names its mineral class.
+const refLinks = (ids) =>
+  ids.map((id) => REFERENCES[id]).filter(Boolean).map((r) => `<a href="${escapeHtml(r.url)}" target="_blank" rel="noreferrer">${escapeHtml(r.label)}</a>`).join('')
+const noteLine = `<p class="rp-note">From the team note “${escapeHtml(RESEARCH.title)}” (${escapeHtml(RESEARCH.date)}).</p>`
+
+function markerPopup(m) {
+  const g = m.group ? SAMPLE_GROUPS[m.group] : null
+  const where = m.method === 'table' ? 'Position from the offsets in the note (NASA waypoints, within tens of metres).' : 'Position read off the note’s map, about ±100 m.'
+  if (!g) return `<div class="research-pop"><b>${escapeHtml(m.label)}</b><p>Where Perseverance landed in February 2021.</p><p class="rp-note">${where}</p>${noteLine}</div>`
+  return (
+    `<div class="research-pop"><b>${escapeHtml(g.title)}</b>` +
+    `<p class="rp-sub">Perseverance sample · ${escapeHtml(g.sols)} · ${escapeHtml(g.where)}</p>` +
+    `<p>${escapeHtml(g.finding)}</p>` +
+    `<p class="rp-dim">Cores: ${escapeHtml(g.cores)}</p>` +
+    `<p class="rp-dim">Amount: ${escapeHtml(RESEARCH.noTonnage)}</p>` +
+    `<p class="rp-links">${refLinks([...g.refs, 'ref_02'])}</p>` +
+    `<p class="rp-note">${where}</p>${noteLine}</div>`
+  )
+}
+
+function classPopup(c) {
+  const area = c.areaKm2 != null ? `<p>Mapped signal in the 12 km square: <b>${c.areaKm2} km²</b>${c.parameter ? ` (CRISM ${escapeHtml(c.parameter)})` : ''}.</p>` : `<p>About ${c.percent}% of the 12 km square.</p>`
+  return (
+    `<div class="research-pop"><b><i style="background:${c.color}"></i>${escapeHtml(c.name)}</b>` +
+    `<p>${escapeHtml(c.about)}</p>${area}` +
+    (c.areaKm2 != null ? `<p class="rp-dim">A relative orbital signal, not a confirmed detection. ${escapeHtml(RESEARCH.noTonnage)}</p>` : '') +
+    `<p class="rp-links">${refLinks(['ref_01'])}</p>${noteLine}</div>`
+  )
+}
+
+const starIcon = (kind) =>
+  L.divIcon({ className: 'pin-icon', html: `<span class="research-mark ${kind}"></span>`, iconSize: [22, 22], iconAnchor: [11, 11] })
+
+function researchLayer(layer, site) {
+  const group = L.layerGroup()
+  const b = squareBounds(site)
+  const bounds = L.latLngBounds([b.south, b.west], [b.north, b.east])
+  L.rectangle(bounds, { pane: 'craterLayers', interactive: false, fill: false, color: '#ffd166', weight: 1.5, opacity: 0.7, dashArray: '6 6' }).addTo(group)
+  let pixels = null // the colour layer's pixels, for naming the class under a click
+  if (layer.file) {
+    const overlay = L.imageOverlay(`./${layer.file}`, bounds, { pane: 'craterLayers', opacity: layer.opacity ?? 0.75 }).addTo(group)
+    group.setOpacity = (o) => overlay.setOpacity(o)
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        ctx.drawImage(img, 0, 0)
+        pixels = { ctx, w: canvas.width, h: canvas.height }
+      } catch {
+        pixels = null
+      }
+    }
+    img.src = `./${layer.file}`
+  }
+  for (const m of MARKERS) {
+    const p = squareToLatLon(m.east, m.north, site)
+    L.marker([p.lat, p.lon], { icon: starIcon(m.kind), keyboard: false, zIndexOffset: 300, title: m.label })
+      .bindTooltip(m.label, { direction: 'top', offset: [0, -10], className: 'stop-label' })
+      .bindPopup(markerPopup(m), { maxWidth: 320, minWidth: 240, className: 'photo-popup' })
+      .addTo(group)
+  }
+  // Which mineral class is under a point, from the colour layer; null off the layer or on a blank cell.
+  group.classAt = (latlng) => {
+    if (!pixels || !bounds.contains(latlng)) return null
+    const fx = (latlng.lng - bounds.getWest()) / (bounds.getEast() - bounds.getWest())
+    const fy = (bounds.getNorth() - latlng.lat) / (bounds.getNorth() - bounds.getSouth())
+    const [r, g, bl, a] = pixels.ctx.getImageData(Math.min(pixels.w - 1, Math.floor(fx * pixels.w)), Math.min(pixels.h - 1, Math.floor(fy * pixels.h)), 1, 1).data
+    return classForPixel(r, g, bl, a)
+  }
+  group.classPopup = classPopup
   return group
 }
 
@@ -225,6 +304,18 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     data.layers.forEach((layer, i) => {
       if (layer.scope === 'photos') {
         if (geo.real) overlays.current[layer.id] = photoPins(data.photos ?? [])
+        return
+      }
+      if (layer.scope === 'research') {
+        if (geo.real) {
+          const g = researchLayer(layer, data.site)
+          overlays.current[layer.id] = g
+          map.on('click', (e) => {
+            if (!map.hasLayer(g)) return
+            const c = g.classAt(e.latlng)
+            if (c) L.popup({ maxWidth: 300, className: 'photo-popup' }).setLatLng(e.latlng).setContent(g.classPopup(c)).openOn(map)
+          })
+        }
         return
       }
       if (layer.scope === 'crater') {
