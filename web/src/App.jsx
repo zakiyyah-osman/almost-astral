@@ -289,14 +289,14 @@ export default function App() {
   const inspected = useMemo(() => describe(inspect), [describe, inspect])
 
   // Presets set the site layers only; crater-wide layers and photo pins keep their own switches.
-  const scopedIds = new Set((data?.layers ?? []).filter((l) => l.scope).map((l) => l.id))
+  const craterIds = new Set((data?.layers ?? []).filter((l) => l.scope).map((l) => l.id))
   const applyPreset = (preset) =>
     setLayerState((s) => {
       const on = presetIds(preset, Object.keys(s))
-      return Object.fromEntries(Object.entries(s).map(([id, v]) => [id, scopedIds.has(id) ? v : { ...v, on: on.includes(id) }]))
+      return Object.fromEntries(Object.entries(s).map(([id, v]) => [id, craterIds.has(id) ? v : { ...v, on: on.includes(id) }]))
     })
   const isPreset = (preset) => {
-    const have = Object.keys(layerState).filter((id) => !scopedIds.has(id))
+    const have = Object.keys(layerState).filter((id) => !craterIds.has(id))
     const on = presetIds(preset, have)
     return have.length > 0 && have.every((id) => !!layerState[id].on === on.includes(id))
   }
