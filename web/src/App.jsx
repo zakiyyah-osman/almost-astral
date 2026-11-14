@@ -879,11 +879,17 @@ export default function App() {
             sizeKey={`${shut}-${sideW}`}
           />
 
-          {shut && (
-            <button type="button" className="panel-open" onClick={() => setSideShut(false)} aria-label="Show the panel">
-              <Icon name="panel" /> Panel
-            </button>
-          )}
+          {/* Top-left of the map in every view (Planning, HUD, Tablet, visor): back to the homepage, and the panel when hidden. */}
+          <div className="map-actions">
+            <a className="map-home" href="#" title="Back to the homepage">
+              <Icon name="home" /> Home
+            </a>
+            {shut && (
+              <button type="button" className="panel-open" onClick={() => setSideShut(false)} aria-label="Show the panel">
+                <Icon name="panel" /> Panel
+              </button>
+            )}
+          </div>
 
           <div className="map-chip">
             <strong>{data.site.name}</strong>
