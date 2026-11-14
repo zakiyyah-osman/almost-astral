@@ -1,7 +1,7 @@
 // The team research note "Minerals in a 12 km × 12 km square around our Jezero site"
 // (Almost Astral, NASA Space Apps 2026, 2026-11-14, Jezero_minerals_12km_research.pdf).
-// Everything here is transcribed from that note: nothing is added. Positions are km east and north
-// of the south-west corner of the 12 km square, which is centred on our site (18.46°N, 77.40°E).
+// Everything here is transcribed from that note: nothing is added. The 12 km square is centred on
+// our site (18.46°N, 77.40°E); positions in it are km east and north of its south-west corner.
 //
 // CRISM colours are RELATIVE orbital signals, not confirmed detections. Tonnage is not known:
 // CRISM sees only the top surface, with no depth or concentration.
@@ -13,20 +13,22 @@ export const RESEARCH = {
   date: '2026-11-14',
   file: 'Jezero_minerals_12km_research.pdf',
   sizeKm: 12,
-  mapFile: 'crater/minerals_12km.png', // the colour layer, from the data lead (not in data/out yet)
+  mapFile: 'crater/minerals_12km.png', // CRISM colour layer from the data lead, used when it is in data/out
+  traced:
+    'Mineral areas traced from the note’s map (web/scripts/digitize_minerals_12km.py), on its 20 m grid. A trace of the picture, not the CRISM values: good to about 20–30 m.',
   caption:
-    'CRISM (MRO) MTRDR summary parameters FRT00005C5E (18 m) and HRL000040FF (36 m), NASA PDS; terrain CTX DEM (USGS). Shown: each parameter’s strongest 2% of pixels, above zero and above the team threshold, in patches of at least 4 cells (1,600 m²); where two pass, the stronger wins. Relative signals, not confirmed detections. Sample sites from NASA’s Perseverance waypoints on the sol each core was taken.',
+    'CRISM (MRO) MTRDR summary parameters FRT00005C5E (18 m) and HRL000040FF (36 m), NASA PDS; terrain CTX DEM (USGS). Shown: each parameter’s strongest 2% of pixels, above zero and above the team threshold, in patches of at least 4 cells (1,600 m²); where two pass, the stronger wins. Relative signals, not confirmed detections.',
   noTonnage:
     'Tonnage is not known. CRISM measures a relative signal from the top surface only (no depth, no concentration), so no amount can be worked out from orbit.',
 }
 
 // The mineral classes on the map, largest mapped area first.
 export const MINERAL_CLASSES = [
-  { id: 'augite', name: 'High-calcium pyroxene (augite)', parameter: 'HCPINDEX2', areaKm2: 1.81, color: '#e0559a', about: 'A dark mineral common in volcanic rock (basalt).' },
-  { id: 'olivine', name: 'Olivine', parameter: 'OLINDEX3', areaKm2: 1.4, color: '#78c846', about: 'A green volcanic mineral. With carbon-dioxide-rich water it can turn into carbonate.' },
-  { id: 'hydrated', name: 'Hydrated minerals (type not identified)', parameter: 'BD1900_2', areaKm2: 1.19, color: '#d8d8d8', about: 'Any mineral holding water in its structure; CRISM sees the water band but not which mineral.' },
-  { id: 'carbonate', name: 'Mg-carbonate (magnesium carbonate)', parameter: 'MIN2295_2480', areaKm2: 1.12, color: '#eb8c37', about: "Forms when water with dissolved carbon dioxide reacts with rock; can record the water's chemistry." },
-  { id: 'clay', name: 'Fe/Mg smectite clay', parameter: 'D2300', areaKm2: 0.71, color: '#46aae6', about: 'A clay that forms in water; good at preserving traces of past conditions.' },
+  { id: 'augite', short: 'Augite', name: 'High-calcium pyroxene (augite)', parameter: 'HCPINDEX2', areaKm2: 1.81, color: '#e0559a', about: 'A dark mineral common in volcanic rock (basalt).' },
+  { id: 'olivine', short: 'Olivine', name: 'Olivine', parameter: 'OLINDEX3', areaKm2: 1.4, color: '#78c846', about: 'A green volcanic mineral. With carbon-dioxide-rich water it can turn into carbonate.' },
+  { id: 'hydrated', short: 'Hydrated', name: 'Hydrated minerals (type not identified)', parameter: 'BD1900_2', areaKm2: 1.19, color: '#d8d8d8', about: 'Any mineral holding water in its structure; CRISM sees the water band but not which mineral.' },
+  { id: 'carbonate', short: 'Mg-carbonate', name: 'Mg-carbonate (magnesium carbonate)', parameter: 'MIN2295_2480', areaKm2: 1.12, color: '#eb8c37', about: "Forms when water with dissolved carbon dioxide reacts with rock; can record the water's chemistry." },
+  { id: 'clay', short: 'Fe/Mg clay', name: 'Fe/Mg smectite clay', parameter: 'D2300', areaKm2: 0.71, color: '#46aae6', about: 'A clay that forms in water; good at preserving traces of past conditions.' },
 ]
 export const NO_DATA = { name: 'No CRISM data', color: '#555555', percent: 8, about: 'Neither CRISM image covers these places, so mineral presence is unknown there.' }
 export const CHECKED_UNMAPPED = 'Low-calcium pyroxene (LCPINDEX2) was checked; no positive signal.'
@@ -48,80 +50,6 @@ export const REFERENCES = {
   ref_14: { label: 'Berkeley: crater-floor samples and salts', url: 'https://vcresearch.berkeley.edu/news/perseverance-rover-retrieves-key-clues-mars-geologic-and-water-history' },
   ref_15: { label: 'PNAS: Sampling Mars, geologic context of the samples', url: 'https://www.pnas.org/doi/10.1073/pnas.2404255121' },
 }
-
-// Rover sample groups from the note. refs: the note's references whose titles name that sample.
-export const SAMPLE_GROUPS = {
-  wildcat_and_skinner_ridge: {
-    title: 'Wildcat Ridge & Skinner Ridge',
-    cores: 'Hazeltop, Bearwallow (Wildcat Ridge); Swift Run, Skyland (Skinner Ridge)',
-    sols: 'Sols 490–516',
-    where: 'Inside our 2 km walk',
-    finding: 'Delta mudstone from an evaporating salty lake; organic molecules found alongside sulfate minerals.',
-    refs: ['ref_13', 'ref_03'],
-  },
-  mageik_and_kukaklek: {
-    title: 'Mageik & Kukaklek',
-    cores: 'Mageik (sol 579), Kukaklek (sol 623)',
-    sols: 'Sols 579 and 623',
-    where: 'Inside our 2 km walk',
-    finding: 'Delta front sedimentary cores.',
-    refs: ['ref_03', 'ref_05'],
-  },
-  montdenier: {
-    title: 'Montdenier (Rochette)',
-    cores: 'Montdenier',
-    sols: 'Sol 190',
-    where: '2.5 km east, 1.7 km south of our site',
-    finding: 'Máaz basalt: feldspar, pyroxene (augite), iron-titanium oxides; salts (sulfates, perchlorates) in pores.',
-    refs: ['ref_06', 'ref_14'],
-  },
-  quartier: {
-    title: 'Quartier outcrop (Séítah)',
-    cores: 'Quartier',
-    sols: 'Sol 294',
-    where: '2.3 km east, 1.6 km south of our site',
-    finding: 'Olivine rock (olivine cumulate) that reacted with carbonated water.',
-    refs: ['ref_12', 'ref_06'],
-  },
-  turquoise_bay: {
-    title: 'Turquoise Bay (Margin Unit)',
-    cores: 'Turquoise Bay',
-    sols: 'Sol 942',
-    where: '3.0 km west, 1.7 km north of our site',
-    finding: 'Margin Unit core that NASA says may contain carbonate minerals.',
-    refs: ['ref_08'],
-  },
-  bunsen_peak: {
-    title: 'Bunsen Peak',
-    cores: 'Bunsen Peak',
-    sols: 'Sol 1088',
-    where: '4.1 km west, 1.9 km north of our site',
-    finding: 'About 75% carbonate minerals cemented by almost pure silica.',
-    refs: ['ref_09'],
-  },
-  sapphire_canyon: {
-    title: 'Sapphire Canyon (Cheyava Falls)',
-    cores: 'Sapphire Canyon',
-    sols: 'Sol 1215',
-    where: '5.3 km west, 2.2 km north of our site (no CRISM coverage there)',
-    finding: 'Tiny spots rich in iron phosphate and iron sulfide, likely vivianite and greigite: a potential biosignature, not proof of life.',
-    refs: ['ref_10', 'ref_11'],
-  },
-}
-
-// The markers on the note's map. method: 'table' = from the offsets the note reports (exact to its
-// rounding); 'figure' = read off the map axes, about ±0.1 km.
-export const MARKERS = [
-  { group: 'sapphire_canyon', label: 'Cheyava Falls · likely vivianite + greigite', kind: 'star', east: 0.7, north: 8.2, method: 'table' },
-  { group: 'bunsen_peak', label: 'Bunsen Peak · ~75% carbonate + silica', kind: 'star', east: 1.9, north: 7.9, method: 'table' },
-  { group: 'turquoise_bay', label: 'Turquoise Bay · Margin Unit, may contain carbonate', kind: 'star', east: 3.0, north: 7.7, method: 'table' },
-  { group: 'wildcat_and_skinner_ridge', label: 'Wildcat Ridge & Skinner Ridge · delta mudstone, sulfates + organics', kind: 'star', east: 6.3, north: 5.9, method: 'figure' },
-  { group: 'mageik_and_kukaklek', label: 'Kukaklek · delta core', kind: 'star', east: 5.9, north: 5.6, method: 'figure' },
-  { group: 'mageik_and_kukaklek', label: 'Mageik · delta front core', kind: 'star', east: 6.1, north: 5.5, method: 'figure' },
-  { group: null, label: 'Perseverance landing site', kind: 'landing', east: 8.9, north: 5.1, method: 'figure' },
-  { group: 'quartier', label: 'Séítah · olivine rock altered to carbonate', kind: 'star', east: 8.3, north: 4.4, method: 'table' },
-  { group: 'montdenier', label: 'Montdenier · Máaz basalt: augite (pyroxene), feldspar', kind: 'star', east: 8.5, north: 4.3, method: 'table' },
-]
 
 // Site grid metres for a point given in km from the 12 km square's south-west corner.
 // The square and our site share a centre.

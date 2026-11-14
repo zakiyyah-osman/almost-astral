@@ -4,6 +4,7 @@
 
 import { setPhotos } from './photos.js'
 import { RESEARCH } from './research.js'
+import tracedMinerals from '../assets/minerals_12km.png'
 
 async function getJson(path) {
   const res = await fetch(path)
@@ -33,14 +34,24 @@ export async function loadData() {
     ? [{ id: 'photos', title: `Ground photos (${photos.length}, Perseverance)`, scope: 'photos', default: true, opacity: 1,
          source: index.sources_notes?.[index.vectors.photos] ?? 'NASA/JPL-Caltech, Perseverance raw images' }]
     : []
-  // The 12 km mineral research (lib/research.js): rover sample stars always, and the CRISM colour
-  // layer once the data lead has put it in data/out (a missing file comes back as the HTML page).
-  const researchMap = await fetch(`./${RESEARCH.mapFile}`, { method: 'HEAD' })
-    .then((r) => (r.ok && (r.headers.get('content-type') ?? '').startsWith('image/') ? RESEARCH.mapFile : null))
-    .catch(() => null)
-  const researchLayers = index.site?.center_lat != null
-    ? [{ id: 'research', title: 'Minerals and rover samples (12 km)', scope: 'research', default: true, opacity: 0.75, file: researchMap,
-         source: `${RESEARCH.title} (${RESEARCH.author}, ${RESEARCH.date}). ${RESEARCH.caption}` }]
-    : []
-  return { ...index, layers: [...index.layers, ...craterLayers, ...photoLayers, ...researchLayers], route, waypoints, plan, photos }
+  // The 12 km mineral research (lib/research.js). The CRISM colour layer from the data lead wins when it
+  // is in data/out (a missing file comes back as the HTML page); until then, the areas traced from the
+  // research note's map (web/scripts/digitize_minerals_12km.py).
+  const realMap = await fetch(`./${RESEARCH.mapFile}`, { method: 'HEAD' })
+    .then((r) => r.ok && (r.headers.get('content-type') ?? '').startsWith('image/'))
+    .catch(() => false)
+  // One "Minerals" layer: the site's own CRISM cells (minerals.png) and the 12 km research areas share
+  // its switch, its opacity and its list of minerals (SiteMap.jsx, App.jsx).
+  const research = index.site?.center_lat != null
+    ? { url: realMap ? `./${RESEARCH.mapFile}` : tracedMinerals, traced: !realMap,
+        source: `12 km square around the site: ${RESEARCH.title} (${RESEARCH.author}, ${RESEARCH.date}). ${RESEARCH.caption}${realMap ? '' : ` ${RESEARCH.traced}`}` }
+    : null
+  let siteLayers = index.layers
+  if (research) {
+    const has = siteLayers.some((l) => l.id === 'minerals')
+    siteLayers = has
+      ? siteLayers.map((l) => (l.id === 'minerals' ? { ...l, research, source: `2 km site: ${l.source}. ${research.source}` } : l))
+      : [...siteLayers, { id: 'minerals', title: 'Minerals', file: null, default: false, opacity: 0.85, research, source: research.source }]
+  }
+  return { ...index, layers: [...siteLayers, ...craterLayers, ...photoLayers], route, waypoints, plan, photos }
 }

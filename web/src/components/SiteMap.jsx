@@ -5,7 +5,7 @@ import { clock } from '../hud/sim.js'
 import { graticule } from '../lib/graticule.js'
 import { MARS_RADIUS_M, xyToLatLon, latLonToXY, lon180, siteBounds } from '../lib/geo.js'
 import { TREK_LAYERS, TREK_ATTRIBUTION, CRATER } from '../lib/marsTrek.js'
-import { RESEARCH, REFERENCES, SAMPLE_GROUPS, MARKERS, squareBounds, squareToLatLon, classForPixel } from '../lib/research.js'
+import { squareBounds, classForPixel } from '../lib/research.js'
 
 // Two ways to draw the site:
 // - Real site (layers.json has site.center_lat / center_lon_east): a Mars map in latitude and
@@ -15,7 +15,13 @@ import { RESEARCH, REFERENCES, SAMPLE_GROUPS, MARKERS, squareBounds, squareToLat
 // Everything coming in and going out of this component stays in local site metres (x east, y north),
 // so the route finder, the mission builder and the HUD do not change.
 
-const MARS_CRS = L.extend({}, L.CRS.EPSG4326, { R: MARS_RADIUS_M })
+// Plain EPSG4326 draws a degree of longitude as wide as a degree of latitude, which at Jezero (18.5 N)
+// stretches everything east-west by about 5% (cos 18.5 = 0.948), so the scale bar was only right
+// east-west. Squeezing x by K = 243/256 (= cos 18.3 N) makes the map true to scale at the site to
+// within 0.1%, and keeps every tile a whole number of pixels wide (256 -> 243, 512 -> 486): no seams.
+const K = 243 / 256
+const MARS_CRS = L.extend({}, L.CRS.EPSG4326, { R: MARS_RADIUS_M, transformation: new L.Transformation(K / 180, K, -1 / 180, 0.5) })
+const squeezedTile = (size = 256) => L.point(Math.round(size * K), size)
 const BLANK_TILE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==' // 1 x 1 see-through
 const BOX_MAX_ZOOM = 14 // the "Delta front site" box shows below this zoom
 
@@ -97,50 +103,13 @@ function photoPins(photos) {
   return group
 }
 
-// The 12 km mineral research (lib/research.js): the square, the CRISM colour layer when the file is
-// there, and the rover sample stars. Hover a star for its name, click it for the finding and sources.
-// Clicking a coloured area names its mineral class.
-const refLinks = (ids) =>
-  ids.map((id) => REFERENCES[id]).filter(Boolean).map((r) => `<a href="${escapeHtml(r.url)}" target="_blank" rel="noreferrer">${escapeHtml(r.label)}</a>`).join('')
-const noteLine = `<p class="rp-note">From the team note “${escapeHtml(RESEARCH.title)}” (${escapeHtml(RESEARCH.date)}).</p>`
-
-function markerPopup(m) {
-  const g = m.group ? SAMPLE_GROUPS[m.group] : null
-  const where = m.method === 'table' ? 'Position from the offsets in the note (NASA waypoints, within tens of metres).' : 'Position read off the note’s map, about ±100 m.'
-  if (!g) return `<div class="research-pop"><b>${escapeHtml(m.label)}</b><p>Where Perseverance landed in February 2021.</p><p class="rp-note">${where}</p>${noteLine}</div>`
-  return (
-    `<div class="research-pop"><b>${escapeHtml(g.title)}</b>` +
-    `<p class="rp-sub">Perseverance sample · ${escapeHtml(g.sols)} · ${escapeHtml(g.where)}</p>` +
-    `<p>${escapeHtml(g.finding)}</p>` +
-    `<p class="rp-dim">Cores: ${escapeHtml(g.cores)}</p>` +
-    `<p class="rp-dim">Amount: ${escapeHtml(RESEARCH.noTonnage)}</p>` +
-    `<p class="rp-links">${refLinks([...g.refs, 'ref_02'])}</p>` +
-    `<p class="rp-note">${where}</p>${noteLine}</div>`
-  )
-}
-
-function classPopup(c) {
-  const area = c.areaKm2 != null ? `<p>Mapped signal in the 12 km square: <b>${c.areaKm2} km²</b>${c.parameter ? ` (CRISM ${escapeHtml(c.parameter)})` : ''}.</p>` : `<p>About ${c.percent}% of the 12 km square.</p>`
-  return (
-    `<div class="research-pop"><b><i style="background:${c.color}"></i>${escapeHtml(c.name)}</b>` +
-    `<p>${escapeHtml(c.about)}</p>${area}` +
-    (c.areaKm2 != null ? `<p class="rp-dim">A relative orbital signal, not a confirmed detection. ${escapeHtml(RESEARCH.noTonnage)}</p>` : '') +
-    `<p class="rp-links">${refLinks(['ref_01'])}</p>${noteLine}</div>`
-  )
-}
-
-const starIcon = (kind) =>
-  L.divIcon({ className: 'pin-icon', html: `<span class="research-mark ${kind}"></span>`, iconSize: [22, 22], iconAnchor: [11, 11] })
-
-function researchLayer(layer, site) {
-  const group = L.layerGroup()
-  const b = squareBounds(site)
-  const bounds = L.latLngBounds([b.south, b.west], [b.north, b.east])
-  L.rectangle(bounds, { pane: 'craterLayers', interactive: false, fill: false, color: '#ffd166', weight: 1.5, opacity: 0.7, dashArray: '6 6' }).addTo(group)
-  let pixels = null // the colour layer's pixels, for naming the class under a click
-  if (layer.file) {
-    const overlay = L.imageOverlay(`./${layer.file}`, bounds, { pane: 'craterLayers', opacity: layer.opacity ?? 0.75 }).addTo(group)
-    group.setOpacity = (o) => overlay.setOpacity(o)
+// The Minerals layer: the site's own CRISM cells (minerals.png, 2 km) and the 12 km research areas
+// (lib/research.js), under one switch. Both use the same five colours. Hovering a cell names its
+// mineral; clicks go through to the map as usual (inspect a point, pick a mission point).
+// setShown(ids) shows only the minerals picked in the list, in both images. Nothing is coloured until
+// a mineral is picked.
+function pixelsOf(url) {
+  return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
       try {
@@ -149,29 +118,80 @@ function researchLayer(layer, site) {
         canvas.height = img.naturalHeight
         const ctx = canvas.getContext('2d', { willReadFrequently: true })
         ctx.drawImage(img, 0, 0)
-        pixels = { ctx, w: canvas.width, h: canvas.height }
+        resolve({ ctx, w: canvas.width, h: canvas.height })
       } catch {
-        pixels = null
+        resolve(null)
       }
     }
-    img.src = `./${layer.file}`
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
+
+// A copy of an image keeping only the pixels of the given mineral classes, as a data URL.
+function onlyClasses(pixels, ids) {
+  const src = pixels.ctx.getImageData(0, 0, pixels.w, pixels.h)
+  const d = new Uint8ClampedArray(src.data)
+  for (let i = 0; i < d.length; i += 4) if (!ids.includes(classForPixel(d[i], d[i + 1], d[i + 2], d[i + 3])?.id)) d[i + 3] = 0
+  const canvas = document.createElement('canvas')
+  canvas.width = pixels.w
+  canvas.height = pixels.h
+  canvas.getContext('2d').putImageData(new ImageData(d, pixels.w, pixels.h), 0, 0)
+  return canvas.toDataURL('image/png')
+}
+
+function mineralsLayer(layer, zIndex, siteBox, site, map) {
+  const group = L.layerGroup()
+  const parts = [] // { overlay, url, bounds, pixels, label }
+  if (layer.file) {
+    const url = `./${layer.file}`
+    parts.push({ overlay: L.imageOverlay(BLANK_TILE, siteBox, { pane: 'layers', zIndex, className: 'mineral-cells' }), url, bounds: siteBox, label: '2 km site, CRISM' })
   }
-  for (const m of MARKERS) {
-    const p = squareToLatLon(m.east, m.north, site)
-    L.marker([p.lat, p.lon], { icon: starIcon(m.kind), keyboard: false, zIndexOffset: 300, title: m.label })
-      .bindTooltip(m.label, { direction: 'top', offset: [0, -10], className: 'stop-label' })
-      .bindPopup(markerPopup(m), { maxWidth: 320, minWidth: 240, className: 'photo-popup' })
-      .addTo(group)
+  if (layer.research && site) {
+    const b = squareBounds(site)
+    const bounds = L.latLngBounds([b.south, b.west], [b.north, b.east])
+    L.rectangle(bounds, { pane: 'research', interactive: false, fill: false, color: '#ffd166', weight: 1.5, opacity: 0.7, dashArray: '6 6' }).addTo(group)
+    parts.push({ overlay: L.imageOverlay(BLANK_TILE, bounds, { pane: 'research', className: 'mineral-cells' }), url: layer.research.url, bounds, label: '12 km research' })
   }
-  // Which mineral class is under a point, from the colour layer; null off the layer or on a blank cell.
-  group.classAt = (latlng) => {
-    if (!pixels || !bounds.contains(latlng)) return null
-    const fx = (latlng.lng - bounds.getWest()) / (bounds.getEast() - bounds.getWest())
-    const fy = (bounds.getNorth() - latlng.lat) / (bounds.getNorth() - bounds.getSouth())
-    const [r, g, bl, a] = pixels.ctx.getImageData(Math.min(pixels.w - 1, Math.floor(fx * pixels.w)), Math.min(pixels.h - 1, Math.floor(fy * pixels.h)), 1, 1).data
-    return classForPixel(r, g, bl, a)
+  for (const p of parts) {
+    p.overlay.addTo(group)
+    pixelsOf(p.url).then((px) => {
+      p.pixels = px
+      draw(p)
+    })
   }
-  group.classPopup = classPopup
+  let shown = []
+  const draw = (p) => {
+    if (!p.pixels) return
+    p.overlay.setUrl(shown.length ? onlyClasses(p.pixels, shown) : BLANK_TILE)
+  }
+  group.setShown = (ids) => {
+    shown = ids ?? []
+    parts.forEach(draw)
+  }
+  group.setOpacity = (o) => parts.forEach((p) => p.overlay.setOpacity(o))
+
+  // The mineral under a point: the 12 km layer first (it is drawn on top), then the site's own cells.
+  const classAt = (latlng) => {
+    for (const p of [...parts].reverse()) {
+      if (!p.pixels || !p.bounds.contains(latlng)) continue
+      const fx = (latlng.lng - p.bounds.getWest()) / (p.bounds.getEast() - p.bounds.getWest())
+      const fy = (p.bounds.getNorth() - latlng.lat) / (p.bounds.getNorth() - p.bounds.getSouth())
+      const [r, g, bl, a] = p.pixels.ctx.getImageData(Math.min(p.pixels.w - 1, Math.floor(fx * p.pixels.w)), Math.min(p.pixels.h - 1, Math.floor(fy * p.pixels.h)), 1, 1).data
+      const c = classForPixel(r, g, bl, a)
+      if (c && c.areaKm2 != null && shown.includes(c.id)) return { c, label: p.label }
+    }
+    return null
+  }
+  const hoverTip = L.tooltip({ direction: 'top', offset: [0, -12], className: 'stop-label mineral-tip' })
+  map.on('mousemove', (e) => {
+    const hit = map.hasLayer(group) ? classAt(e.latlng) : null
+    if (hit) {
+      hoverTip.setLatLng(e.latlng).setContent(`<i style="background:${hit.c.color}"></i>${escapeHtml(hit.c.name)} <small>${hit.label}</small>`)
+      if (!map.hasLayer(hoverTip)) hoverTip.addTo(map)
+    } else if (map.hasLayer(hoverTip)) hoverTip.remove()
+  })
+  map.on('mouseout', () => map.hasLayer(hoverTip) && hoverTip.remove())
   return group
 }
 
@@ -218,7 +238,7 @@ function button(position, html, onClick) {
 //  probe        { x, y }: a point to ring (from the profile chart)
 //  astronaut    null, or { x, y, storm, trail } while the HUD simulation runs
 //  layoutKey    changes whenever the page layout changes the map's size
-export default function SiteMap({ data, extraLayers = [], layerState, route, refRoute, waypoints, arrivals, landing, missionPins, targets, picking, onPick, onInspect, inspect, gridOn, onView, onHover, probe, selectedStop, onSelectStop, astronaut, layoutKey, sizeKey }) {
+export default function SiteMap({ data, extraLayers = [], layerState, route, refRoute, waypoints, arrivals, landing, missionPins, targets, picking, onPick, onInspect, inspect, gridOn, onView, onHover, probe, selectedStop, onSelectStop, astronaut, layoutKey, sizeKey, mineralsShown = [] }) {
   const elRef = useRef(null)
   const refit = useRef(() => {})
   const resizeOnly = useRef(() => {})
@@ -252,6 +272,7 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       : L.map(elRef.current, { crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25, attributionControl: false })
     map.createPane('craterLayers').style.zIndex = 290 // crater-wide layers sit under the site layers
     map.createPane('layers').style.zIndex = 300 // above the base tiles, below the route and markers
+    map.createPane('research').style.zIndex = 320 // the 12 km mineral areas, above the site layers
     map.createPane('grid').style.zIndex = 350
     map.getPane('grid').style.pointerEvents = 'none'
     L.control.scale({ imperial: false }).addTo(map)
@@ -273,6 +294,7 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
           zIndex: i,
           crossOrigin: true,
           ...t.options, // zoom limits, tile size and bounds (no requests outside the mosaic)
+          tileSize: squeezedTile(t.options?.tileSize), // drawn narrower to match MARS_CRS
         }).addTo(map),
       )
 
@@ -306,18 +328,6 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
         if (geo.real) overlays.current[layer.id] = photoPins(data.photos ?? [])
         return
       }
-      if (layer.scope === 'research') {
-        if (geo.real) {
-          const g = researchLayer(layer, data.site)
-          overlays.current[layer.id] = g
-          map.on('click', (e) => {
-            if (!map.hasLayer(g)) return
-            const c = g.classAt(e.latlng)
-            if (c) L.popup({ maxWidth: 300, className: 'photo-popup' }).setLatLng(e.latlng).setContent(g.classPopup(c)).openOn(map)
-          })
-        }
-        return
-      }
       if (layer.scope === 'crater') {
         if (!geo.real || !layer.bounds) return // needs the lat/lon map
         const b = layer.bounds
@@ -327,7 +337,11 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
         withSiteHole(`./${layer.file}`, bounds, site).then((url) => url && overlay.setUrl(url))
         return
       }
-      overlays.current[layer.id] = L.imageOverlay(`./${layer.file}`, site, { pane: 'layers', zIndex: i })
+      if (layer.id === 'minerals' && (layer.research || layer.file)) {
+        overlays.current[layer.id] = mineralsLayer(layer, i, site, geo.real ? data.site : null, map)
+        return
+      }
+      if (layer.file) overlays.current[layer.id] = L.imageOverlay(`./${layer.file}`, site, { pane: 'layers', zIndex: i })
     })
     groups.current = { grid: L.layerGroup().addTo(map), routes: L.layerGroup().addTo(map), targets: L.layerGroup().addTo(map), pins: L.layerGroup().addTo(map) }
 
@@ -410,6 +424,11 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       if (!state.on && map.hasLayer(overlay)) overlay.remove()
     }
   }, [layerState, data, extraLayers])
+
+  // The minerals picked in the Minerals card: only those are coloured.
+  useEffect(() => {
+    overlays.current.minerals?.setShown?.(mineralsShown)
+  }, [mineralsShown, data])
 
   useEffect(() => {
     refit.current()
