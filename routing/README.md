@@ -89,28 +89,40 @@ Every limit is in metres or degrees and is a **team assumption pending Nahla** (
 
 **Nearest safe cell.** `nearest_safe.u16` holds, for every cell, the row and column (window rows/cols) of the nearest safe cell; `nearest_safe_dist.f32` the distance in metres. A click on a safe or marginal cell stays; any other click moves to the centre of that cell (straight line: a lander comes down from above).
 
+**Measured values.** Four more float32 grids hold the numbers behind the codes, exactly as `landing.py` checks them: `pad_slope_deg.f32` (tilt of the pad's best-fit plane), `pad_roughness_m.f32`, `pad_height_range_m.f32` (after removing the plane) and `hazard_dist_m.f32` (from the cell centre to the nearest red, over-limit-slope or cliff-buffer cell). The first three are NaN where the pad was not computed (codes 2 and 3). `hazard_dist_m` is never NaN; it is +Infinity when the site has no such cell at all (the front end reads `Infinity` and shows no distance). The manifest gives each grid's unit, its `[landing]` limit and `fails_when`.
+
+**Zones image.** `landing_zones.png` is one RGBA image for the whole window, the same size and placement as `hazard.png` on the current site: safe cells semi-transparent green, marginal cells semi-transparent amber, everything else fully transparent. The colours are `landing.display_safe_rgba` and `landing.display_marginal_rgba` in `config.toml`; the manifest's `zones_png` has the legend.
+
+**Messages.** `landing_check` also returns `measured` and `chosen_measured` (the four values at the clicked and at the chosen cell), `messages` (one `{reason, code, title, detail, moved_m}` per reason, with the number and the limit in the text) and `moved_text`. The wording lives once in `landing.MESSAGE_TEMPLATES` and is copied to the manifest as `message_templates`, with the rules for filling it, so the front end shows the same text (DESIGN section 14.5).
+
 **Cost surface.** `time_rate.f64`, `risk_rate.f64` and `mask.u8` are exactly what `cost.build` makes (float64, so the browser's numbers are the same bits). They do not depend on the profile: the browser computes `time_rate × (1 + w × risk_rate)` for w = 0, 1, 5. The exact search rule is DESIGN section 15; `golden_cases.json` holds 10 landing/destination pairs × 3 profiles (one unreachable, one over budget under its own smaller test budget) to test against.
 
 **Files** (all little-endian, row 0 = north, no header):
 
 ```
 data/out/landing/
-  manifest.json          grid, window, tiles, dtypes, code tables, thresholds, budget rule, edge rule, hashes
+  manifest.json          grid, window, tiles, dtypes, code tables, thresholds, message templates, budget rule, edge rule, hashes
   golden_cases.json      reference paths and totals
+  golden_escape_cases.json  reference escapes out of red zones (DESIGN section 17)
+  landing_zones.png      safe (green) and marginal (amber) cells of the whole window, RGBA
   tiles/<ti>_<tj>/       landing_safety.u8  landing_warn.u8  nearest_safe.u16  nearest_safe_dist.f32
                          time_rate.f64  risk_rate.f64  mask.u8
+                         pad_slope_deg.f32  pad_roughness_m.f32  pad_height_range_m.f32  hazard_dist_m.f32
+                         escape_time_rate.f64  escape_risk_rate.f64
 ```
 
-On the 400 x 400 site this is one tile, **4,506,482 bytes (4.51 MB) in 9 files**. For a bigger grid, `landing.window_centre_m` / `landing.window_size_m` choose a window and `landing.tile_size_m` (5120 m, 1024 cells at 5 m) cuts it into tiles; the manifest lists each tile's index, origin, shape and files. The safety codes are computed on the whole site grid and `nearest_safe` on the whole window before tiling, so both are right across tile edges. Paths never leave the window. Crater-scale processing itself is not built yet; only the formats and functions are ready for it.
+On the 400 x 400 site this is one tile, **9,695,355 bytes (9.70 MB) in 17 files**. For a bigger grid, `landing.window_centre_m` / `landing.window_size_m` choose a window and `landing.tile_size_m` (5120 m, 1024 cells at 5 m) cuts it into tiles; the manifest lists each tile's index, origin, shape and files. The safety codes are computed on the whole site grid and `nearest_safe` on the whole window before tiling, so both are right across tile edges. Paths never leave the window. Crater-scale processing itself is not built yet; only the formats and functions are ready for it.
 
 The user gets one-way paths only. A destination is over budget when `walk_min + ingress_min + stop_min > usable_min`, i.e. when its walking time is above `budget.walk_limit_min` in the manifest (212 min: 252 - 15 - 25). `budget.destination_stop = false` leaves the stop out.
+
+**Escape from a red zone.** A Team outing may start inside blocked ground. `escape_time_rate.f64` (min/m) is the walking model at the cell's slope, not clipped by the 20° limit, in cells whose mask code is in `escape.zone_codes` (2–5) and whose slope is at most `escape.max_slope_deg` (35°); it is −1 everywhere else. `escape_risk_rate.f64` is `escape.risk_rate` (1.0) in those cells and 0 elsewhere. All three values are team assumptions. **Emergency estimate only**: the speeds extrapolate the walking model beyond its intended slope range. The browser searches inside the zone to its exits and takes the shortest escape walk among the exits that can still reach the destination, then runs the normal search, which never re-enters blocked ground. A start steeper than 35° gives `no_exit` / `start_too_steep`. The exact rule is DESIGN section 17, and `golden_escape_cases.json` holds 5 real cases to test against (3 escapes, `start_too_steep`, `no_exit`). On the current site 6,985 zone cells have a finite rate and 205 are excluded by the slope limit.
 
 Reference functions, which the app must reproduce:
 
 ```python
 import sys; sys.path.insert(0, "routing")
 import export_landing
-export_landing.landing_check(1000.0, 1000.0)                        # {status, reasons, chosen_xy_m, moved_m, ...}
+export_landing.landing_check(1000.0, 1000.0)                        # {status, reasons, chosen_xy_m, moved_m, measured, messages, ...}
 export_landing.route((1017.5, 1112.5), (1500.0, 1300.0), "safest")  # a GeoJSON Feature
 ```
 

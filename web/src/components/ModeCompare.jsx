@@ -4,8 +4,9 @@ import Tag from './Tag.jsx'
 // and every input the numbers come from.
 const ROWS = [
   { id: 'dist', label: 'Distance', get: (p) => p.legs.reduce((s, l) => s + l.distance_m, 0), fmt: (v) => `${(v / 1000).toFixed(2)} km`, better: 'low' },
+  { id: 'escape', label: 'Escape from the red zone', get: (p) => (p.escape ? p.escape.walk_min : NaN), fmt: (v, p) => `${v.toFixed(1)} min, ${Math.round(p.escape.distance_m)} m`, better: 'low', note: 'Walking out of the red zone the start is in; included in the totals', onlyIf: (rs) => rs.some((r) => r?.ok && r.plan.escape) },
   { id: 'walk', label: 'Walking time', get: (p) => p.totals.walk_min, fmt: (v) => `${Math.round(v)} min`, better: 'low' },
-  { id: 'total', label: 'Whole outing', get: (p) => p.totals.total_min, fmt: (v) => `${Math.round(v)} min`, better: 'low', note: 'Walking, time on site and getting back into the rover' },
+  { id: 'total', label: 'Whole outing', get: (p) => p.totals.total_min, fmt: (v) => `${Math.round(v)} min`, better: 'low', note: 'Walking, time on site and getting back into the lander' },
   { id: 'risk', label: 'Risky minutes', get: (p) => p.risk_min, fmt: (v) => `${v.toFixed(1)} min`, better: 'low', note: 'Minutes on careful ground or near no-go ground, weighted by how close' },
   { id: 'careful', label: 'On careful ground', get: (p) => p.metres_careful, fmt: (v) => `${Math.round(v)} m`, better: 'low' },
   { id: 'steep', label: 'Steepest slope', get: (p) => p.max_slope_deg, fmt: (v) => `${v.toFixed(1)}°`, better: 'low' },
@@ -43,7 +44,7 @@ export default function ModeCompare({ results, profiles, profile, setProfile, pa
               </tr>
             </thead>
             <tbody>
-              {ROWS.map((row) => (
+              {ROWS.filter((row) => !row.onlyIf || row.onlyIf(profiles.map((p) => results[p.id]))).map((row) => (
                 <tr key={row.id}>
                   <th scope="row" title={row.note}>
                     {row.label}
@@ -56,7 +57,7 @@ export default function ModeCompare({ results, profiles, profile, setProfile, pa
                     const top = best[row.id] != null && Math.abs(v - best[row.id]) < 1e-6
                     return (
                       <td key={p.id} className={`${profile === p.id ? 'on' : ''}${top ? ' best' : ''}`}>
-                        {row.fmt(v, r.plan)}
+                        {Number.isFinite(v) ? row.fmt(v, r.plan) : '–'}
                       </td>
                     )
                   })}
@@ -77,7 +78,12 @@ export default function ModeCompare({ results, profiles, profile, setProfile, pa
             </tbody>
           </table>
         </div>
-        <p className="muted">The best value in each row is underlined. All three are calculated now, on this route, from the inputs below.</p>
+        <p className="muted">
+          The best value in each row is underlined.{' '}
+          {live.some((p) => results[p.id].fromFile)
+            ? "Team outing: the numbers are routing's own (plan.json profiles); a dash means plan.json does not give that value per mode."
+            : "All three are calculated now, on this route, on routing's cost surface."}
+        </p>
       </section>
 
       <section>

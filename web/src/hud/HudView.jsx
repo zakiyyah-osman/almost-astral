@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './hud.css'
+import { RouteProfile, marksFor } from '../components/RouteCharts.jsx'
 import {
   BATTERY_MIN_PER_EVA,
   buildTimeline,
@@ -35,7 +36,7 @@ const PHASE_TEXT = {
   walk: 'WALKING',
   stop: 'SAMPLING',
   return: 'STORM: RETURNING',
-  done: 'AT ROVER',
+  done: 'AT LANDING',
 }
 
 function Compass({ heading }) {
@@ -77,24 +78,6 @@ function Gauge({ label, pct, value, low }) {
 
 const GROUND = ['Go', 'Careful', 'No-go']
 
-// Height along the whole route with a dot where the crew is (from the planner's track).
-function ElevationProfile({ track, d }) {
-  const w = 300
-  const h = 56
-  const d1 = track[track.length - 1].distance_m || 1
-  const lo = Math.min(...track.map((r) => r.elev_m))
-  const hi = Math.max(...track.map((r) => r.elev_m))
-  const x = (m) => (m / d1) * w
-  const y = (e) => h - 6 - ((e - lo) / (hi - lo || 1)) * (h - 12)
-  const here = trackAt({ track }, d)
-  return (
-    <svg className="hud-profile" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Height along the route">
-      <polyline points={track.map((r) => `${x(r.distance_m).toFixed(1)},${y(r.elev_m).toFixed(1)}`).join(' ')} />
-      <circle cx={x(d)} cy={y(here.elev)} r="4" />
-    </svg>
-  )
-}
-
 function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm, stormPath }) {
   const [w, h] = extent
   const pt = (c) => `${c[0]},${h - c[1]}`
@@ -113,12 +96,14 @@ function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm, stormPath }
       {stormPath && <polyline points={stormPath.map(pt).join(' ')} className="stormpath" />}
       <polyline points={trail.map(pt).join(' ')} className={storm ? 'trail storm' : 'trail'} />
       {waypoints.features.map((f) => {
+        if (f.properties.kind === 'rover') return null // there is no rover: home is the plan's start
         const [x, y] = f.geometry.coordinates
-        const rover = f.properties.kind === 'rover'
+        const home = f.properties.id === tl.roverId
+        const label = home ? (f.properties.name?.[0] ?? 'S').toUpperCase() : f.properties.kind === 'exit' ? 'E' : stopNumber[f.properties.id] ?? ''
         return (
           <g key={f.properties.id} className={f.properties.id === nextId ? 'next' : ''}>
-            <circle cx={x} cy={h - y} r={rover ? 60 : 55} className={rover ? 'rover' : 'stop'} />
-            <text x={x} y={h - y} className="label">{rover ? 'R' : stopNumber[f.properties.id]}</text>
+            <circle cx={x} cy={h - y} r={home ? 60 : 55} className={home ? 'home' : 'stop'} />
+            <text x={x} y={h - y} className="label">{label}</text>
           </g>
         )
       })}
@@ -130,7 +115,9 @@ function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm, stormPath }
 // onPosition(p) tells the main map where the astronaut is (null when the HUD closes).
 // large and onLarge switch the big-text projector mode, which the app also uses to widen the panel.
 // visor and onVisor switch the full-screen visor view (the app hides its sidebar and floats the HUD over the map).
-export default function HudView({ data, onPosition, large, onLarge, visor, onVisor }) {
+// profile: { track, limits, hazardNote, homeWord, onProbe }: the route profile from the route's own cells
+// (the same one the sidebar shows); emptyText: why there is no route, shown instead of the metrics.
+export default function HudView({ data, onPosition, large, onLarge, visor, onVisor, profile, emptyText }) {
   const { plan, waypoints, route } = data
   const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
 
@@ -170,7 +157,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
     const id = setInterval(() => {
       setT((prev) => {
         const next = prev + (SIM_MIN_PER_SECOND * speed) / 10
-        // Without a storm the walk ends at the planned total; after one it ends at the rover.
+        // Without a storm the walk ends at the planned total; after one it ends back at the start.
         return live.current.storm ? next : Math.min(next, live.current.tl.totalMin)
       })
     }, 100)
@@ -229,7 +216,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
     return (
       <div className="hud hud-scroll">
         <p className="hud-title">HUD</p>
-        <p>Needs plan.json and waypoints.geojson.</p>
+        <p className="hud-empty">{emptyText ?? 'No route to walk yet.'}</p>
       </div>
     )
   }
@@ -350,8 +337,13 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
               <b>{GROUND[ground.hazard] ?? 'Go'}</b>
             </div>
           </div>
-          <ElevationProfile track={tl.track} d={s.d} />
         </>
+      )}
+
+      {profile?.track?.length > 0 && !compact && (
+        <div className="hud-profile-wrap">
+          <RouteProfile track={profile.track} marks={marksFor(tl, waypoints)} limits={profile.limits} hazardNote={profile.hazardNote} homeWord={profile.homeWord} onProbe={profile.onProbe} hereD={storm?.ret ? null : s.d} />
+        </div>
       )}
 
       {cond && (

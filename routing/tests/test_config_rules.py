@@ -335,3 +335,15 @@ def test_landing_thresholds_are_assumptions_with_a_source():
         assert p["type"] == "assumption" and p["source"]
     assert "terrain/thresholds.toml" in cfg.assumptions()["landing.max_roughness_m"]["source"]
     assert "terrain/thresholds.toml" in cfg.assumptions()["landing.ti_warn_below"]["source"]
+
+
+@pytest.mark.parametrize("key", ["landing.display_safe_rgba", "landing.display_marginal_rgba"])
+def test_display_colours_are_four_whole_numbers_from_0_to_255(raw, key):
+    _set(raw, key, [0, 128, 255, 0])
+    Config.from_dict(raw)
+    for b in ([1, 2, 3], [1, 2, 3, 4, 5], [1, 2, 3, 256], [-1, 2, 3, 4], [1.5, 2, 3, 4], [True, 2, 3, 4], "green", 5):
+        _set(raw, key, b)
+        with pytest.raises(ConfigError, match=key):
+            Config.from_dict(raw)
+    p = load_config().assumptions()[key]
+    assert p["type"] == "scenario" and "landing_zones.png" in p["source"] and 0 < p["value"][3] < 255

@@ -305,3 +305,36 @@ value = 5120
 unit = "m (square tiles; whole cells; edge tiles are smaller)"
 type = "scenario"
 source = "Team choice: 1024 cells at 5 m, so the current 2 km site is one tile and a 9,000 x 9,000 cell grid would be 9 x 9 tiles"
+
+# Display: the colours of landing_zones.png (export_landing.py). Every other cell is fully transparent.
+[landing.display_safe_rgba]
+value = [46, 160, 67, 140]
+unit = "[red, green, blue, alpha], each 0 to 255"
+type = "scenario"
+source = "Team display choice (Tushaar): semi-transparent green for safe landing cells (code 0) in landing_zones.png"
+
+[landing.display_marginal_rgba]
+value = [240, 170, 30, 140]
+unit = "[red, green, blue, alpha], each 0 to 255"
+type = "scenario"
+source = "Team display choice (Tushaar): semi-transparent amber for marginal landing cells (code 1) in landing_zones.png"
+
+# ---- escape from a red zone (Team outing start inside blocked ground; DESIGN section 17) ----
+# Emergency estimate only: the escape rates extrapolate the walking model beyond its intended slope range.
+[escape.zone_codes]
+value = [2, 3, 4, 5]
+unit = "mask codes (start.py): 2 red hazard, 3 slope over the limit, 4 cliff buffer, 5 sealed gap"
+type = "assumption"
+source = "Team assumption (Tushaar): the blocked ground a crew may walk out of in an emergency; never 1 (no data: no slope, so no speed)"
+
+[escape.risk_rate]
+value = 1.0
+unit = "risk-min per min"
+type = "assumption"
+source = "Team assumption (Tushaar): every escape minute counts fully as risky; equal to the highest rate passable ground can reach (risk.yellow_rate, risk.near_red_rate_max), so a zone minute never counts as safer than the worst legal ground"
+
+[escape.max_slope_deg]
+value = 35
+unit = "deg"
+type = "assumption"
+source = "Team assumption (Tushaar): about the angle of repose of loose dry granular material, where walking becomes scrambling or sliding; not relaxed for Mars gravity (traction drops with g). Above it a cell cannot be walked out of even in an emergency"

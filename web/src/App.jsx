@@ -7,20 +7,26 @@ import RouteCharts from './components/RouteCharts.jsx'
 import ConditionsPanel from './components/ConditionsPanel.jsx'
 import WhereIsThis from './components/WhereIsThis.jsx'
 import DataStatus from './components/DataStatus.jsx'
-import MissionBuilder from './components/MissionBuilder.jsx'
+import RoutePlanner from './components/RoutePlanner.jsx'
+import ProfileCards from './components/ProfileCards.jsx'
 import ModeCompare from './components/ModeCompare.jsx'
 import Icon from './components/Icon.jsx'
 import Tag from './components/Tag.jsx'
 import MineralKey from './components/MineralKey.jsx'
+import RouteNotice from './components/RouteNotice.jsx'
+import { routeFailure, unreachableText } from './lib/routeFailure.js'
 import { MINERAL_CLASSES } from './lib/research.js'
 import { buildTimeline, doseTotal, parseTable, radiationModel } from './hud/sim.js'
 import { useTerrain, mineralAt } from './lib/useTerrain.js'
 import { useCrater, useCraterProbe, useAsync } from './lib/useCrater.js'
-import { PROFILES, timeField } from './lib/pathfind.js'
-import { planOuting, waypointsFor } from './lib/outing.js'
-import { hudPlan } from './lib/hudPlan.js'
-import { missionPoints, detourCosts, bestOrder, mineralTargets } from './lib/mission.js'
-import { recommendLanding, judgeSpot, LANDING_RULES } from './lib/landing.js'
+import { waypointsFor } from './lib/outing.js'
+import { PROFILES, paramsFrom, reasonText, route as findRoute, searchFrom, timeField } from './lib/pathfind.js'
+import { loadLandingFromSite, costFromLanding } from './lib/landingData.js'
+import { landingCheck } from './lib/landingCheck.js'
+import { escapeAvailable, zoneCodes } from './lib/escape.js'
+import { useRoutePlan } from './lib/useRoutePlan.js'
+import { unverifiedWarning, planExtras } from './lib/teamOuting.js'
+import { detourCosts, bestOrder, mineralTargets } from './lib/mission.js'
 import { cellOf } from './lib/terrain.js'
 import { xyToLatLon, fmtLat, fmtLon } from './lib/geo.js'
 
@@ -43,11 +49,6 @@ const PRESETS = [
 const presetIds = (preset, ids) =>
   preset.on.map((id) => (id === 'base' ? (ids.includes('hirise') ? 'hirise' : 'relief') : id === 'hazard' && ids.includes('hazard_slope') ? 'hazard_slope' : id))
 const HAZ_WORD = ['fine', 'careful', 'no-go']
-const REASON = {
-  start: 'The start is not on walkable ground (or is outside the data).',
-  end: 'A point is not on walkable ground (or is outside the data).',
-  unreachable: 'No safe way between these points: every path crosses no-go ground.',
-}
 const BACKGROUND_USV_H = 640 / 24 // routing/config.toml: 0.64 mSv/day (Curiosity RAD at Gale), used only if radiation.csv is missing
 const TABS = [
   ['route', 'Route'],
@@ -57,7 +58,12 @@ const TABS = [
 ]
 const SIDEBAR = { min: 280, max: 720, start: 360, snapShut: 200 }
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-const EMPTY_MISSION = { start: null, quests: [], dest: null, back: true }
+// One trip per mode, kept when switching: start (the landing in My trip), side quests, destination, profile.
+// One way, as routing plans it. Team outing with no start shows routing's plan.json demo route.
+const EMPTY_TRIP = { start: null, quests: [], dest: null, profile: 'balanced' }
+// A route with a point outside the 2 km site: never to be read as one of the planner's site routes.
+const CRATER_LABEL = 'Exploratory: 40 m crater grid, computed in the browser'
+
 
 // Browser storage can be missing or blocked (private windows, previews): never let that break the page.
 const stored = (key, fallback) => {
@@ -87,11 +93,16 @@ export default function App() {
   const [large, setLarge] = useState(false) // big text for a projector
   const [visorOn, setVisor] = useState(false) // full-screen visor view
   const [openSource, setOpenSource] = useState({}) // layers whose source line is expanded
-  const [mode, setMode] = useState('outing') // 'outing': base, every team stop, base. 'mission': start, side quests, destination
-  const [profile, setProfile] = useState('balanced')
-  const [baseId, setBaseId] = useState('rover') // where the rover parks for a full outing
-  const [mission, setMission] = useState(EMPTY_MISSION)
-  const [picking, setPicking] = useState(null) // 'start' | 'quest' | 'dest' while waiting for a map click
+  const [mode, setMode] = useState('outing') // 'outing' (Team outing) | 'mission' (My trip): the same planner, one trip each
+  const [trips, setTrips] = useState({ outing: EMPTY_TRIP, mission: EMPTY_TRIP })
+  const [startNote, setStartNote] = useState(null) // Team outing: why the last start click was refused
+  const trip = trips[mode]
+  const setTrip = useCallback((fn) => setTrips((ts) => ({ ...ts, [mode]: typeof fn === 'function' ? fn(ts[mode]) : fn })), [mode])
+  const profile = trip.profile
+  const setProfile = (id) => setTrip((t) => ({ ...t, profile: id }))
+  const [picking, setPicking] = useState(null) // 'landing' | 'quest' | 'dest' while waiting for a map click
+  const [landingInfo, setLandingInfo] = useState(null) // routing's landing check of the last landing click (lib/landingCheck.js)
+  const [notice, setNotice] = useState(null) // a pop-up (moved landing, no route) until dismissed: { title, messages, footer }
   const [hover, setHover] = useState(null)
   const [inspect, setInspect] = useState(null) // a clicked point, kept until closed
   const [centre, setCentre] = useState(null)
@@ -138,124 +149,140 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [picking])
 
+  // Routing's landing export (data/out/landing): the cost surface every route is searched on.
+  const [landingGrid, setLandingGrid] = useState(null)
+  const [landingError, setLandingError] = useState(null)
+  useEffect(() => {
+    loadLandingFromSite()
+      .then(setLandingGrid)
+      .catch((e) => setLandingError(e.message))
+  }, [])
   const terrain = useTerrain(data)
-  const ready = terrain.status === 'ready'
-  const cost = terrain.cost
-  const params = terrain.params
+  const costState = useMemo(() => {
+    if (!landingGrid || terrain.status !== 'ready') return { cost: null, error: null }
+    try {
+      return { cost: costFromLanding(landingGrid, terrain.grids), error: null }
+    } catch (e) {
+      return { cost: null, error: e.message }
+    }
+  }, [landingGrid, terrain])
+  const cost = costState.cost
+  const routeError = landingError ?? costState.error
+  const ready = !!cost
+  const params = useMemo(() => (data && landingGrid ? paramsFrom(data.plan, landingGrid.manifest) : terrain.params), [data, landingGrid, terrain.params])
   const legCache = useMemo(() => new Map(), [cost]) // legs already searched on this terrain
 
   const features = data?.waypoints?.features ?? []
-  const rover = features.find((f) => f.properties.kind === 'rover')
   const stops = features.filter((f) => f.properties.kind === 'stop')
   const asPoint = (f) => ({ id: f.properties.id, name: f.properties.name, kind: f.properties.kind, x: f.geometry.coordinates[0], y: f.geometry.coordinates[1], why: f.properties.why, photo: f.properties.photo, extra: f.properties })
 
-  // Recommended landing spots: flat, clear, short walks to the first and last stop.
-  const landing = useMemo(() => {
-    if (!ready || !stops.length) return []
-    return recommendLanding(cost, [asPoint(stops[0]), asPoint(stops[stops.length - 1])], undefined, stops.map(asPoint)).map((s, k) => ({ ...s, id: `L${k + 1}`, label: `L${k + 1}` }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, cost, data])
   // While the hazard layer is fake, show the interim hazards from the real slope in its place.
-  const extraLayers = useMemo(() => (terrain.hazardLayer ? [terrain.hazardLayer] : []), [terrain.hazardLayer])
+  // Routing's landing zones (landing/landing_zones.png): safe and marginal landing cells, placed
+  // with the manifest's zones_png origin and extent (the same grid as hazard.png).
+  const zonesLayer = useMemo(() => {
+    const z = landingGrid?.manifest?.zones_png
+    if (!z) return null
+    const m = landingGrid.manifest
+    const t = m.thresholds
+    const rules = `pad radius ${t.pad_radius_m.value} m, tilt at most ${t.max_pad_slope_deg.value}°, height range at most ${t.max_height_range_m.value} m, roughness at most ${t.max_roughness_m.value} m, clearance at least ${t.hazard_clearance_m.value} m; marginal within ${t.marginal_pct.value}% of a limit`
+    return {
+      id: 'landing_zones',
+      title: 'Landing zones',
+      url: `./landing/${z.file}`,
+      boundsXY: [z.origin_m, [z.origin_m[0] + z.extent_m[0], z.origin_m[1] + z.extent_m[1]]],
+      opacity: 0.6,
+      legend: z.legend.map((e) => ({ code: e.code, label: e.code === 0 ? 'Safe to land' : e.code === 1 ? 'Marginal' : e.label, color: `rgba(${e.rgba[0]}, ${e.rgba[1]}, ${e.rgba[2]}, ${(e.rgba[3] / 255).toFixed(2)})` })),
+      source: `Calculated by routing/export_landing.py from the HiRISE terrain model and the hazard map: ${rules}. All limits are team assumptions pending Nahla (routing/config.toml [landing]).`,
+    }
+  }, [landingGrid])
+  const extraLayers = useMemo(() => [terrain.hazardLayer, zonesLayer].filter(Boolean), [terrain.hazardLayer, zonesLayer])
+  // The landing zones start off, and switch on whenever a landing site is being chosen.
+  useEffect(() => {
+    if (!zonesLayer) return
+    setLayerState((st) => (st.landing_zones ? st : { ...st, landing_zones: { on: false, opacity: zonesLayer.opacity } }))
+  }, [zonesLayer])
+  useEffect(() => {
+    if (picking === 'landing' && zonesLayer) setLayerState((st) => ({ ...st, landing_zones: { opacity: zonesLayer.opacity, ...st.landing_zones, on: true } }))
+  }, [picking, zonesLayer])
   useEffect(() => {
     const l = terrain.hazardLayer
     if (!l) return
     setLayerState((st) => (st[l.id] ? st : { ...st, [l.id]: { on: !!st.hazard?.on, opacity: l.opacity }, ...(st.hazard ? { hazard: { ...st.hazard, on: false } } : {}) }))
   }, [terrain.hazardLayer])
-  const roverJudge = useMemo(() => (ready && rover ? judgeSpot(cost, ...rover.geometry.coordinates) : null), [ready, cost, rover])
 
   // Named places for the pickers.
   const places = useMemo(() => {
     const out = []
-    if (rover) out.push({ ...asPoint(rover), name: `${rover.properties.name} (team position)` })
     stops.forEach((f, k) => out.push({ ...asPoint(f), name: `${k + 1} · ${f.properties.name}` }))
-    landing.forEach((s) => out.push({ id: s.id, name: `${s.label} · recommended landing spot`, kind: 'landing', x: s.x, y: s.y }))
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, landing])
+  }, [data])
 
   const radModel = useMemo(() => (radRows?.length ? radiationModel(radRows) : null), [radRows])
   const doseFor = useMemo(() => (min) => (radModel ? doseTotal(radModel, min, null) : (min / 60) * BACKGROUND_USV_H), [radModel])
 
-  // The points of the active route, in walking order.
-  const points = useMemo(() => {
-    if (mode === 'mission') return params ? missionPoints(mission, params.stop_min_default) : null
-    if (!rover) return null
-    const base = baseId === 'rover' ? asPoint(rover) : places.find((p) => p.id === baseId)
-    if (!base) return null
-    const home = { ...base, id: 'rover', kind: 'rover', name: baseId === 'rover' ? rover.properties.name : `Rover at ${base.id}` }
-    return [home, ...stops.map(asPoint), home]
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, mission, baseId, places, data, params])
-  const ingressOn = mode === 'outing' || mission.back
-  const planOpts = useMemo(() => ({ ingress: ingressOn, doseFor, cache: legCache }), [ingressOn, doseFor, legCache])
+  const planOpts = useMemo(() => ({ ingress: true, doseFor, cache: legCache }), [doseFor, legCache])
+  const outing = mode === 'outing'
+  // The shared route-planning workflow (lib/useRoutePlan.js), for the active mode's trip.
+  const demo = useMemo(() => (data?.plan ? { plan: data.plan, routes: data.routes, waypoints: data.waypoints } : null), [data])
+  const rp = useRoutePlan({ cost: ready ? cost : null, params, trip, demo: outing ? demo : null, doseFor, legCache, escape: outing })
+  const { isDemo, points, back, shelterCells } = rp
+  const ingress = params?.ingress_min ?? 0
+  const profInfo = PROFILES.find((p) => p.id === profile)
 
-  // Minutes back to shelter from every cell: the start, and the destination too when it has a shelter.
-  const shelterCells = useMemo(() => {
-    if (!ready || !points) return []
-    const shelters = [points[0]]
-    if (mode === 'mission' && !mission.back) shelters.push(points[points.length - 1])
-    return shelters.map((p) => cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)?.i).filter((i) => i != null)
-  }, [ready, cost, points, mode, mission.back])
-  const back = useMemo(() => (shelterCells.length ? timeField(cost, shelterCells) : null), [cost, shelterCells])
-  // The solar-storm return: as fast as the route-finder's Balanced mode allows, but off careful and no-go
-  // ground where that costs little time, so the crew does not run along the edge of a red zone.
-  const stormField = useMemo(() => (shelterCells.length && params ? { field: timeField(cost, shelterCells, params.w_balanced), w: params.w_balanced } : null), [cost, shelterCells, params])
-  const ingress = ingressOn ? params?.ingress_min ?? 0 : 0
-
-  // Points inside the 2 km site use the site grid, as before. Anything else in the crater uses the 40 m
-  // crater grid, which lives in a Web Worker (lib/crater.worker.js) and is never parsed on the page.
+  // Points inside the 2 km site use the site grid (rp, above). A trip point anywhere else in the crater
+  // (the destination or a side quest; the start stays on the site grid) uses the 40 m crater grid, which
+  // lives in a Web Worker (lib/crater.worker.js) and is never parsed on the page. Same one-way rule:
+  // ingress counted, minutes back to the start.
   const inSite = useCallback((p) => !!(p && cost && cellOf(p.x, p.y, cost.width, cost.height, cost.cellM)), [cost])
   const allInSite = !points || points.every(inSite)
   const hoverOut = !!hover && ready && !inSite(hover)
   const inspectOut = !!inspect && ready && !inSite(inspect)
   const rad = useMemo(() => ({ radRows: radRows ?? [], backgroundUsvH: BACKGROUND_USV_H }), [radRows])
   const crater = useCrater(data, params, rad, hoverOut || inspectOut || !allInSite)
-  const shelters = useMemo(() => {
-    if (!points) return []
-    const s = mode === 'mission' && !mission.back ? [points[0], points[points.length - 1]] : [points[0]]
-    return s.map((p) => ({ x: p.x, y: p.y }))
-  }, [points, mode, mission.back])
+  const home = points?.[0] ?? trip.start
+  const shelters = useMemo(() => (home ? [{ x: home.x, y: home.y }] : []), [home?.x, home?.y]) // eslint-disable-line react-hooks/exhaustive-deps
   const hoverProbe = useCraterProbe(crater, hoverOut ? hover : null, shelters)
   const inspectProbe = useCraterProbe(crater, inspectOut ? inspect : null, shelters)
-
-  // All three modes for the active points, so the crew can compare them.
-  const siteResults = useMemo(() => {
-    if (!ready || !points || !allInSite) return null
-    const out = {}
-    for (const p of PROFILES) {
-      const r = planOuting(cost, points, params[p.key], params, { ...planOpts, profile: p.id })
-      if (r.ok && back) r.furthest = Math.max(...r.track.map((q) => back[q.i]).filter(Number.isFinite)) + ingress
-      out[p.id] = r
-    }
-    return out
-  }, [ready, cost, params, points, planOpts, back, ingress, allInSite])
   const craterJob = useAsync(() => {
     if (allInSite || !points || crater.status !== 'ready') return null
     const plain = points.map(({ id, name, kind, x, y, stopMin }) => ({ id, name, kind, x, y, stopMin }))
-    return crater.call('plans', { points: plain, ingress: ingressOn, shelters, profiles: PROFILES.map((p) => ({ id: p.id, w: params[p.key] })) })
-  }, [crater, points, allInSite, ingressOn, shelters, params])
-  const results = allInSite ? siteResults : craterJob.value
+    return crater.call('plans', { points: plain, ingress: true, shelters, profiles: PROFILES.map((p) => ({ id: p.id, w: params[p.key] })) })
+  }, [crater, points, allInSite, shelters, params])
   const craterBusy = !allInSite && (crater.status === 'loading' || craterJob.busy)
-  const active = results?.[profile]
-  const ok = active?.ok
-  const craterRoute = active?.grid === 'crater'
-  const profInfo = PROFILES.find((p) => p.id === profile)
 
-  // A crater route's track already carries minutes back to shelter (worked out in the worker).
-  const track = useMemo(() => {
-    if (!ok) return null
-    if (craterRoute) return active.track
-    return back ? active.track.map((p) => ({ ...p, back: back[p.i] + ingress })) : null
-  }, [ok, craterRoute, active, back, ingress])
-  const furthest = track ? track.reduce((a, b) => (b.back > a.back ? b : a)) : null
+  // One route state for the rest of the app: rp on the site grid, else the crater worker's plans.
+  // The worker returns a failed plan's reason code only; its text is the landing export's for that code
+  // (the crater cost uses the same mask codes, lib/pathfind.js buildCost).
+  const craterResults = useMemo(() => {
+    const v = craterJob.value
+    if (!v || !cost) return v
+    return Object.fromEntries(Object.entries(v).map(([id, r]) => [id, r.ok || r.reason_text ? r : { ...r, reason_text: reasonText(cost, r.reason) }]))
+  }, [craterJob.value, cost])
+  const results = allInSite ? rp.results : craterResults
+  const active = results?.[profile]
+  const ok = !!active?.ok
+  const craterRoute = active?.grid === 'crater'
+  const status = allInSite ? rp.status : !results ? (craterBusy ? 'pending' : 'failed') : ok ? 'ok' : 'failed'
+  const craterAlt = useMemo(() => (!allInSite && results ? PROFILES.filter((p) => p.id !== profile && results[p.id]?.ok).map((p) => results[p.id].route) : null), [allInSite, results, profile])
+  const altRoutes = allInSite ? rp.altRoutes : craterAlt
+  // A crater route's track already carries minutes back to the start (worked out in the worker).
+  const track = allInSite ? rp.track : ok ? active.track : null
+  const furthest = allInSite ? rp.furthest : track ? track.reduce((a, b) => ((b.back ?? -1) > (a.back ?? -1) ? b : a)) : null
+  const routeWaypoints = rp.waypoints ?? (points ? waypointsFor(points) : null)
+  const craterArrivals = useMemo(() => {
+    if (allInSite || !ok || !routeWaypoints) return {}
+    const tl = buildTimeline(active.plan, routeWaypoints, active.route)
+    return Object.fromEntries((tl?.segments ?? []).filter((s) => s.type === 'walk').map((s) => [s.to, s.t1]))
+  }, [allInSite, ok, active, routeWaypoints])
+  const arrivals = allInSite ? rp.arrivals : craterArrivals
 
   // What each side quest adds, on the active mode.
   const detours = useMemo(() => {
     // Site grid only: on the crater grid each detour would need its own long search.
-    if (!ready || !allInSite || mode !== 'mission' || !mission.quests.length || !mission.start || !mission.dest) return null
-    return detourCosts(cost, mission, params[profInfo.key], params, planOpts)
-  }, [ready, cost, params, mode, mission, profInfo, planOpts, allInSite])
+    if (!ready || isDemo || !allInSite || !trip.quests.length || !trip.start || !trip.dest) return null
+    return detourCosts(cost, trip, params[profInfo.key], params, planOpts)
+  }, [ready, cost, params, isDemo, trip, profInfo, planOpts, allInSite])
 
   // Mineral areas from CRISM, and roughly how far each is off the active route (there and back).
   const allTargets = useMemo(() => (ready ? mineralTargets(terrain.mineralImg, terrain.mineralLegend, cost, { minCells: 10 }) : []), [ready, terrain, cost])
@@ -269,43 +296,51 @@ export default function App() {
       .sort((a, b) => (a.detourMin ?? 1e9) - (b.detourMin ?? 1e9) || b.areaM2 - a.areaM2)
   }, [allTargets, ok, active, cost, craterRoute])
 
-  // What the rest of the app reads: the active route when there is one, else the team's files.
-  const activeWaypoints = useMemo(() => (points ? waypointsFor(points) : data?.waypoints), [points, data])
-  const shown = ok ? { ...data, plan: active.plan, route: active.route, waypoints: activeWaypoints } : data
-  // The HUD walks the same route: the team outing or my mission, on the picked mode. Its slope,
-  // height, time back and storm return are worked out from the terrain for this route.
-  const hudData = useMemo(
-    // hudPlan works on the site grid; a crater route goes to the HUD as planned (its own timeline).
-    () =>
-      ok
-        ? { ...data, plan: craterRoute ? active.plan : hudPlan(active.plan, active.track, back, cost, ingress, 100, stormField), route: active.route, waypoints: activeWaypoints }
-        : data,
-    [ok, data, active, back, cost, ingress, activeWaypoints, stormField, craterRoute],
-  )
-  const hudKey = ok ? `${mode}-${profile}-${active.route.features[0].geometry.coordinates.length}-${active.plan.totals.total_min}` : 'files'
-  const arrivals = useMemo(() => {
-    if (!ok) return {}
-    const tl = buildTimeline(active.plan, activeWaypoints, active.route)
-    return Object.fromEntries((tl?.segments ?? []).filter((s) => s.type === 'walk').map((s) => [s.to, s.t1]))
-  }, [ok, active, activeWaypoints])
+  // What the rest of the app reads: the active mode's plan, route and waypoints (one route state).
+  // No route means nothing drawn and no HUD plan. hudPlan works on the site grid; a crater route goes to
+  // the HUD as planned (its own timeline).
+  const shown = allInSite
+    ? { ...data, plan: rp.plan, route: rp.route, waypoints: rp.waypoints ?? data?.waypoints }
+    : { ...data, plan: ok ? active.plan : null, route: ok ? active.route : null, waypoints: routeWaypoints ?? data?.waypoints }
+  const hud = allInSite ? rp.hud : ok ? { plan: active.plan, route: active.route, waypoints: routeWaypoints } : null
+  const hudData = hud ? { ...data, ...hud } : { ...data, plan: null, route: null }
+  const hudKey = isDemo ? 'demo' : ok ? `${mode}-${profile}-${craterRoute ? 'crater-' : ''}${active.route.features[0].geometry.coordinates.length}-${active.plan.totals.total_min}` : 'none'
 
-  // Pins on the map: the recommended stops always, and the rover where it parks for this outing.
-  const mapWaypoints = useMemo(() => {
-    if (!data?.waypoints) return null
-    if (mode !== 'outing' || baseId === 'rover' || !points) return data.waypoints
-    return { ...data.waypoints, features: data.waypoints.features.map((f) => (f.properties.kind === 'rover' ? { ...f, geometry: { type: 'Point', coordinates: [points[0].x, points[0].y] }, properties: { ...f.properties, name: points[0].name } } : f)) }
-  }, [data, mode, baseId, points])
+  // A route that cannot be found also gets a pop-up, once per new failure (lib/routeFailure.js).
+  const failure = useMemo(() => routeFailure(active), [active])
+  const lastFailure = useRef(null)
+  useEffect(() => {
+    if (failure && failure.key !== lastFailure.current) setNotice(failure)
+    lastFailure.current = failure?.key ?? null
+  }, [failure])
+  const unverified = isDemo ? unverifiedWarning(data?.plan) : null
 
-  // The mission's own pins: start, numbered side quests, destination.
+  // Pins on the map: the team's stops, and for the demo route its start (plan.json start, "Demo start").
+  const mapWaypoints = isDemo ? rp.waypoints : data?.waypoints ?? null
+
+  // The trip's own pins: the Team outing start, numbered side quests, destination (the landing has its own pin).
   const missionPins = useMemo(() => {
-    if (mode !== 'mission') return null
+    if (isDemo) return null
     const t = (id) => (arrivals[id] != null ? ` · T+${Math.floor(arrivals[id] / 60)}:${String(Math.round(arrivals[id] % 60)).padStart(2, '0')}` : '')
     const out = []
-    if (mission.start) out.push({ ...mission.start, label: 'S', kind: 'm-start', title: `Start: ${mission.start.name}` })
-    mission.quests.forEach((q, k) => out.push({ ...q, label: String(k + 1), kind: 'quest', title: `${q.name}${t(`q${k + 1}`)}` }))
-    if (mission.dest) out.push({ ...mission.dest, label: (mission.dest.name || 'J0').slice(0, 2), kind: 'm-dest', title: `${mission.dest.name || 'Destination'}${t('dest')}` })
+    if (outing && trip.start) out.push({ ...trip.start, label: 'S', kind: 'm-start', title: 'Start' })
+    trip.quests.forEach((q, k) => out.push({ ...q, label: String(k + 1), kind: 'quest', title: `${q.name}${t(`q${k + 1}`)}` }))
+    if (trip.dest) out.push({ ...trip.dest, label: (trip.dest.name || 'J0').slice(0, 2), kind: 'm-dest', title: `${trip.dest.name || 'Destination'}${t('dest')}` })
     return out
-  }, [mode, mission, arrivals])
+  }, [isDemo, outing, trip, arrivals])
+
+  // The landing pin: green when safe, amber when marginal; a moved landing also marks the click.
+  const landingPin = useMemo(() => {
+    if (mode !== 'mission' || !trip.start || !landingInfo?.chosen) return null
+    const moved = landingInfo.status === 'moved'
+    return {
+      x: trip.start.x,
+      y: trip.start.y,
+      status: moved ? 'safe' : landingInfo.status,
+      title: moved ? `Landing (moved ${landingInfo.moved_m.toFixed(1)} m to a safe spot)` : landingInfo.messages[0]?.title ?? 'Landing',
+      from: moved ? landingInfo.click : null,
+    }
+  }, [mode, trip.start, landingInfo])
 
   // Everything known about one point: anywhere on the map, with terrain values where there is data.
   const describe = useCallback(
@@ -339,13 +374,25 @@ export default function App() {
         hazard: cost.hazard[c.i],
         ti: terrain.ti ? terrain.ti.data[c.i] : null,
         mineral: mineralAt(terrain.mineralImg, terrain.mineralLegend, c.row, c.col, cost.width, cost.height),
+        // Blocked for walking (routing's mask): buffer and sealed cells look yellow or green on the hazard layer.
+        blocked: cost.mask?.[c.i] ? { code: cost.mask[c.i], text: reasonText(cost, cost.mask[c.i]) } : null,
         back: back && Number.isFinite(back[c.i]) ? back[c.i] + ingress : null,
       }
     },
     [data, ready, cost, terrain, back, ingress, points, crater.status],
   )
   const readout = useMemo(() => describe(hover, hoverProbe), [describe, hover, hoverProbe])
-  const inspected = useMemo(() => describe(inspect, inspectProbe), [describe, inspect, inspectProbe])
+  // The clicked point: the same search as the routes, from the point back to the landing (w = 0).
+  // On the crater grid the worker's answer stands (its minutes back come from the 40 m field).
+  const inspected = useMemo(() => {
+    const d = describe(inspect, inspectProbe)
+    if (!d?.inside || d.crater || !shelterCells.length) return d
+    const c = cellOf(inspect.x, inspect.y, cost.width, cost.height, cost.cellM)
+    const r = findRoute(cost, c.i, shelterCells[0], 0, null)
+    return { ...d, back: r.reachable ? r.walk_min + ingress : null, backReason: r.reachable ? null : r.reason_text }
+  }, [describe, inspect, inspectProbe, cost, shelterCells, ingress])
+
+  const closeNotice = useCallback(() => setNotice(null), [])
 
   // Presets set the site layers only; crater-wide layers and photo pins keep their own switches.
   const craterIds = new Set((data?.layers ?? []).filter((l) => l.scope).map((l) => l.id))
@@ -368,27 +415,68 @@ export default function App() {
     const mineral = c ? mineralAt(terrain.mineralImg, terrain.mineralLegend, c.row, c.col, cost.width, cost.height) : null
     const named = p.name ?? (mineral ? `${mineral} area` : null)
     if (which === 'quest') {
-      setMission((m) => ({ ...m, quests: [...m.quests, { x: p.x, y: p.y, name: named ?? `Side quest ${m.quests.length + 1}`, stopMin: params?.stop_min_default ?? 25 }] }))
+      setTrip((m) => ({ ...m, quests: [...m.quests, { x: p.x, y: p.y, name: named ?? `Side quest ${m.quests.length + 1}`, stopMin: params?.stop_min_default ?? 25 }] }))
       return // stay in "add" mode until Done
     }
-    if (which === 'start') setMission((m) => ({ ...m, start: { x: p.x, y: p.y, name: named ?? 'Point S' } }))
-    if (which === 'dest') setMission((m) => ({ ...m, dest: { x: p.x, y: p.y, name: m.dest?.name || named || 'J0' } }))
-    setPicking(which === 'start' && !mission.dest ? 'dest' : null)
+    if (which === 'landing') {
+      if (!landingGrid) return
+      // Routing's landing check: safe or marginal stays, anything else moves to the nearest safe cell.
+      const chk = landingCheck(landingGrid, p.x, p.y)
+      setLandingInfo(chk)
+      if (!chk.chosen) return // outside the data: keep picking
+      setTrip((m) => ({ ...m, start: { x: chk.chosen.x, y: chk.chosen.y, name: 'Landing' } }))
+      if (chk.status === 'moved') setNotice({ title: 'Not a safe place to land', messages: chk.messages, footer: chk.moved_text })
+      setPicking(!trip.dest ? 'dest' : null)
+      return
+    }
+    if (which === 'start') {
+      // Team outing: any walkable point can be the start. Inside a red zone (lib/escape.js) the route starts
+      // with an escape; any other blocked cell is refused with its reason.
+      if (!c) return
+      const code = cost.mask[c.i]
+      if (code && zoneCodes(cost).includes(code)) {
+        setStartNote(
+          escapeAvailable(cost) && !(cost.escapeTimeRate[c.i] >= 0)
+            ? `This start is inside a red zone (${reasonText(cost, code)}). ${reasonText(cost, 'start_too_steep')}, so no route can be planned from here.`
+            : escapeAvailable(cost)
+            ? `This start is inside a red zone (${reasonText(cost, code)}): the route first walks out of it by the shortest way that still reaches the destination.`
+            : `This start is inside a red zone (${reasonText(cost, code)}). Walking out needs an escape rate that routing does not export yet (escape_time_rate), so no route can be planned from here.`,
+        )
+        setTrip((m) => ({ ...m, start: { x: p.x, y: p.y, name: 'Start' } }))
+        setPicking(!trip.dest ? 'dest' : null)
+        return
+      }
+      if (code) {
+        const detail = `This point is on a cell the crew may not enter: ${reasonText(cost, code)}. Pick a point nearby that is not blocked.`
+        setNotice({ title: 'Not a walkable start', messages: [{ reason: 'start', title: 'Blocked point', detail }] })
+        setStartNote(detail)
+        return // keep picking
+      }
+      setStartNote(null)
+      setTrip((m) => ({ ...m, start: { x: p.x, y: p.y, name: 'Start' } }))
+      setPicking(!trip.dest ? 'dest' : null)
+      return
+    }
+    if (which === 'dest') setTrip((m) => ({ ...m, dest: { x: p.x, y: p.y, name: m.dest?.name || named || 'J0' } }))
+    setPicking(null)
   }
-  const startMission = () => {
-    setMode('mission')
+  // Switch mode; each keeps its own trip. My mission asks for a landing first.
+  const chooseMode = (m) => {
+    setMode(m)
     setTab('route')
-    setMission((m) => (m.start ? m : { ...m, start: rover ? { x: rover.geometry.coordinates[0], y: rover.geometry.coordinates[1], name: rover.properties.name } : null }))
-    if (!mission.dest) setPicking(rover || mission.start ? 'dest' : 'start')
+    const t = trips[m]
+    setPicking(m === 'mission' && (!t.start || !t.dest) ? (t.start ? 'dest' : 'landing') : null)
+  }
+  // Back to routing's demo route in Team outing.
+  const resetOuting = () => {
+    setTrips((ts) => ({ ...ts, outing: { ...EMPTY_TRIP, profile: ts.outing.profile } }))
+    setStartNote(null)
+    setPicking(null)
   }
   const applyInspected = (which) => {
     if (!inspect) return
-    if (mode !== 'mission') {
-      setMode('mission')
-      if (which !== 'start' && !mission.start && rover) setMission((m) => ({ ...m, start: { x: rover.geometry.coordinates[0], y: rover.geometry.coordinates[1], name: rover.properties.name } }))
-    }
-    pick(which, inspect)
     setPicking(null)
+    pick(which, inspect)
     setInspect(null)
     setTab('route')
   }
@@ -404,8 +492,8 @@ export default function App() {
   }
   const sortQuests = () => {
     if (!ready) return
-    const order = bestOrder(cost, mission)
-    setMission((m) => ({ ...m, quests: order.map((k) => m.quests[k]) }))
+    const order = bestOrder(cost, trip)
+    setTrip((m) => ({ ...m, quests: order.map((k) => m.quests[k]) }))
   }
   const selectStop = (id) => {
     setSelectedStop(id)
@@ -449,12 +537,17 @@ export default function App() {
   const stopNumber = {}
   stops.forEach((f, k) => (stopNumber[f.properties.id] = k + 1))
   const stop = features.find((f) => f.properties.id === selectedStop)
-  const landSel = landing.find((s) => s.id === selectedStop)
   const anyFake = data.layers.some((l) => l.source.startsWith('FAKE'))
-  const calcNote = `Calculated on the HiRISE terrain model with the walking model from ${params?.from ?? 'routing/config.toml'}`
+  const calcNote = craterRoute
+    ? `${CRATER_LABEL}, with routing's rules (lib/pathfind.js buildCost); not routing's cost surface`
+    : isDemo
+    ? "routing's planner (routing/plan_route.py): plan.json as exported, on the same cost surface as data/out/landing"
+    : "Calculated in the browser on routing's cost surface (data/out/landing), with the edge rule of routing/docs/DESIGN.md section 15"
+  const extras = isDemo ? planExtras(plan) : plan
+  const fmtN = (v, f) => (Number.isFinite(v) ? f(v) : '–')
   const profLabel = profInfo?.label
   const shut = sideShut && !visor
-  const shelterWord = mode === 'outing' ? 'the rover' : mission.back ? 'the start' : 'shelter'
+  const shelterWord = outing ? 'the start' : 'the landing'
   const notes = data.sources_notes ?? {}
   const mineralLayer = data.layers.find((l) => l.id === 'minerals')
 
@@ -470,7 +563,7 @@ export default function App() {
         { id: 'speed', name: 'Walking speed', value: `${params.v_flat_kmh} km/h on flat ground, slower on slopes (Tobler's rule)`, kind: 'assumption', source: `Walking model from ${params.from}` },
         { id: 'w', name: 'Mode weights', value: PROFILES.map((p) => `${p.label} w=${params[p.key]}`).join(', '), kind: 'assumption', source: 'Team choice, routing/config.toml [profiles]' },
         { id: 'limits', name: 'Hard limits', value: `Slope ≤ ${params.slope_max_deg}°, ${params.cliff_buffer_m} m from drops, no no-go or no-data cells`, kind: 'assumption', source: 'terrain/thresholds.toml and routing/config.toml' },
-        { id: 'time', name: 'Time on site and getting in', value: `${params.stop_min_default} min per stop (unless set), ${params.ingress_min} min into the rover`, kind: 'assumption', source: 'routing/config.toml [timeline]' },
+        { id: 'time', name: 'Time on site and getting in', value: `${params.stop_min_default} min per stop (unless set), ${params.ingress_min} min into the lander`, kind: 'assumption', source: 'routing/config.toml [timeline]' },
         { id: 'budget', name: 'Time limit', value: `${params.eva_max_min} min minus a ${params.reserve_pct}% reserve = ${Math.round(params.eva_max_min * (1 - params.reserve_pct / 100))} min usable`, kind: 'assumption', source: 'routing/config.toml [timeline]' },
         { id: 'dose', name: 'Radiation', value: `${radModel ? 'radiation.csv' : `${BACKGROUND_USV_H.toFixed(1)} µSv/h`}, limit ${params.radiation_limit_usv} µSv`, kind: 'estimate', source: notes['radiation.csv'] ?? 'Curiosity RAD at Gale crater, 0.64 mSv/day: a stand-in for Jezero' },
         { id: 'min', name: 'Mineral areas', value: 'CRISM summary parameters over a threshold', kind: mineralLayer && !mineralLayer.source.startsWith('FAKE') ? 'real' : 'fake', source: mineralLayer?.source ?? 'No mineral layer' },
@@ -500,14 +593,15 @@ export default function App() {
             </span>
           )}
           {r.mineral && <span>{r.mineral}</span>}
-          {r.back != null ? (
+          {r.blocked && <span className="haz h2">Blocked: {r.blocked.text}</span>}
+          {r.blocked ? null : r.back != null ? (
             <span>
               <b>{Math.round(r.back)} min</b> back to {shelterWord}
             </span>
           ) : r.backPending ? (
             <span className="muted">minutes back: calculating…</span>
           ) : (
-            <span className="haz h2">no safe way back</span>
+            <span className="haz h2">no walking route back{r.backReason ? `: ${r.backReason}` : ''}</span>
           )}
         </>
       ) : (
@@ -523,7 +617,7 @@ export default function App() {
     >
       <MissionCard
         data={shown}
-        routeLabel={ok ? `${profLabel} route${mode === 'mission' ? `, ${points[0].name} to ${mission.dest?.name || 'destination'}${mission.quests.length ? ` with ${mission.quests.length} side quest${mission.quests.length > 1 ? 's' : ''}` : ''}` : ''}` : null}
+        routeLabel={ok ? `${craterRoute ? `${CRATER_LABEL}. ` : ''}${profLabel} route${!isDemo ? `, ${points[0].name} to ${trip.dest?.name || 'destination'}${trip.quests.length ? ` with ${trip.quests.length} side quest${trip.quests.length > 1 ? 's' : ''}` : ''}` : ''}` : null}
       />
       <aside className="sidebar" aria-label="Planning panel" hidden={shut}>
         <div className="side-top">
@@ -562,12 +656,12 @@ export default function App() {
         <div className="side-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
           {tab === 'route' && (
             <>
-              {(stop || landSel) && (
+              {stop && (
                 <section>
                   {stop ? (
                     <div className="stop-card">
                       <div className="stop-head">
-                        <span className={`pin${stop.properties.kind === 'rover' ? ' rover' : ''}`}>{stop.properties.kind === 'rover' ? 'R' : stopNumber[stop.properties.id]}</span>
+                        <span className="pin">{stopNumber[stop.properties.id]}</span>
                         <strong>{stop.properties.name}</strong>
                         <button onClick={() => setSelectedStop(null)} aria-label="Close stop">
                           <Icon name="close" />
@@ -578,8 +672,8 @@ export default function App() {
                         x {stop.geometry.coordinates[0]} m · y {stop.geometry.coordinates[1]} m
                         {data.site.center_lat != null && ` · ${fmtLL(xyToLatLon(...stop.geometry.coordinates, data.site))}`}
                       </p>
-                      {mode === 'mission' && stop.properties.kind === 'stop' && (
-                        <button type="button" className="ghost-btn" onClick={() => setMission((m) => ({ ...m, quests: [...m.quests, { x: stop.geometry.coordinates[0], y: stop.geometry.coordinates[1], name: stop.properties.name, stopMin: params?.stop_min_default ?? 25 }] }))}>
+                      {!isDemo && stop.properties.kind === 'stop' && (
+                        <button type="button" className="ghost-btn" onClick={() => setTrip((m) => ({ ...m, quests: [...m.quests, { x: stop.geometry.coordinates[0], y: stop.geometry.coordinates[1], name: stop.properties.name, stopMin: params?.stop_min_default ?? 25 }] }))}>
                           <Icon name="plus" size={14} /> Add as a side quest
                         </button>
                       )}
@@ -598,96 +692,82 @@ export default function App() {
                         </figure>
                       ) : null}
                     </div>
-                  ) : (
-                    <div className="stop-card">
-                      <div className="stop-head">
-                        <span className="pin landing">{landSel.label}</span>
-                        <strong>Recommended landing spot</strong>
-                        <button onClick={() => setSelectedStop(null)} aria-label="Close">
-                          <Icon name="close" />
-                        </button>
-                      </div>
-                      <p>
-                        Flat, clear ground (average slope {landSel.meanSlope.toFixed(1)}° within {LANDING_RULES.radiusM} m). {Math.round(landSel.walkFirstMin)} min walk to stop 1 and{' '}
-                        {Math.round(landSel.walkLastMin)} min back from stop {stops.length}.
-                      </p>
-                      <p className="muted">{data.site.center_lat != null && fmtLL(xyToLatLon(landSel.x, landSel.y, data.site))}</p>
-                    </div>
-                  )}
+                  ) : null}
                 </section>
               )}
 
               <section>
                 <h2>Route</h2>
                 <div className="presets two" role="group" aria-label="Kind of route">
-                  <button className={mode === 'outing' ? 'active' : ''} aria-pressed={mode === 'outing'} onClick={() => { setMode('outing'); setPicking(null) }}>
+                  <button className={mode === 'outing' ? 'active' : ''} aria-pressed={mode === 'outing'} onClick={() => chooseMode('outing')}>
                     Team outing
                   </button>
-                  <button className={mode === 'mission' ? 'active' : ''} aria-pressed={mode === 'mission'} onClick={startMission}>
+                  <button className={mode === 'mission' ? 'active' : ''} aria-pressed={mode === 'mission'} onClick={() => chooseMode('mission')}>
                     My mission
                   </button>
                 </div>
 
-                {mode === 'outing' ? (
-                  <label className="field">
-                    Start and finish at
-                    <select value={baseId} onChange={(e) => setBaseId(e.target.value)}>
-                      <option value="rover">Rover, team position</option>
-                      {landing.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}, recommended landing spot
-                        </option>
-                      ))}
-                    </select>
-                    <small className="muted">Then every team stop in order, and back.</small>
-                  </label>
-                ) : (
-                  <MissionBuilder
-                    mission={mission}
-                    setMission={setMission}
-                    picking={picking}
-                    setPicking={setPicking}
-                    places={places}
-                    detours={detours}
-                    targets={targets.slice(0, 6)}
-                    onBestOrder={sortQuests}
-                    defaultStopMin={params?.stop_min_default ?? 25}
-                    mineralNote={mineralLayer?.source}
-                  />
+                {isDemo && (
+                  <p className="muted">
+                    Showing routing&apos;s demo route: {data.plan?.start?.name ?? 'the demo start'} to every team stop and back (plan.json, as exported).{' '}
+                    {unverified && (
+                      <span className="badge" title={unverified}>
+                        unverified stops
+                      </span>
+                    )}{' '}
+                    Choose a start to plan your own outing.
+                  </p>
                 )}
+                {outing && trip.start && (
+                  <p className="muted">
+                    Your own outing, one way.{' '}
+                    <button type="button" className="link inline" onClick={resetOuting}>
+                      Back to the demo route
+                    </button>
+                  </p>
+                )}
+                <RoutePlanner
+                  startKind={outing ? 'start' : 'landing'}
+                  startNote={outing && startNote ? <p className={`route-check ${rp.inZone && escapeAvailable(cost) && active?.ok ? 'warn' : 'bad'}`}>{startNote}</p> : null}
+                  landing={landingInfo}
+                  landingReady={!!landingGrid}
+                  trip={trip}
+                  setTrip={setTrip}
+                  picking={picking}
+                  setPicking={setPicking}
+                  places={places}
+                  detours={detours}
+                  targets={targets.slice(0, 6)}
+                  onBestOrder={sortQuests}
+                  defaultStopMin={params?.stop_min_default ?? 25}
+                  mineralNote={mineralLayer?.source}
+                />
               </section>
 
               <section>
                 <h2>Mode</h2>
-                {!ready && <p className="muted">{terrain.status === 'loading' ? 'Reading the terrain model…' : 'Route finding needs dem.tif, which is missing.'}</p>}
-                {ready && !points && <p className="muted">Set a start and a destination to see the three routes.</p>}
+                {!ready && <p className="muted">{routeError ? `Route finding needs routing's export in data/out/landing: ${routeError}` : terrain.status === 'missing' ? 'Route finding needs dem.tif, which is missing.' : 'Reading the terrain model and the cost surface…'}</p>}
+                {ready && status === 'incomplete' && <p className="muted">{!trip.start ? `Choose ${outing ? 'a start' : 'a landing site'}, then click where you want to go, to see the three routes.` : 'Click where you want to go to see the three routes.'}</p>}
                 {craterBusy && <p className="muted routing-busy">Calculating… (route across the crater, 40 m grid)</p>}
                 {ready && !allInSite && crater.status === 'error' && <p className="muted">The crater terrain could not be loaded: {crater.error}</p>}
-                {ok && craterRoute && <p className="muted">Crater route on the 40 m grid from the CTX DEM, rover-scale: misses boulders and small ledges.</p>}
-                {results && (
-                  <div className="profiles" role="group" aria-label="Route mode">
-                    {PROFILES.map((p) => {
-                      const r = results[p.id]
-                      const bad = r.ok && r.plan.checks.some((c) => !c.ok)
-                      return (
-                        <button key={p.id} className={`${profile === p.id ? 'active' : ''}${bad ? ' over' : ''}`} aria-pressed={profile === p.id} onClick={() => setProfile(p.id)} disabled={!r.ok}>
-                          <b>{p.label}</b>
-                          {r.ok ? (
-                            <>
-                              <span>{(r.plan.legs.reduce((s, l) => s + l.distance_m, 0) / 1000).toFixed(2)} km</span>
-                              <span>{Math.round(r.plan.totals.total_min)} min total</span>
-                              <span>{r.plan.risk_min.toFixed(1)} min risky</span>
-                              {bad && <em>over a limit</em>}
-                            </>
-                          ) : (
-                            <span>no route</span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
+                {ok && craterRoute && (
+                  <p className="route-check warn exploratory">
+                    <b>{CRATER_LABEL}.</b> Routing&apos;s rules on the CTX DEM at rover scale: it misses boulders and small ledges, and is not one of the planner&apos;s site routes.
+                  </p>
                 )}
-                {results && !ok && <p className="route-check bad">{REASON[active?.reason] ?? 'No route.'}</p>}
+                <ProfileCards results={results} profiles={PROFILES} profile={profile} setProfile={setProfile} usableMin={params?.usable_min} escapeNote={cost?.escape?.note} />
+                {active?.ok && active.plan.escape && (
+                  <p className="route-check warn">
+                    Escape from the red zone: {active.plan.escape.walk_min.toFixed(1)} min, {Math.round(active.plan.escape.distance_m)} m, included in the totals.{' '}
+                    {cost?.escape?.note && <span className="escape-note">{cost.escape.note}</span>}
+                  </p>
+                )}
+                {results && !ok && <p className="route-check bad">{unreachableText(active)}</p>}
+                {results && ok && active.plan.over_budget && (
+                  <p className="route-check warn">
+                    Over budget: needs {Math.round(active.plan.needed_min)} min ({active.plan.exact.walk_min.toFixed(1)} walk + {active.plan.totals.stop_min} on site + {active.plan.totals.ingress_min} into the lander), more than the {params.usable_min ?? active.plan.budgets.usable_min} min usable. One way, as routing counts it.
+                  </p>
+                )}
                 {results && ok && (
                   <p className="muted">
                     {profInfo.aim}. <button type="button" className="link inline" onClick={() => setTab('compare')}>Compare the three modes</button>
@@ -730,32 +810,32 @@ export default function App() {
                       <>
                         <ul className="checks">
                           {plan.checks.map((c) => (
-                            <li key={c.id} className={c.ok ? 'ok' : 'bad'}>
+                            <li key={c.id} className={c.ok ? 'ok' : c.level === 'warn' ? 'warn' : 'bad'}>
                               {c.ok ? '✓' : '!'} {c.message}
                             </li>
                           ))}
-                          {mode === 'mission' && !mission.back && <li className="note">Ends at {mission.dest?.name || 'the destination'}: it must have a shelter.</li>}
+                          {!isDemo && <li className="note">One way: the walk ends at {trip.dest?.name || 'the destination'}; no walk back is planned.</li>}
                         </ul>
                         {dropHint && (
                           <p className="route-check warn">
-                            Over a limit. Dropping <b>{mission.quests[dropHint.k].name}</b> saves {Math.round(dropHint.d.min)} min.{' '}
-                            <button type="button" className="link inline" onClick={() => setMission((m) => ({ ...m, quests: m.quests.filter((_, j) => j !== dropHint.k) }))}>
+                            Over a limit. Dropping <b>{trip.quests[dropHint.k].name}</b> saves {Math.round(dropHint.d.min)} min.{' '}
+                            <button type="button" className="link inline" onClick={() => setTrip((m) => ({ ...m, quests: m.quests.filter((_, j) => j !== dropHint.k) }))}>
                               Drop it
                             </button>
                           </p>
                         )}
                         <div className="safety-grid">
                           <span>Steepest</span>
-                          <b>{plan.max_slope_deg.toFixed(1)}°</b>
+                          <b>{fmtN(extras.max_slope_deg, (v) => `${v.toFixed(1)}°`)}</b>
                           <span>Climb / descent</span>
                           <b>
-                            {plan.ascent_m} / {plan.descent_m} m
+                            {fmtN(extras.ascent_m, String)} / {fmtN(extras.descent_m, String)} m
                           </b>
                           <span>On careful ground</span>
-                          <b>{plan.metres_careful} m</b>
+                          <b>{fmtN(plan.metres_careful, (v) => `${v} m`)}</b>
                           <span>Furthest from {shelterWord}</span>
                           <b>{furthest ? `${Math.round(furthest.back)} min` : '–'}</b>
-                          <span>Walk + on site + into rover</span>
+                          <span>Walk + on site + into lander</span>
                           <b>
                             {Math.round(plan.totals.walk_min)} + {plan.totals.stop_min} + {plan.totals.ingress_min} min
                           </b>
@@ -777,14 +857,14 @@ export default function App() {
                     <button className="print-btn" onClick={() => window.print()}>
                       Print mission card
                     </button>
-                    {view === 'hud' && ok && <p className="muted">The HUD simulation follows the team planner&apos;s route (route.geojson), not the route picked here.</p>}
+                    {isDemo && profile !== 'balanced' && <p className="muted">The legs, checks, timeline and the HUD are routing&apos;s Balanced plan (plan.json); the map and the profile charts show the {profLabel} route file.</p>}
                   </div>
                 </section>
               )}
 
               {plan && ok && (
                 <div className="detail">
-                  <RouteCharts plan={plan} waypoints={shown.waypoints} route={shown.route} track={track} limits={{ yellow: 10, red: params.slope_max_deg }} onProbe={setProbe} hazardNote={terrain.hazardSource} />
+                  <RouteCharts plan={plan} waypoints={shown.waypoints} route={shown.route} track={track} homeWord={shelterWord} limits={{ yellow: 10, red: params.slope_max_deg }} onProbe={setProbe} hazardNote={terrain.hazardSource} />
                 </div>
               )}
             </>
@@ -854,38 +934,6 @@ export default function App() {
                   </label>
                 </div>
               </section>
-              {ready && (
-                <section>
-                  <h2>
-                    Landing spots{' '}
-                    <Tag
-                      kind="calc"
-                      title={`Flat pad: average slope at most ${LANDING_RULES.maxMeanSlopeDeg}° and no cell over ${LANDING_RULES.maxSlopeDeg}° within ${LANDING_RULES.radiusM} m, nothing blocked. Criterion follows the human-landing rule of slopes under about 5° (Golombek et al., LPSC 2021). Ranked by walking time to the first stop and back from the last.`}
-                    />
-                  </h2>
-                  {landing.length ? (
-                    <ul className="landing-list">
-                      {landing.map((s) => (
-                        <li key={s.id} className={baseId === s.id && mode === 'outing' ? 'on' : ''}>
-                          <span className="pin landing">{s.label}</span>
-                          <span>
-                            avg slope {s.meanSlope.toFixed(1)}° · {Math.round(s.walkFirstMin)} min to stop 1, {Math.round(s.walkLastMin)} min back from stop {stops.length}
-                          </span>
-                          <button onClick={() => { setMode('outing'); setBaseId(s.id); setTab('route') }}>Use</button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="muted">No pad in the site is flat and clear enough.</p>
-                  )}
-                  {roverJudge && (
-                    <p className={`route-check ${roverJudge.ok ? 'ok' : 'warn'}`}>
-                      Team rover position: slope {roverJudge.slopeHere.toFixed(1)}° there, {Number.isFinite(roverJudge.meanSlope) ? `average ${roverJudge.meanSlope.toFixed(1)}° around it` : 'too near the edge to judge'}.{' '}
-                      {roverJudge.ok ? 'It meets the landing rules.' : 'It does not meet the landing rules: consider a recommended spot.'}
-                    </p>
-                  )}
-                </section>
-              )}
             </>
           )}
 
@@ -923,25 +971,30 @@ export default function App() {
 
       <main className={`stage${view === 'hud' ? ' with-hud' : ''}${view === 'hud' && large ? ' large' : ''}${visor ? ' visor' : ''}`}>
         <div className="map-wrap">
+          {ok && craterRoute && (
+            <p className="exploratory-tag" role="note">
+              {CRATER_LABEL}
+            </p>
+          )}
           <SiteMap
             data={data}
             extraLayers={extraLayers}
             layerState={layerState}
             route={view === 'hud' ? hudData.route : shown.route}
-            refRoute={view !== 'hud' && ok && mode === 'outing' ? data.route : null}
+            altRoutes={view !== 'hud' ? altRoutes : null}
             waypoints={view === 'hud' ? hudData.waypoints : mapWaypoints}
-            arrivals={view === 'hud' || mode !== 'outing' ? null : arrivals}
-            landing={view === 'hud' ? [] : landing.map((s) => ({ ...s, title: `${s.label}: recommended landing spot` }))}
+            arrivals={view === 'hud' || !isDemo ? null : arrivals}
             missionPins={view !== 'hud' ? missionPins : null}
-            targets={view !== 'hud' && mode === 'mission' && targetsOn ? targets.slice(0, 12) : null}
-            picking={view !== 'hud' && mode === 'mission' ? picking : null}
+            landingPin={view !== 'hud' ? landingPin : null}
+            targets={view !== 'hud' && !isDemo && targetsOn ? targets.slice(0, 12) : null}
+            picking={view !== 'hud' ? picking : null}
             onPick={pick}
             onInspect={view !== 'hud' ? setInspect : null}
             inspect={view !== 'hud' ? inspect : null}
             gridOn={gridOn}
             onView={(v) => setCentre(v.centre)}
             onHover={setHover}
-            probe={view === 'hud' ? null : probe}
+            probe={probe}
             selectedStop={selectedStop}
             onSelectStop={selectStop}
             astronaut={view === 'hud' ? astronaut : null}
@@ -969,12 +1022,14 @@ export default function App() {
 
           {picking && view !== 'hud' && (
             <div className="map-hint" role="status">
-              {picking === 'start' ? 'Click the map or a pin to set the start' : picking === 'dest' ? 'Click the map or a pin to set the destination' : 'Click the map, a pin or a mineral area to add side quests'}
+              {picking === 'landing' ? 'Click the map to choose a landing site' : picking === 'start' ? 'Click the map to choose a start' : picking === 'dest' ? 'Click where you want to go' : 'Click the map, a pin or a mineral area to add side quests'}
               <button type="button" onClick={() => setPicking(null)}>
                 {picking === 'quest' ? 'Done' : 'Cancel'}
               </button>
             </div>
           )}
+
+          {notice && view !== 'hud' && <RouteNotice notice={notice} onClose={closeNotice} />}
 
           {readout && view !== 'hud' && (
             <div className="readout" aria-live="off">
@@ -1007,8 +1062,8 @@ export default function App() {
               </p>
               <div className="point-facts">{pointRows(inspected)}</div>
               <div className="point-actions">
-                <button type="button" onClick={() => applyInspected('start')} disabled={!inspected.inside}>
-                  Start here
+                <button type="button" onClick={() => applyInspected(outing ? 'start' : 'landing')} disabled={!inspected.inside || (!outing && !landingGrid)}>
+                  {outing ? 'Start here' : 'Land here'}
                 </button>
                 <button type="button" onClick={() => applyInspected('quest')} disabled={!inspected.inside}>
                   <Icon name="plus" size={14} /> Side quest
@@ -1040,6 +1095,14 @@ export default function App() {
                   {e.label}
                 </div>
               ))}
+            {layerState.landing_zones?.on &&
+              zonesLayer?.legend.map((e) => (
+                <div key={`zone-${e.code}`}>
+                  <i style={{ background: e.color }} />
+                  {e.label}
+                  {e.code === 0 && <Tag kind="assumption" title={zonesLayer.source} />}
+                </div>
+              ))}
             {layerState.thermal?.on && (
               <div className="ramp">
                 <span>Thermal inertia</span>
@@ -1053,33 +1116,37 @@ export default function App() {
             {shown.route && (
               <div>
                 <i className="line" />
-                {view === 'hud' ? 'Team planned route' : `${ok ? profLabel : 'Planned'} route`}
+                {view === 'hud' ? (isDemo ? "Routing's Balanced route (plan.json)" : `${profLabel} route`) : `${ok ? profLabel : 'Planned'} route${isDemo ? ' (routing’s file)' : ''}`}
               </div>
             )}
-            {view !== 'hud' && ok && mode === 'outing' && data.route && (
+            {active?.ok && active.plan.escape && (
+              <div>
+                <i className="line escape" />
+                Escape from the red zone
+              </div>
+            )}
+            {view !== 'hud' && altRoutes?.length > 0 && (
               <div>
                 <i className="line ref" />
-                Team planner route
+                Other modes
               </div>
             )}
             {features.length > 0 && (
               <div>
                 <i className="dot" />
                 Stop
-                <i className="dot rover" />
-                Rover
-                {landing.length > 0 && view !== 'hud' && (
+                {isDemo && view !== 'hud' && (
                   <>
-                    <i className="dot landing" />
-                    Landing
+                    <i className="dot m-start" />
+                    {data.plan?.start?.name ?? 'Demo start'}
                   </>
                 )}
               </div>
             )}
-            {mode === 'mission' && view !== 'hud' && (
+            {!isDemo && view !== 'hud' && (
               <div>
-                <i className="dot m-start" />
-                Start
+                <i className={`dot ${outing ? 'm-start' : 'landing-safe'}`} />
+                {outing ? 'Start' : 'Landing'}
                 <i className="dot quest" />
                 Side quest
                 <i className="dot m-dest" />
@@ -1094,7 +1161,19 @@ export default function App() {
             )}
           </div>
         </div>
-        {view === 'hud' && <HudView key={hudKey} data={hudData} onPosition={setAstronaut} large={large} onLarge={setLarge} visor={visor} onVisor={setVisor} />}
+        {view === 'hud' && (
+          <HudView
+            key={hudKey}
+            data={hudData}
+            onPosition={setAstronaut}
+            large={large}
+            onLarge={setLarge}
+            visor={visor}
+            onVisor={setVisor}
+            profile={track ? { track, limits: { yellow: 10, red: params.slope_max_deg }, hazardNote: terrain.hazardSource, homeWord: shelterWord, onProbe: setProbe } : null}
+            emptyText={status === 'failed' ? `No route: ${unreachableText(active)}` : status === 'incomplete' ? `No route yet: choose ${trip.start ? 'a destination' : outing ? 'a start and a destination' : 'a landing site and a destination'}.` : !ready ? 'Reading the terrain and the cost surface…' : null}
+          />
+        )}
       </main>
     </div>
   )

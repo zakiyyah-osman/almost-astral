@@ -58,6 +58,84 @@ ROUGHNESS_LAYER_ID, ROUGHNESS_FILE = "roughness", "roughness.tif"
 DIST_TOL_M = 1e-9
 
 
+# The measured pad values that are exported and reported by landing_check:
+# key -> (Measures field, unit, Rules field holding the limit, comparison that fails, decimals in messages)
+MEASURES = {
+    "pad_slope_deg": ("tilt_deg", "deg", "max_pad_slope_deg", ">", 1),
+    "pad_roughness_m": ("roughness_m", "m", "max_roughness_m", ">", 2),
+    "pad_height_range_m": ("height_range_m", "m", "max_height_range_m", ">", 2),
+    "hazard_dist_m": ("clearance_m", "m", "hazard_clearance_m", "<", 1),
+}
+MOVED_DECIMALS = 1
+
+# One message per reason of landing_check. Placeholders are plain {name}: value (the measure at the
+# cell), limit, pad_radius_m, marginal_pct, reach_m, moved_m. `detail_no_value` replaces `detail`
+# when there is no usable number (see MESSAGE_RULES).
+MESSAGE_TEMPLATES = {
+    "safe": {"code": SAFE, "measure": None, "title": "Safe landing spot",
+             "detail": "The {pad_radius_m} m pad passes every landing rule."},
+    "marginal": {"code": MARGINAL, "measure": None, "title": "Marginal landing spot",
+                 "detail": "The pad passes every landing rule, but is within {marginal_pct}% of at least one limit."},
+    "near_too_steep": {"code": MARGINAL, "measure": "pad_slope_deg", "title": "Close to the tilt limit",
+                       "detail": "The pad tilts {value} deg, within {marginal_pct}% of the {limit} deg limit."},
+    "near_height_range": {"code": MARGINAL, "measure": "pad_height_range_m", "title": "Close to the height-range limit",
+                          "detail": "Heights on the pad span {value} m once the tilt is removed, within "
+                                    "{marginal_pct}% of the {limit} m limit."},
+    "near_too_rough": {"code": MARGINAL, "measure": "pad_roughness_m", "title": "Close to the roughness limit",
+                       "detail": "The pad's roughness is {value} m, within {marginal_pct}% of the {limit} m limit."},
+    "near_hazard_or_clearance": {"code": MARGINAL, "measure": "hazard_dist_m", "title": "Close to a hazard",
+                                 "detail": "The nearest red, too-steep or cliff-edge cell is {value} m from the pad "
+                                           "centre, within {marginal_pct}% of the {limit} m clearance."},
+    "outside_coverage": {"code": OUTSIDE, "measure": None, "title": "Too close to the edge of the data",
+                         "detail": "The {reach_m} m circle around this point does not fit inside the data."},
+    "no_data": {"code": NODATA, "measure": None, "title": "No terrain data here",
+                "detail": "A cell on the {pad_radius_m} m pad has no elevation or slope value."},
+    "hazard_or_clearance": {"code": HAZARD, "measure": "hazard_dist_m", "title": "Hazard too close",
+                            "detail": "A red, too-steep or cliff-edge cell is {value} m from the pad centre; "
+                                      "at least {limit} m is required.",
+                            "detail_no_value": "A cell on the {pad_radius_m} m pad is not green or cannot be walked on."},
+    "too_steep": {"code": STEEP, "measure": "pad_slope_deg", "title": "Too steep to land",
+                  "detail": "The pad tilts {value} deg; the limit is {limit} deg.",
+                  "detail_no_value": "The pad tilts more than {limit} deg."},
+    "height_range": {"code": RANGE, "measure": "pad_height_range_m", "title": "Ground too uneven",
+                     "detail": "Heights on the pad span {value} m once the tilt is removed; the limit is {limit} m.",
+                     "detail_no_value": "Heights on the pad span more than {limit} m once the tilt is removed."},
+    "too_rough": {"code": ROUGH, "measure": "pad_roughness_m", "title": "Ground too rough",
+                  "detail": "The pad's roughness is {value} m; the limit is {limit} m.",
+                  "detail_no_value": "The pad's roughness is more than {limit} m."},
+    "outside": {"code": None, "measure": None, "title": "Outside the map",
+                "detail": "This point is outside the data, so no landing spot was chosen."},
+}
+MOVED_TEMPLATE = "Landing spot moved {moved_m} m to the nearest safe spot."
+MESSAGE_RULES = {
+    "which": ("one message per entry of landing_check's reasons, in that order; a safe point gets the one 'safe' "
+              "message; a marginal point with no near_* reason gets the one 'marginal' message; a click outside "
+              "the data gets the one 'outside' message"),
+    "value": "the template's `measure` grid at the CLICKED cell",
+    "detail_no_value": ("use `detail_no_value` instead of `detail` when the template has one and the value is "
+                        "missing, NaN or Infinity, or (hazard_or_clearance only) the value is not below the limit: "
+                        "the pad then fails on one of its own cells, not on the distance, so no distance is shown"),
+    "numbers": ("{value}: fixed decimals, the template's `decimals`, halves rounded up (JavaScript toFixed). "
+                f"{{moved_m}}: {MOVED_DECIMALS} decimal the same way. {{limit}}, {{pad_radius_m}}, {{marginal_pct}}, "
+                "{reach_m}: shortest form (JavaScript String(number)); their values are in `fields` and in each "
+                "template's `limit`"),
+    "moved": "`moved` is the sentence to add when the click was moved (landing_check's moved_text)",
+}
+
+
+def fixed(v, decimals):
+    """v with a fixed number of decimals, halves rounded up, as JavaScript's toFixed writes it."""
+    from decimal import ROUND_HALF_UP, Decimal
+    return str(Decimal(float(v)).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
+
+
+def render(template, fields):
+    """Fill the {name} placeholders of a template from `fields` (plain text replacement)."""
+    for name, text in fields.items():
+        template = template.replace("{" + name + "}", text)
+    return template
+
+
 class LandingError(ConfigError):
     """No safe landing cell, or a landing input cannot be used."""
 
@@ -147,6 +225,15 @@ class Measures:
 
     def crop(self, sl):
         return Measures(**{k: getattr(self, k)[sl] for k in self.__dataclass_fields__})
+
+    @classmethod
+    def from_exported(cls, codes, values):
+        """Measures rebuilt from the exported grids ({MEASURES key: array}) and the safety codes.
+        The three flags come from the codes, so a pad-cell hazard hidden under a more serious code
+        (outside coverage, no data) is not known here."""
+        v = {attr: np.asarray(values[key], dtype=np.float64) for key, (attr, *_) in MEASURES.items()}
+        return cls(v["tilt_deg"], v["roughness_m"], v["height_range_m"], v["clearance_m"],
+                   codes == OUTSIDE, codes == NODATA, codes == HAZARD)
 
 
 def measure(dem, slope_deg, hazard, cost: Cost, rules: Rules, roughness_layer=None):
@@ -358,21 +445,61 @@ class LandingMap:
             return [f"near_{k}" for k, v in marginal_reasons(self.measures.crop(np.s_[cell[0]:cell[0] + 1, cell[1]:cell[1] + 1]), self.rules).items() if v[0, 0]]
         sl = np.s_[cell[0]:cell[0] + 1, cell[1]:cell[1] + 1]
         fails = failures(self.measures.crop(sl), self.rules)
-        return [CODE_NAMES[c] for c in FAIL_ORDER if fails[c][0, 0]]
+        return [CODE_NAMES[c] for c in FAIL_ORDER if fails[c][0, 0] or c == code]
+
+    def measured_at(self, cell):
+        """The exported pad values at a cell, as stored (float32): {key: number}. None where the
+        value is NaN, math.inf for hazard_dist_m when the site has no hazard cell at all. None
+        when the map has no measures (an older folder read back)."""
+        if self.measures is None:
+            return None
+        out = {}
+        for key, (attr, *_) in MEASURES.items():
+            v = float(np.float32(getattr(self.measures, attr)[cell]))
+            out[key] = None if math.isnan(v) else v
+        return out
+
+    def message_fields(self):
+        r = self.rules
+        return {"pad_radius_m": f"{r.pad_radius_m:g}", "marginal_pct": f"{r.marginal_pct:g}",
+                "reach_m": f"{max(r.pad_radius_m, r.hazard_clearance_m):g}"}
+
+    def message(self, key, measured=None, moved_m=None):
+        """One ready-made message {reason, code, title, detail, moved_m} from MESSAGE_TEMPLATES."""
+        t = MESSAGE_TEMPLATES[key]
+        fields = self.message_fields()
+        detail = t["detail"]
+        if t["measure"] is not None:
+            _, _, limit_name, fails_when, decimals = MEASURES[t["measure"]]
+            limit = getattr(self.rules, limit_name)
+            fields["limit"] = f"{limit:g}"
+            v = None if measured is None else measured[t["measure"]]
+            usable = v is not None and math.isfinite(v)
+            if key == CODE_NAMES[HAZARD] and usable:
+                usable = v < limit
+            if usable:
+                fields["value"] = fixed(v, decimals)
+            else:
+                detail = t["detail_no_value"]
+        return {"reason": key, "code": t["code"], "title": t["title"], "detail": render(detail, fields),
+                "moved_m": moved_m}
 
     def landing_check(self, x, y):
         """Judge a clicked landing point.
 
-        Returns {status, reasons, chosen_xy_m, moved_m} plus code details. A safe or marginal point
-        stays where it is (moved_m 0). Any other point moves to the centre of the nearest safe cell,
-        straight line, since a lander comes down from above; moved_m is measured from the click.
+        Returns {status, reasons, chosen_xy_m, moved_m} plus code details, the measured pad values
+        at the clicked cell (`measured`) and at the chosen cell (`chosen_measured`), one ready-made
+        message per reason (`messages`) and `moved_text`. A safe or marginal point stays where it
+        is (moved_m 0). Any other point moves to the centre of the nearest safe cell, straight
+        line, since a lander comes down from above; moved_m is measured from the click.
         A click outside the grid is not moved: status "outside", no chosen point.
         """
         cell = self.cell_of(x, y)
         if cell is None:
             return {"status": "outside", "reasons": ["outside the data"], "chosen_xy_m": None,
                     "moved_m": None, "code": None, "code_name": None, "cell": None, "chosen_cell": None,
-                    "warnings": []}
+                    "warnings": [], "measured": None, "chosen_measured": None,
+                    "messages": [self.message("outside")], "moved_text": None}
         code = int(self.codes[cell])
         out = {"code": code, "code_name": CODE_NAMES[code], "cell": [int(cell[0]), int(cell[1])],
                "reasons": self.reasons_at(cell)}
@@ -390,6 +517,15 @@ class LandingMap:
             "moved_m": moved,
             "chosen_cell": [int(chosen_cell[0]), int(chosen_cell[1])],
             "warnings": [name for bit, name in WARN_NAMES.items() if bits & bit],
+        })
+        measured = self.measured_at(cell)
+        keys = out["reasons"] or [CODE_NAMES[code]]          # safe, or marginal with no near_* reason
+        out.update({
+            "measured": measured,
+            "chosen_measured": self.measured_at(chosen_cell),
+            "messages": [self.message(k, measured, moved) for k in keys],
+            "moved_text": (render(MOVED_TEMPLATE, {"moved_m": fixed(moved, MOVED_DECIMALS)})
+                           if out["status"] == "moved" else None),
         })
         return out
 

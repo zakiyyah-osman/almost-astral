@@ -27,7 +27,7 @@ Writes to `data/out/`:
 | `shelter_time.png` | contract file |
 | `plan.json` | contract file, with added fields (section 9) |
 | `route_fastest.geojson`, `route_safest.geojson` | new files, same format as `route.geojson` |
-| `landing/` (`manifest.json`, `golden_cases.json`, `tiles/<ti>_<tj>/` grids) | new folder, written by `export_landing.py` (sections 14 to 16) |
+| `landing/` (`manifest.json`, `golden_cases.json`, `landing_zones.png`, `tiles/<ti>_<tj>/` grids) | new folder, written by `export_landing.py` (sections 14 to 16) |
 
 Writes inside `routing/` only: `reports/sweep.csv`, `reports/sensitivity.csv`, `reports/validation.csv`. These come from `analysis.py`, which never writes to `data/out/`.
 
@@ -55,6 +55,7 @@ Flat modules in `routing/`. The entry point stays `python routing/plan_route.py`
 | `analysis.py` | the w-sweep function, sensitivity runs, hard-mask validation against the Perseverance traverse. Run as a script it writes CSV reports only |
 | `plan_route.py` | wires everything; takes the command-line options below |
 | `export_landing.py` | the landing grids and the cost surface in tiles, golden cases, the manifest, and the reference `route` and `landing_check` (sections 14 to 16) |
+| `escape.py` | escape rates for walking out of a red zone, the reference escape and its golden cases (section 17) |
 | `tests/` | pytest, on small synthetic grids built in `conftest.py`; only the end-to-end test reads `data/out/` |
 | `docs/` | `DESIGN.md`, `CHECKLIST.md`, `QA.md` |
 | `reports/` | CSV tables from `analysis.py` |
@@ -690,6 +691,39 @@ value = 5120
 unit = "m (square tiles; whole cells; edge tiles are smaller)"
 type = "scenario"
 source = "Team choice: 1024 cells at 5 m, so the current 2 km site is one tile and a 9,000 x 9,000 cell grid would be 9 x 9 tiles"
+
+# Display: the colours of landing_zones.png (export_landing.py). Every other cell is fully transparent.
+[landing.display_safe_rgba]
+value = [46, 160, 67, 140]
+unit = "[red, green, blue, alpha], each 0 to 255"
+type = "scenario"
+source = "Team display choice (Tushaar): semi-transparent green for safe landing cells (code 0) in landing_zones.png"
+
+[landing.display_marginal_rgba]
+value = [240, 170, 30, 140]
+unit = "[red, green, blue, alpha], each 0 to 255"
+type = "scenario"
+source = "Team display choice (Tushaar): semi-transparent amber for marginal landing cells (code 1) in landing_zones.png"
+
+# ---- escape from a red zone (Team outing start inside blocked ground; DESIGN section 17) ----
+# Emergency estimate only: the escape rates extrapolate the walking model beyond its intended slope range.
+[escape.zone_codes]
+value = [2, 3, 4, 5]
+unit = "mask codes (start.py): 2 red hazard, 3 slope over the limit, 4 cliff buffer, 5 sealed gap"
+type = "assumption"
+source = "Team assumption (Tushaar): the blocked ground a crew may walk out of in an emergency; never 1 (no data: no slope, so no speed)"
+
+[escape.risk_rate]
+value = 1.0
+unit = "risk-min per min"
+type = "assumption"
+source = "Team assumption (Tushaar): every escape minute counts fully as risky; equal to the highest rate passable ground can reach (risk.yellow_rate, risk.near_red_rate_max), so a zone minute never counts as safer than the worst legal ground"
+
+[escape.max_slope_deg]
+value = 35
+unit = "deg"
+type = "assumption"
+source = "Team assumption (Tushaar): about the angle of repose of loose dry granular material, where walking becomes scrambling or sliding; not relaxed for Mars gravity (traction drops with g). Above it a cell cannot be walked out of even in an emergency"
 ```
 
 Not in the config, because `CONTRACT.md` fixes them: file names, hazard codes (0, 1, 2), and the grid (always read from `layers.json`).
@@ -862,6 +896,39 @@ All seven are team assumptions pending Nahla (type `assumption` in `config.toml`
 - any other cell: `status` "moved", `chosen_xy_m` = the centre of the nearest safe cell, `moved_m` = the straight-line distance from the click to it (a lander comes down from above, so no walking path is needed). The move target is the nearest safe cell to the clicked cell's centre, so it can be up to half a cell diagonal from the true nearest to the click.
 - outside the grid: `status` "outside", nothing chosen.
 
+### 14.5 Measured values, the zones image and the messages
+
+**Measured grids** (per tile, float32, the values `landing.measure` computes and `failures` compares with the limits; nothing is recomputed for the export):
+
+| File | Value (14.1) | Unit | Limit (`[landing]`) | Fails when |
+| --- | --- | --- | --- | --- |
+| `pad_slope_deg.f32` | tilt of the best-fit plane | deg | `max_pad_slope_deg` | value > limit |
+| `pad_roughness_m.f32` | roughness | m | `max_roughness_m` | value > limit |
+| `pad_height_range_m.f32` | height range about the plane | m | `max_height_range_m` | value > limit |
+| `hazard_dist_m.f32` | clearance: cell centre to the nearest red, over-limit-slope or cliff-buffer cell | m | `hazard_clearance_m` | value < limit |
+
+- **NaN** in the first three means not computed: the pad or its clearance circle does not fit inside the site grid (code 2) or a pad cell has no DEM or slope value (code 3).
+- `hazard_dist_m` is computed for every cell and is **never NaN**. It is **+Infinity** when the site grid has no red, over-limit-slope or cliff-buffer cell at all; a `Float32Array` reads it as `Infinity`, and no message shows a distance then. NaN is kept for "no data" only.
+- The codes are decided on the float64 values, so a stored float32 value can sit exactly on a limit that its code says it crossed.
+- The manifest's `grids` entry of each carries `unit`, `limit_key`, `limit`, `fails_when` and `decimals`; `measured_note` repeats the NaN and Infinity rules.
+
+**`landing_zones.png`**: one RGBA image for the whole window (not per tile), one pixel per cell, row 0 = north. It covers `origin_m` to `origin_m + extent_m`, so with the default window it has the size and placement of `hazard.png`. Safe cells (code 0) are `landing.display_safe_rgba`, marginal cells (code 1) `landing.display_marginal_rgba` (semi-transparent green and amber, team display choices in `config.toml`); every other cell is `[0, 0, 0, 0]`. The manifest's `zones_png` holds the file, size, placement and the legend (code, name, rgba, label).
+
+**`landing_check` additions.** The result also has:
+
+- `measured`: the four values at the clicked cell, `chosen_measured`: at the chosen cell. Keys are the grid names; a NaN is `None`, the float32 value otherwise (so `math.inf` is possible for `hazard_dist_m`). Both are `None` for a click outside the grid, or on a folder written before these grids.
+- `messages`: one `{reason, code, title, detail, moved_m}` per entry of `reasons`, in that order. A safe point gets the one `safe` message, a marginal point with no `near_*` reason the one `marginal` message, a click outside the data the one `outside` message.
+- `moved_text`: "Landing spot moved 113.9 m to the nearest safe spot." when the click was moved, else `None`.
+- `reasons` for a failing cell now always includes the stored code's own name.
+
+**Templates.** The text lives once, in `landing.MESSAGE_TEMPLATES`, and is copied to the manifest as `message_templates`: `templates` (per reason: `code`, `measure`, `title`, `detail`, sometimes `detail_no_value`, and for a measured reason `limit_key`, `limit`, `decimals`), `moved`, `moved_decimals`, `fields` (`pad_radius_m`, `marginal_pct`, `reach_m`), `rules` and `reasons`. There is a template for every code 0 to 7, for the four `near_*` reasons and for `outside`. To fill one:
+
+- `{value}` is the template's `measure` grid at the **clicked** cell, with `decimals` fixed decimals, halves rounded up (JavaScript `toFixed`; `landing.fixed` does the same). `{moved_m}` has 1 decimal the same way.
+- `{limit}`, `{pad_radius_m}`, `{marginal_pct}`, `{reach_m}` are written in their shortest form (`String(number)`).
+- Use `detail_no_value` instead of `detail` when the template has one and the value is missing, NaN or Infinity, or, for `hazard_or_clearance` only, when the value is not below the limit: the pad then fails on one of its own cells, not on the distance, so no distance is shown.
+
+**Reasons from the files.** The browser has the code and the four values: a failing cell's reasons are its stored code, plus `too_steep` / `height_range` / `too_rough` where the value is above its limit and `hazard_or_clearance` where `hazard_dist_m` is below its limit, lowest code first; a marginal cell's are the `near_*` tests of 14.2. This is what `Landing.load(...).landing_check` does, and it equals the computed map except under codes 2 and 3, where a pad-cell hazard is not in the files (`test_messages_from_the_manifest_match_landing_check_everywhere`).
+
 ## 15. The cost surface and the browser's search (`export_landing.py`)
 
 The browser runs the search from any landing spot, so it gets exactly what the Python search uses, and the exact rule.
@@ -918,8 +985,12 @@ One way only: no return walk is counted. A destination is over budget when `need
 data/out/landing/
   manifest.json
   golden_cases.json
+  golden_escape_cases.json
+  landing_zones.png
   tiles/<ti>_<tj>/landing_safety.u8  landing_warn.u8  nearest_safe.u16  nearest_safe_dist.f32
                   time_rate.f64  risk_rate.f64  mask.u8
+                  pad_slope_deg.f32  pad_roughness_m.f32  pad_height_range_m.f32  hazard_dist_m.f32
+                  escape_time_rate.f64  escape_risk_rate.f64
 ```
 
 | File | Type | Values per cell |
@@ -930,6 +1001,10 @@ data/out/landing/
 | `nearest_safe_dist.f32` | float32 | metres, cell centre to cell centre |
 | `time_rate.f64`, `risk_rate.f64` | float64 | 15.1 |
 | `mask.u8` | uint8 | 15.1 |
+| `pad_slope_deg.f32`, `pad_roughness_m.f32`, `pad_height_range_m.f32` | float32 | the measured pad values of 14.5; NaN where not computed |
+| `hazard_dist_m.f32` | float32 | metres to the nearest hazard cell (14.5); never NaN, +Infinity when there is none |
+| `escape_time_rate.f64`, `escape_risk_rate.f64` | float64 | 17.2 |
+| `landing_zones.png` (one for the window) | RGBA PNG | safe and marginal cells in colour, the rest transparent (14.5) |
 
 Raw values, no header, little-endian, row-major inside each tile, row 0 = the tile's north edge. The u16 limits a window to 65,536 cells a side, enough for a 9,000 x 9,000 cell crater grid.
 
@@ -937,6 +1012,48 @@ Raw values, no header, little-endian, row-major inside each tile, row 0 = the ti
 
 **Tiles.** `landing.tile_size_m` (5120 m) must be a whole number of cells (1024 at 5 m); the window is cut into square tiles from its north-west corner, and the tiles on the south and east edges are smaller. With the defaults the current 400 x 400 site is one tile; a 9,000 x 9,000 grid at 5 m would be 9 x 9 tiles. Crater-scale processing is not built: the whole site grid is still loaded in memory. Only the formats and the functions are ready for it.
 
-**Manifest** (`manifest.json`): `format_version` (1), `site`, `fake` (same rule as `plan.json` `inputs_fake`); `grid` (`width`, `height`, `cell_m`, `origin_m` = the south-west corner of the window in site metres, `extent_m`, `row0` "north edge", `window` and `site_grid`); `layout` (cell formulas, tile lookup, the `nearest_safe` layout, the search bound); `byte_order` "little"; `grids` (file, dtype, values per cell, meaning); `tile_size_m`, `tile_cells`; `tiles` (per tile: `index` [ti, tj], `row0`, `col0`, `shape` [rows, cols], `origin_m`, `files`); `safety_codes`, `safety_order`, `safety_counts`, `warning_bits`, `landing_rule`; `thresholds` (the `[landing]` entries of the config with value, unit, type and source); `roughness_source`, `roughness_note` (the scale caveat), `height_range_note` (a team assumption); `thermal_inertia` (checked or not, and why); `mask_codes`; `profiles` (w); `search` (connectivity and the edge rule of 15.2–15.3); `budget` (15.5); `golden_cases`; `config_sha256`; `inputs_sha256` (`dem.tif`, `hazard.tif`, and `thermal_inertia.tif` when used); `files` (bytes and SHA-256 of every file); `warnings`. There is no timestamp: the same inputs give the same bytes.
+**Manifest** (`manifest.json`): `format_version` (1), `site`, `fake` (same rule as `plan.json` `inputs_fake`); `grid` (`width`, `height`, `cell_m`, `origin_m` = the south-west corner of the window in site metres, `extent_m`, `row0` "north edge", `window` and `site_grid`); `layout` (cell formulas, tile lookup, the `nearest_safe` layout, the search bound); `byte_order` "little"; `grids` (file, dtype, values per cell, meaning, and for the measured grids unit, limit and `fails_when`); `measured_note`; `zones_png` (file, size, placement, legend); `message_templates` (14.5); `tile_size_m`, `tile_cells`; `tiles` (per tile: `index` [ti, tj], `row0`, `col0`, `shape` [rows, cols], `origin_m`, `files`); `safety_codes`, `safety_order`, `safety_counts`, `warning_bits`, `landing_rule`; `thresholds` (the `[landing]` entries of the config with value, unit, type and source); `roughness_source`, `roughness_note` (the scale caveat), `height_range_note` (a team assumption); `thermal_inertia` (checked or not, and why); `mask_codes`; `profiles` (w); `search` (connectivity and the edge rule of 15.2–15.3); `budget` (15.5); `golden_cases`; `escape` (17.2); `config_sha256`; `inputs_sha256` (`dem.tif`, `hazard.tif`, and `thermal_inertia.tif` when used); `files` (bytes and SHA-256 of every file); `warnings`. There is no timestamp: the same inputs give the same bytes.
 
-**Size on the current site:** 160,000 bytes for each u8 grid, 640,000 for `nearest_safe.u16` and `nearest_safe_dist.f32`, 1,280,000 for each f64 grid, plus 174,508 bytes of golden cases and 11,974 of manifest: **4,506,482 bytes (4.51 MB) in 9 files**, against 19.2 MB for the old reach export. The grids scale with the number of cells: 25 bytes per cell.
+**Size on the current site:** 160,000 bytes for each u8 grid, 640,000 for `nearest_safe.u16` and `nearest_safe_dist.f32`, 1,280,000 for each f64 grid, plus 174,508 bytes of golden cases and 11,974 of manifest: 4,506,482 bytes in 9 files before the measured grids. The four measured f32 grids add 640,000 bytes each and `landing_zones.png` 18,577; the manifest is now 21,943 bytes: **7,095,045 bytes (7.10 MB) in 14 files**, against 19.2 MB for the old reach export. The two escape f64 grids add 1,280,000 bytes each and `golden_escape_cases.json` 37,302; the manifest is now 24,951 bytes: **9,695,355 bytes (9.70 MB) in 17 files**. The grids scale with the number of cells: 57 bytes per cell. `format_version` stays 1: the change only adds files and fields.
+
+## 17. Walking out of a red zone (`escape.py`)
+
+A Team outing may start inside blocked ground (a red zone). The web app (`web/src/lib/escape.js`) then walks the crew out first and plans the normal route from the exit. Normal routing is unchanged: the mask, `time_rate.f64`, `risk_rate.f64` and `golden_cases.json` keep their bytes, and the normal search still never enters a blocked cell.
+
+**Emergency estimate only (team assumption).** Escape speeds apply the walking model (section 5) to slopes above `constraints.slope_max_deg`, which is beyond the range it was meant for. The escape times are rough. `escape.risk_rate` and `escape.max_slope_deg` are team assumptions with no sources.
+
+### 17.1 Parameters (`[escape]`, all `assumption`)
+
+| Key | Value | Why |
+| --- | --- | --- |
+| `zone_codes` | `[2, 3, 4, 5]` | red hazard, over-limit slope, cliff buffer, sealed gap. Never 1 (no data: no slope, so no speed). The loader accepts only distinct codes from 2 to 5. |
+| `risk_rate` | 1.0 risk-min per min | Every escape minute counts fully as risky. It equals the highest rate passable ground can reach (`risk.yellow_rate`, `risk.near_red_rate_max`), so a zone minute never counts as safer than the worst legal ground. |
+| `max_slope_deg` | 35° | About the angle of repose of loose dry granular material, where walking turns into scrambling or sliding. Not relaxed for Mars gravity (traction drops with g). The model gives 0.23 km/h there. On the current site this excludes 205 of 7,190 zone cells (2.9%); 30° would exclude 839 and 40° would exclude 52. |
+
+### 17.2 Grids
+
+- `escape_time_rate.f64` (min/m): in cells whose mask code is in `zone_codes` and whose slope is ≤ `max_slope_deg`, it is `cost.time_rate` at that cell's slope (the same function, formula and parameters, so the bits are the same), not clipped by the 20° limit. Everywhere else it is −1: passable ground, no data, codes left out of `zone_codes`, slopes above `max_slope_deg`, and NaN slope.
+- `escape_risk_rate.f64` (risk-min per min): `risk_rate` in those same cells, and 0 elsewhere.
+
+Current site: **6,985** zone cells have a finite rate and **205** are excluded by `max_slope_deg`. The manifest gives each grid's unit, dtype and the meaning of −1 or 0, and an `escape` block with `zone_codes`, `risk_rate`, `max_slope_deg`, `cell_counts`, `rule`, `note` and `golden_cases`.
+
+### 17.3 The rule the web app applies
+
+1. **Zone.** The zone is the 8-connected region of cells whose mask code is in `zone_codes` and that contains the start. If the start is not in such a zone, the normal outing applies.
+2. **Start too steep.** If `escape_time_rate` at the start is < 0, there is no exit, with reason `start_too_steep`: the start is steeper than `max_slope_deg`, so the crew cannot walk out.
+3. **Phase 1.** Dijkstra runs from the start inside the zone with the edge rule of 15.2. Zone cells use the escape rates and exit cells use their normal rates. A zone cell with `escape_time_rate < 0` is never entered. An exit is a passable cell (mask 0) next to the zone; it is entered in one step and never expanded further.
+4. **Exit.** Among the exits that lie in the destination's 8-connected passable region, pick the one with the lowest escape cost at w = 0 (physical minutes). If there is none, the result is `no_exit`. Exact ties go to the lowest total planning cost for the profile, which is the escape at w plus the normal search from the exit. The escape walk is the same for every profile.
+5. **Phase 2.** The normal search (15.2) runs from the exit and never re-enters blocked ground, including the zone.
+6. **Totals.** The escape totals use 15.3 with the escape rates in the zone. The full totals are escape plus route (distance, walk, risk). `needed_min` = total walk + `ingress_min` + `stop_min`, and the route is over budget when the total walk exceeds `walk_limit_min`.
+
+`escape.Escape.plan` is the reference. `Landing.load` builds it as `Landing.escape` when the folder has the escape grids, and sets it to `None` for an older folder.
+
+### 17.4 Golden escape cases (`golden_escape_cases.json`)
+
+The destination is the safe landing cell nearest the window centre. Each case is given for all three profiles.
+
+- `escape1`–`escape3`: the deepest eligible cell of each of the three largest zones that have a valid exit (1,664, 1,434 and 424 cells). The escape walks are 42.4 m / 5.70 min, 48.3 m / 4.19 min and 26.2 m / 3.14 min.
+- `start_too_steep`: the deepest zone cell above 35°.
+- `no_exit`: the destination is a cell in a walled-off passable pocket (68 cells), and the start is in the largest zone, which does not border that pocket. On the current data every zone has an exit to the main ground, so this is the only real no-exit case.
+
+Each case gives the start and destination cells and points, the start's mask code and escape rate, and per profile `status`, `reason`, `zone_cells`, `exits_found` and `tie`. For an ok result it also gives `escape` (exit cell and point, cells, distance_m, walk_min, risk_min), `route` (cells and totals) and `total`. `tests/test_escape.py` checks them against an independent replay written from the rule text.

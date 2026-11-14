@@ -14,7 +14,7 @@ const niceMax = (v) => {
 
 // One small line chart along the route. series: [{d, v}]; marks: stops as numbered lines;
 // limits: horizontal lines [{v, cls, label}]; strip: hazard class per sample, drawn under the axis.
-function LineChart({ series, unit, marks, area, domain, limits = [], strip, hoverD, onHover, height = 90 }) {
+export function LineChart({ series, unit, marks, area, domain, limits = [], strip, hoverD, hereD, onHover, height = 90 }) {
   const H = height
   const good = series.filter((p) => Number.isFinite(p.v))
   if (good.length < 2) return <p className="muted">No data along the route.</p>
@@ -56,7 +56,7 @@ function LineChart({ series, unit, marks, area, domain, limits = [], strip, hove
       ))}
       {marks.map((m) => (
         <g key={`${m.id}-${m.d}`}>
-          <line x1={x(m.d)} x2={x(m.d)} y1={PAD.t} y2={base} className={m.rover ? 'mark rover' : 'mark'} />
+          <line x1={x(m.d)} x2={x(m.d)} y1={PAD.t} y2={base} className={m.home ? 'mark home' : 'mark'} />
           {m.label && <text x={x(m.d)} y={PAD.t + 6} textAnchor="middle" className="tick mark-label">{m.label}</text>}
         </g>
       ))}
@@ -67,23 +67,25 @@ function LineChart({ series, unit, marks, area, domain, limits = [], strip, hove
           <rect key={i} x={x(series[i].d)} y={base + 1} width={Math.max(0.5, x(p.d) - x(series[i].d))} height={5} style={{ fill: HAZ[strip[i + 1]] ?? 'transparent' }} />
         ))}
       {hoverD != null && <line x1={x(hoverD)} x2={x(hoverD)} y1={PAD.t} y2={base} className="cursor" />}
+      {hereD != null && <line x1={x(hereD)} x2={x(hereD)} y1={PAD.t} y2={base} className="cursor here" />}
     </svg>
   )
 }
 
-// Height, slope (with the limits), minutes back to the start and the hazard class along the active
-// route, then the outing timeline against the time allowance. All from the active route.
-export default function RouteCharts({ plan, waypoints, route, track, limits, onProbe, hazardNote }) {
-  const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
-  const [hover, setHover] = useState(null)
-  if (!tl) return null
-
+// Stop marks along the route from a timeline (hud/sim.js buildTimeline): numbered stops, S for home.
+export function marksFor(tl, waypoints) {
   let stopNo = 0
-  const marks = tl.segments
+  return (tl?.segments ?? [])
     .filter((s) => s.type === 'walk')
-    .map((s) => ({ id: s.to, d: s.d1, rover: s.to === tl.roverId, label: s.to === tl.roverId ? 'R' : waypoints.features.find((f) => f.properties.id === s.to)?.properties.kind === 'stop' ? String(++stopNo) : 'B' }))
-  const maxMin = plan.budgets?.eva_max_min ?? Math.ceil(tl.totalMin)
-  const axisMax = Math.max(maxMin, plan.totals.total_min)
+    .map((s) => ({ id: s.to, d: s.d1, home: s.to === tl.roverId, label: s.to === tl.roverId ? 'S' : waypoints.features.find((f) => f.properties.id === s.to)?.properties.kind === 'stop' ? String(++stopNo) : s.to === 'exit' ? 'E' : 'B' }))
+}
+
+// The route profile: height, slope with the limits and the ground strip, and minutes back to the start,
+// all from the route's own cells on the terrain grids (track: [{ d, x, y, z, slope, hazard, back }]).
+// Pointing at a chart rings the place on the map (onProbe). hereD marks where the crew is (the HUD).
+// Used by the sidebar (RouteCharts) and the helmet HUD, so both show the same profile.
+export function RouteProfile({ track, marks = [], limits, hazardNote, homeWord = 'the landing', onProbe, hereD = null, title = true }) {
+  const [hover, setHover] = useState(null)
   const slopeMax = Math.max(...(track ?? []).map((p) => p.slope).filter(Number.isFinite), limits.red)
   const hoverPoint = hover != null && track?.length ? track.reduce((a, b) => (Math.abs(b.d - hover) < Math.abs(a.d - hover) ? b : a)) : null
   const setH = (d) => {
@@ -94,6 +96,58 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
       onProbe?.({ x: p.x, y: p.y })
     }
   }
+  return (
+    <section className="route-profile">
+      {title && <h2>Route profile</h2>}
+      {track?.length ? (
+        <>
+          <p className="chart-title">
+            Height (m) <Tag kind="real" title="HiRISE terrain model (MRO), dem.tif" />
+          </p>
+          <LineChart series={track.map((p) => ({ d: p.d, v: p.z }))} unit="metres" marks={marks} area hoverD={hover} hereD={hereD} onHover={setH} />
+          <p className="chart-title">
+            Slope (°) and ground <Tag kind="calc" title={hazardNote} />
+          </p>
+          <LineChart
+            series={track.map((p) => ({ d: p.d, v: p.slope }))}
+            unit="degrees"
+            marks={marks}
+            domain={[0, niceMax(slopeMax)]}
+            limits={[
+              { v: limits.yellow, cls: 'warn', label: `${limits.yellow}° careful` },
+              { v: limits.red, cls: 'bad', label: `${limits.red}° no-go` },
+            ]}
+            strip={track.map((p) => p.hazard)}
+            hoverD={hover}
+            hereD={hereD}
+            onHover={setH}
+            height={100}
+          />
+          <p className="chart-title">
+            Minutes back to {homeWord} <Tag kind="calc" title="Fastest walk back from each point, plus the time to get inside, on routing's cost surface" />
+          </p>
+          <LineChart series={track.map((p) => ({ d: p.d, v: p.back }))} unit="minutes" marks={marks} hoverD={hover} hereD={hereD} onHover={setH} domain={[0, niceMax(Math.max(...track.map((p) => p.back).filter(Number.isFinite), 10))]} height={70} />
+          <p className="muted chart-readout" aria-live="polite">
+            {hoverPoint
+              ? `${Math.round(hoverPoint.d)} m along · height ${Math.round(hoverPoint.z)} m · slope ${hoverPoint.slope.toFixed(1)}° · ${['fine', 'careful', 'no-go'][hoverPoint.hazard]} ground · ${Number.isFinite(hoverPoint.back) ? `${Math.round(hoverPoint.back)} min back` : 'no way back from here'}`
+              : 'Point at a chart to see the place on the map. The strip under the slope shows the ground: green fine, yellow careful, red no-go.'}
+          </p>
+        </>
+      ) : (
+        <p className="muted">No route: no profile.</p>
+      )}
+    </section>
+  )
+}
+
+// The route profile, then the outing timeline against the time allowance. All from the active route.
+// homeWord: where "back to" points, e.g. "the landing" (My mission) or "the start" (Team outing).
+export default function RouteCharts({ plan, waypoints, route, track, limits, onProbe, hazardNote, homeWord = 'the landing' }) {
+  const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
+  if (!tl) return null
+  const marks = marksFor(tl, waypoints)
+  const maxMin = plan.budgets?.eva_max_min ?? Math.ceil(tl.totalMin)
+  const axisMax = Math.max(maxMin, plan.totals.total_min)
 
   let n = 0
   const segLabels = tl.segments.map((s) => (s.type === 'stop' ? String(++n) : ''))
@@ -101,45 +155,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
 
   return (
     <>
-      <section>
-        <h2>Route profile</h2>
-        {track?.length ? (
-          <>
-            <p className="chart-title">
-              Height (m) <Tag kind="real" title="HiRISE terrain model (MRO), dem.tif" />
-            </p>
-            <LineChart series={track.map((p) => ({ d: p.d, v: p.z }))} unit="metres" marks={marks} area hoverD={hover} onHover={setH} />
-            <p className="chart-title">
-              Slope (°) and ground <Tag kind="calc" title={hazardNote} />
-            </p>
-            <LineChart
-              series={track.map((p) => ({ d: p.d, v: p.slope }))}
-              unit="degrees"
-              marks={marks}
-              domain={[0, niceMax(slopeMax)]}
-              limits={[
-                { v: limits.yellow, cls: 'warn', label: `${limits.yellow}° careful` },
-                { v: limits.red, cls: 'bad', label: `${limits.red}° no-go` },
-              ]}
-              strip={track.map((p) => p.hazard)}
-              hoverD={hover}
-              onHover={setH}
-              height={100}
-            />
-            <p className="chart-title">
-              Minutes back to the start <Tag kind="calc" title="Fastest walk back from each point, plus the time to get into the rover, on the same terrain model" />
-            </p>
-            <LineChart series={track.map((p) => ({ d: p.d, v: p.back }))} unit="minutes" marks={marks} hoverD={hover} onHover={setH} domain={[0, niceMax(Math.max(...track.map((p) => p.back).filter(Number.isFinite), 10))]} height={70} />
-            <p className="muted chart-readout" aria-live="polite">
-              {hoverPoint
-                ? `${Math.round(hoverPoint.d)} m along · height ${Math.round(hoverPoint.z)} m · slope ${hoverPoint.slope.toFixed(1)}° · ${['fine', 'careful', 'no-go'][hoverPoint.hazard]} ground · ${Math.round(hoverPoint.back)} min back`
-                : 'Point at a chart to see the place on the map. The strip under the slope shows the ground: green fine, yellow careful, red no-go.'}
-            </p>
-          </>
-        ) : (
-          <p className="muted">The route profile needs the terrain model (dem.tif).</p>
-        )}
-      </section>
+      <RouteProfile track={track} marks={marks} limits={limits} hazardNote={hazardNote} homeWord={homeWord} onProbe={onProbe} />
 
       <section>
         <h2>Timeline</h2>
@@ -150,7 +166,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
             </div>
           ))}
           {plan.totals.ingress_min > 0 && (
-            <div className="seg ingress" style={{ left: `${(tl.totalMin / axisMax) * 100}%`, width: `${(plan.totals.ingress_min / axisMax) * 100}%` }} title={`Back into the rover: ${plan.totals.ingress_min} min`} />
+            <div className="seg ingress" style={{ left: `${(tl.totalMin / axisMax) * 100}%`, width: `${(plan.totals.ingress_min / axisMax) * 100}%` }} title={`Back into the lander: ${plan.totals.ingress_min} min`} />
           )}
           {plan.budgets?.usable_min && <div className="usable" style={{ left: `${(plan.budgets.usable_min / axisMax) * 100}%` }} title={`Usable time: ${plan.budgets.usable_min} min`} />}
         </div>
@@ -163,7 +179,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
           ))}
         </div>
         <p className="muted">
-          <i className="swatch walk" /> Walking <i className="swatch stop" /> At a stop (numbered) <i className="swatch ingress" /> Into the rover. The thin line is the usable time
+          <i className="swatch walk" /> Walking <i className="swatch stop" /> At a stop (numbered) <i className="swatch ingress" /> Into the lander. The thin line is the usable time
           ({plan.budgets?.usable_min} min: the {maxMin} min limit minus a {plan.budgets?.reserve_pct}% reserve). Ends at T+{clock(plan.totals.total_min)}, leaving{' '}
           {Math.round(maxMin - plan.totals.total_min)} min to the limit. Small times are local Mars time, leaving at 09:00 (an assumption).
         </p>

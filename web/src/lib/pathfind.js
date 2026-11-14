@@ -1,12 +1,17 @@
-// Route finding in the browser, on the site grid. It follows the model in routing/ (Person 3):
-// walking speed from Tobler's function normalised to v_flat on flat ground, the same hard limits
-// (slope limit, cliff buffer, red cells, sealed diagonal gaps) and the same risk terms, and the
-// same three profiles (fastest w = 0, balanced w = 1, safest w = 5). The planner's own route in
-// route.geojson stays the reference; this lets the crew try any start and end point live.
-import { cellOf, centreOf } from './terrain.js'
+// Route finding in the browser on routing's exported cost surface (data/out/landing/, read by
+// landingData.js). The rule is routing/docs/DESIGN.md section 15, the one the manifest repeats
+// under search.edge_rule; golden_cases.json is the test (pathfind.test.js):
+//  - planning rate p = time_rate x (1 + w x risk_rate), float64, in that order
+//  - 8 neighbours; a cell outside the window or with mask != 0 is never entered
+//  - step length cell_m straight, sqrt(cell_m * cell_m + cell_m * cell_m) diagonal
+//  - step cost L x (p_a + p_b) / 2; Dijkstra, relax only when strictly less
+//  - totals along the path (section 15.3) with step cell_m or cell_m x sqrt(2)
+// The cost object comes from costFromLanding (landingData.js). buildCost (below) applies the same rules
+// to the whole-crater grid, which has no export; nothing here invents a walking model.
 
-// The values in routing/config.toml. plan.json repeats them under `assumptions` when the planner
-// has run; paramsFrom() then reads them from there, so a change in config.toml reaches the app.
+// The values in routing/config.toml, for display only (the Compare tab, the inputs list). plan.json
+// repeats them under `assumptions`; paramsFrom() reads them from there. The search never uses them:
+// its rates come from routing's time_rate and risk_rate grids.
 export const DEFAULT_PARAMS = {
   v_flat_kmh: 2.7,
   tobler_k: 3.5,
@@ -56,7 +61,9 @@ export const PROFILES = [
 ]
 
 // Parameters, taking each from plan.json's `assumptions` when present. `from` says where they came from.
-export function paramsFrom(plan) {
+// manifest (optional): routing's landing manifest; its profile weights and budget then win, because
+// they are what the search and the over-budget rule use.
+export function paramsFrom(plan, manifest = null) {
   const a = plan?.assumptions
   const p = { ...DEFAULT_PARAMS }
   let fromPlan = 0
@@ -71,110 +78,172 @@ export function paramsFrom(plan) {
   }
   if (plan?.budgets?.eva_max_min) p.eva_max_min = plan.budgets.eva_max_min
   if (plan?.budgets?.radiation_limit_usv) p.radiation_limit_usv = plan.budgets.radiation_limit_usv
+  if (manifest?.profiles) for (const pr of PROFILES) if (Number.isFinite(manifest.profiles[pr.id]?.w)) p[pr.key] = manifest.profiles[pr.id].w
+  const b = manifest?.budget
+  if (b) {
+    p.eva_max_min = b.eva_max_min
+    p.reserve_pct = b.reserve_pct
+    p.ingress_min = b.ingress_min
+    p.stop_min_default = b.stop_min
+    p.usable_min = b.usable_min
+  }
   p.from = fromPlan ? 'plan.json (routing/config.toml)' : 'routing/config.toml values copied into the app'
   return p
 }
 
-// Walking speed in metres per minute on a slope given as rise over run (routing/walking.py).
-export function speedMPerMin(ratio, p) {
-  const f = Math.exp(-p.tobler_k * (Math.abs(ratio) + p.tobler_offset)) / Math.exp(-p.tobler_k * p.tobler_offset)
-  return ((p.v_flat_kmh * 1000) / 60) * f
+// ---- a cost surface built in the browser (the whole-crater grid, lib/craterTasks.js) ----------------
+// The site's cost surface is routing's export (costFromLanding). Where there is no export, buildCost
+// applies routing's rules (routing/cost.py, DESIGN sections 4.1, 4.2 and 5) to raw grids and returns
+// the same cost shape. Every number comes from `params` (paramsFrom: plan.json assumptions and the
+// landing manifest); nothing here adds a value of its own.
+
+// Mask codes 1-5 in routing's order (DESIGN 4.9): a cell blocked for several reasons takes the first.
+export const MASK = { NODATA: 1, RED: 2, SLOPE: 3, BUFFER: 4, SEALED: 5, WALLED_OFF: 6 }
+const DIST_TOL_M = 1e-9 // routing/cost.py: slack when comparing a distance with the buffer width
+const COST_KEYS = ['v_flat_kmh', 'tobler_k', 'tobler_offset', 'slope_max_deg', 'cliff_buffer_m', 'yellow_rate', 'steep_onset_deg', 'steep_rate_max', 'near_red_radius_m', 'near_red_rate_max']
+const BUDGET_KEYS = ['eva_max_min', 'reserve_pct', 'ingress_min', 'stop_min_default']
+
+// Python's {:g} for the values used here (20 -> "20", 2.5 -> "2.5").
+const g6 = (v) => String(Number(v.toPrecision(6)))
+
+// The manifest's mask_codes, with the texts of routing/start.py built from the same two parameters.
+export function maskCodesFor(p) {
+  return [
+    { code: 0, name: 'reachable', text: 'reachable' },
+    { code: MASK.NODATA, name: 'nodata', text: 'no DEM data' },
+    { code: MASK.RED, name: 'red', text: 'red hazard cell' },
+    { code: MASK.SLOPE, name: 'slope', text: `slope over the limit (${g6(p.slope_max_deg)} deg)` },
+    { code: MASK.BUFFER, name: 'buffer', text: `inside the ${g6(p.cliff_buffer_m)} m buffer around over-limit slopes` },
+    { code: MASK.SEALED, name: 'sealed', text: 'sealed gap between blocked cells' },
+    { code: MASK.WALLED_OFF, name: 'walled_off', text: 'passable, but walled off from the start by blocked cells' },
+  ]
 }
 
-// Cells within radius metres of any cell where mask is true (distance between cell centres).
-function nearMask(mask, width, height, cellM, radiusM) {
-  const out = new Uint8Array(mask.length)
-  const rc = Math.floor(radiusM / cellM + 1e-9)
-  if (rc < 1) return out
-  const offs = []
-  for (let dr = -rc; dr <= rc; dr++) for (let dc = -rc; dc <= rc; dc++) if (Math.hypot(dr, dc) * cellM <= radiusM + 1e-9) offs.push([dr, dc])
-  for (let i = 0; i < mask.length; i++) {
-    if (!mask[i]) continue
-    const r = Math.floor(i / width)
-    const c = i % width
-    for (const [dr, dc] of offs) {
-      const rr = r + dr
-      const cc = c + dc
-      if (rr >= 0 && cc >= 0 && rr < height && cc < width) out[rr * width + cc] = 1
-    }
-  }
-  return out
-}
-
-// Distance in metres to the nearest true cell, looked up only out to radiusM (Infinity beyond).
-function distanceWithin(mask, width, height, cellM, radiusM) {
-  const out = new Float64Array(mask.length).fill(Infinity)
-  const rc = Math.ceil(radiusM / cellM)
-  for (let i = 0; i < mask.length; i++) {
-    if (!mask[i]) continue
-    const r = Math.floor(i / width)
-    const c = i % width
-    for (let dr = -rc; dr <= rc; dr++) {
-      for (let dc = -rc; dc <= rc; dc++) {
+// Distance in metres from every cell centre to the nearest cell centre where flag is set, exact out to
+// maxM and Infinity beyond it (all the rules need; routing uses distance_transform_edt, sampling = cell_m).
+function distanceWithin(flag, width, height, cellM, maxM) {
+  const dist = new Float64Array(width * height).fill(Infinity)
+  const rc = Math.floor((maxM + DIST_TOL_M) / cellM)
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      if (!flag[r * width + c]) continue
+      for (let dr = -rc; dr <= rc; dr++) {
         const rr = r + dr
-        const cc = c + dc
-        if (rr < 0 || cc < 0 || rr >= height || cc >= width) continue
-        const d = Math.hypot(dr, dc) * cellM
-        const j = rr * width + cc
-        if (d < out[j]) out[j] = d
+        if (rr < 0 || rr >= height) continue
+        for (let dc = -rc; dc <= rc; dc++) {
+          const cc = c + dc
+          if (cc < 0 || cc >= width) continue
+          const d = Math.sqrt(dr * cellM * (dr * cellM) + dc * cellM * (dc * cellM))
+          const j = rr * width + cc
+          if (d < dist[j]) dist[j] = d
+        }
       }
     }
   }
-  return out
+  return dist
 }
 
-// Free cells squeezed between two blocked cells that touch only at a corner (routing/cost.py).
+// The gap rule (DESIGN 4.1, cost.py _seal_diagonal_gaps): a free cell with two perpendicular neighbours
+// blocked and the diagonal cell between them free is sealed; each pass looks at the grid as the pass
+// before left it, and passes repeat until nothing changes. Cells past the edge count as free.
+// Sets sealed cells in `blocked` and returns them as their own array.
 function sealDiagonalGaps(blocked, width, height) {
-  const cur = blocked.slice()
-  const at = (r, c) => (r < 0 || c < 0 || r >= height || c >= width ? 0 : cur[r * width + c])
+  const sealed = new Uint8Array(width * height)
+  const at = (r, c) => (r < 0 || c < 0 || r >= height || c >= width ? 0 : blocked[r * width + c])
   for (;;) {
     const add = []
     for (let r = 0; r < height; r++) {
       for (let c = 0; c < width; c++) {
-        if (cur[r * width + c]) continue
-        const n = at(r - 1, c), s = at(r + 1, c), w = at(r, c - 1), e = at(r, c + 1)
+        if (blocked[r * width + c]) continue
+        const n = at(r - 1, c)
+        const s = at(r + 1, c)
+        const w = at(r, c - 1)
+        const e = at(r, c + 1)
         if ((n && w && !at(r - 1, c - 1)) || (n && e && !at(r - 1, c + 1)) || (s && w && !at(r + 1, c - 1)) || (s && e && !at(r + 1, c + 1))) add.push(r * width + c)
       }
     }
-    if (!add.length) return cur
-    for (const i of add) cur[i] = 1
+    if (!add.length) return sealed
+    for (const i of add) {
+      blocked[i] = 1
+      sealed[i] = 1
+    }
   }
 }
 
-// Everything the search needs, built once per terrain and hazard map.
-export function buildCost({ dem, slope, hazard, width, height, cellM, params }) {
+// grids: { dem, slope (degrees), hazard (0 green, 1 yellow, 2 red), width, height, cellM }, row 0 = north.
+// params: paramsFrom()'s values (grids.params when not given). A missing value is an error, never a guess.
+// Rules, all in metres and degrees so they hold at any cell size:
+//  - blocked: no DEM or slope value (1), red (2), slope over slope_max_deg (3), within cliff_buffer_m of
+//    an over-limit cell, centre to centre (4), sealed diagonal gap (5). On a grid coarser than
+//    cliff_buffer_m the buffer adds nothing: the nearest other cell centre is already cell_m away
+//    (routing/config.toml says the same of a buffer below cell_m). Sealing works on cells, at any size.
+//  - time_rate = 1 / v, v = v_flat x exp(-k x (|S| + s0)) / exp(-k x s0), S = tan(slope); -1 where blocked
+//  - risk_rate = yellow_rate on yellow + steep_rate_max x ramp(slope) + near_red_rate_max x
+//    (1 - d_red / near_red_radius_m) clipped at 0; 0 where blocked
+// No escape rates: a start inside a red zone cannot walk out on this surface.
+export function buildCost(grids, params = grids.params) {
+  const { dem, slope, hazard, width, height, cellM } = grids
   const p = params
+  const missing = [...COST_KEYS, ...BUDGET_KEYS].filter((k) => !(typeof p?.[k] === 'number' && Number.isFinite(p[k])))
+  if (missing.length) throw new Error(`buildCost: no value for ${missing.join(', ')} (plan.json assumptions or the landing manifest)`)
+  if (!(p.steep_onset_deg < p.slope_max_deg)) throw new Error(`buildCost: steep_onset_deg (${p.steep_onset_deg}) must be below slope_max_deg (${p.slope_max_deg})`)
   const n = width * height
   const over = new Uint8Array(n)
   const red = new Uint8Array(n)
-  const base = new Uint8Array(n)
+  const mask = new Uint8Array(n)
+  const blocked = new Uint8Array(n)
   for (let i = 0; i < n; i++) {
     over[i] = slope[i] > p.slope_max_deg ? 1 : 0
     red[i] = hazard[i] === 2 ? 1 : 0
-    base[i] = !Number.isFinite(dem[i]) || !Number.isFinite(slope[i]) || red[i] || over[i] ? 1 : 0
   }
-  const buffer = p.cliff_buffer_m > 0 ? nearMask(over, width, height, cellM, p.cliff_buffer_m) : new Uint8Array(n)
-  for (let i = 0; i < n; i++) if (buffer[i]) base[i] = 1
-  const blocked = sealDiagonalGaps(base, width, height)
+  const cliff = p.cliff_buffer_m > 0 ? distanceWithin(over, width, height, cellM, p.cliff_buffer_m) : null
+  for (let i = 0; i < n; i++) {
+    mask[i] = Number.isNaN(dem[i]) || Number.isNaN(slope[i]) ? MASK.NODATA : red[i] ? MASK.RED : over[i] ? MASK.SLOPE : cliff && cliff[i] <= p.cliff_buffer_m + DIST_TOL_M ? MASK.BUFFER : 0
+    blocked[i] = mask[i] ? 1 : 0
+  }
+  const sealed = sealDiagonalGaps(blocked, width, height)
+  for (let i = 0; i < n; i++) if (sealed[i]) mask[i] = MASK.SEALED
 
-  const nearRed = distanceWithin(red, width, height, cellM, p.near_red_radius_m)
-  const timeRate = new Float64Array(n) // minutes per metre
-  const riskRate = new Float64Array(n) // risk-minutes per minute
+  const dRed = distanceWithin(red, width, height, cellM, p.near_red_radius_m)
+  const vFlat = (p.v_flat_kmh * 1000) / 60 // metres per minute
+  const timeRate = new Float64Array(n)
+  const riskRate = new Float64Array(n)
   for (let i = 0; i < n; i++) {
     if (blocked[i]) {
       timeRate[i] = -1
       continue
     }
-    timeRate[i] = 1 / speedMPerMin(Math.tan((slope[i] * Math.PI) / 180), p)
+    const S = Math.abs(Math.tan((slope[i] * Math.PI) / 180))
+    timeRate[i] = 1 / (vFlat * (Math.exp(-p.tobler_k * (S + p.tobler_offset)) / Math.exp(-p.tobler_k * p.tobler_offset)))
     const ramp = Math.min(1, Math.max(0, (slope[i] - p.steep_onset_deg) / (p.slope_max_deg - p.steep_onset_deg)))
-    const near = Math.max(0, 1 - nearRed[i] / p.near_red_radius_m)
-    riskRate[i] = (hazard[i] === 1 ? p.yellow_rate : 0) + p.steep_rate_max * ramp + p.near_red_rate_max * (Number.isFinite(near) ? near : 0)
+    riskRate[i] = (hazard[i] === 1 ? p.yellow_rate : 0) + p.steep_rate_max * ramp + p.near_red_rate_max * Math.max(0, 1 - dRed[i] / p.near_red_radius_m)
   }
-  return { width, height, cellM, dem, slope, hazard, blocked, timeRate, riskRate, params: p }
+  return {
+    width,
+    height,
+    cellM,
+    origin: [0, 0],
+    mask,
+    blocked,
+    timeRate,
+    riskRate,
+    dem,
+    slope,
+    hazard,
+    // The one-way budget, as the manifest states it: usable = the limit minus the reserve.
+    budget: { eva_max_min: p.eva_max_min, reserve_pct: p.reserve_pct, usable_min: p.usable_min ?? p.eva_max_min * (1 - p.reserve_pct / 100), ingress_min: p.ingress_min, stop_min: p.stop_min_default },
+    escapeTimeRate: null,
+    escapeRiskRate: null,
+    escape: null,
+    maskCodes: maskCodesFor(p),
+    searches: new Map(),
+    params: p,
+    computed: 'browser', // not routing's export
+  }
 }
 
-// Min-heap of [key, value] pairs.
-class Heap {
+// Min-heap of [key, value] pairs (also used by lib/escape.js).
+export class Heap {
   constructor() {
     this.k = []
     this.v = []
@@ -223,19 +292,176 @@ class Heap {
   }
 }
 
+// [dRow, dCol, diagonal]
 const NEIGH = [
-  [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
-  [-1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [1, 1, Math.SQRT2],
+  [-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0],
+  [-1, -1, 1], [-1, 1, 1], [1, -1, 1], [1, 1, 1],
 ]
 
+const origin = (cost) => cost.origin ?? [0, 0]
+
+// The cell holding (x, y), or null outside the grid (manifest layout: row 0 = north edge).
+export function cellAt(cost, x, y) {
+  const [ox, oy] = origin(cost)
+  const col = Math.floor((x - ox) / cost.cellM)
+  const row = cost.height - 1 - Math.floor((y - oy) / cost.cellM)
+  if (!(col >= 0 && row >= 0 && col < cost.width && row < cost.height)) return null
+  return { row, col, i: row * cost.width + col }
+}
+
+// Centre of cell i in metres.
+export function centreAt(cost, i) {
+  const [ox, oy] = origin(cost)
+  const row = Math.floor(i / cost.width)
+  const col = i - row * cost.width
+  return [ox + (col + 0.5) * cost.cellM, oy + (cost.height - row - 0.5) * cost.cellM]
+}
+
+// Planning rate per cell for weight w, float64, evaluated exactly as section 15.2 writes it.
+function planningRate(cost, w) {
+  const { timeRate, riskRate } = cost
+  const p = new Float64Array(timeRate.length)
+  for (let i = 0; i < p.length; i++) p[i] = timeRate[i] * (1 + w * riskRate[i])
+  return p
+}
+
+const CACHE_MAX = 24
+// A cached search holds 12 bytes per cell (g and from). The cap keeps 24 searches on the 400 x 400 site
+// grid as before, and one on the 1600 x 1600 crater grid (about 30 MB each).
+const CACHE_CELLS = 4e6
+const cacheMax = (n) => Math.max(1, Math.min(CACHE_MAX, Math.floor(CACHE_CELLS / n)))
+
+// Dijkstra from one cell or a list of cells (cost 0 at each) with weight w, over the whole grid.
+// Returns { g: Float64Array of cumulative planning cost (Infinity where unreached), from: Int32Array
+// predecessor (-1 at a source or unreached), w, sources }. Cached on cost.searches when it exists.
+export function searchFrom(cost, src, w = 0) {
+  const sources = (Array.isArray(src) ? src : [src]).filter((s) => s != null)
+  const key = `${sources.join(',')}|${w}`
+  const hit = cost.searches?.get(key)
+  if (hit) return hit
+  const { width, height, cellM, blocked } = cost
+  const n = width * height
+  const p = planningRate(cost, w)
+  const g = new Float64Array(n).fill(Infinity)
+  const from = new Int32Array(n).fill(-1)
+  const done = new Uint8Array(n)
+  const L = [cellM, Math.sqrt(cellM * cellM + cellM * cellM)]
+  const heap = new Heap()
+  for (const s of sources) {
+    if (blocked[s] || g[s] === 0) continue
+    g[s] = 0
+    heap.push(0, s)
+  }
+  while (heap.size) {
+    const i = heap.pop()
+    if (done[i]) continue
+    done[i] = 1
+    const r = Math.floor(i / width)
+    const c = i - r * width
+    const gi = g[i]
+    const pi = p[i]
+    for (let k = 0; k < 8; k++) {
+      const rr = r + NEIGH[k][0]
+      const cc = c + NEIGH[k][1]
+      if (rr < 0 || cc < 0 || rr >= height || cc >= width) continue
+      const j = rr * width + cc
+      if (blocked[j] || done[j]) continue
+      const step = (L[NEIGH[k][2]] * (pi + p[j])) / 2
+      const ng = gi + step
+      if (ng < g[j]) {
+        g[j] = ng
+        from[j] = i
+        heap.push(ng, j)
+      }
+    }
+  }
+  const out = { g, from, w, sources }
+  if (cost.searches) {
+    while (cost.searches.size >= cacheMax(n)) cost.searches.delete(cost.searches.keys().next().value)
+    cost.searches.set(key, out)
+  }
+  return out
+}
+
+// The path from the search's source to dest (source first), or null when dest was not reached.
+export function pathTo(search, dest) {
+  if (dest == null || !Number.isFinite(search.g[dest])) return null
+  const cells = [dest]
+  while (search.from[cells[cells.length - 1]] !== -1) cells.push(search.from[cells[cells.length - 1]])
+  return cells.reverse()
+}
+
+// Distance, physical walking time and risk minutes along a path of cells, in path order (section 15.3).
+export function totals(cost, cells) {
+  const { width, cellM, timeRate, riskRate } = cost
+  const diag = cellM * Math.SQRT2
+  let distance = 0
+  let walk = 0
+  let risk = 0
+  for (let k = 1; k < cells.length; k++) {
+    const a = cells[k - 1]
+    const b = cells[k]
+    const step = Math.floor(a / width) !== Math.floor(b / width) && a % width !== b % width ? diag : cellM
+    const ta = timeRate[a]
+    const tb = timeRate[b]
+    distance += step
+    walk += (step * (ta + tb)) / 2
+    risk += (step * (ta * riskRate[a] + tb * riskRate[b])) / 2
+  }
+  return { distance_m: distance, walk_min: walk, risk_min: risk }
+}
+
+// Text for a reason code: mask codes 1-6 from the manifest, plus the two search results.
+export function reasonText(cost, reason) {
+  if (reason === 'outside') return 'outside the map'
+  if (reason === 'landing_blocked') return 'the start cannot be walked on'
+  if (reason === 'escape_unavailable') return "the start is inside a red zone, and routing's export has no escape rate (escape_time_rate) to walk out of it yet"
+  if (reason === 'start_too_steep') return `Too steep to walk out of here: over ${cost.escape?.max_slope_deg ?? '?'}°`
+  if (reason === 'no_exit') return 'no way out of the red zone around the start leads to the destination through the side quests'
+  return cost.maskCodes?.find((m) => m.code === reason)?.text ?? `blocked (code ${reason})`
+}
+
+// One-way route from cell `from` to cell `to` with weight w, as export_landing.route gives it.
+// budget: { ingress_min, stop_min, usable_min } (the manifest's budget by default).
+// Returns { reachable, reason, reason_text, cells, geometry, distance_m, walk_min, risk_min,
+// needed_min, over_budget } or, with no path, { reachable: false, reason, reason_text }.
+export function route(cost, from, to, w, budget = cost.budget) {
+  const fail = (reason) => ({ reachable: false, reason, reason_text: reasonText(cost, reason), w })
+  if (from == null || to == null) return fail('outside')
+  if (cost.blocked[from]) return fail('landing_blocked')
+  if (cost.mask ? cost.mask[to] !== 0 : cost.blocked[to]) return fail(cost.mask ? cost.mask[to] : 1)
+  const cells = pathTo(searchFrom(cost, from, w), to)
+  if (!cells) return fail(6)
+  const t = totals(cost, cells)
+  const ingress = budget?.ingress_min ?? 0
+  const stop = budget?.stop_min ?? 0
+  const needed = t.walk_min + ingress + stop
+  return {
+    reachable: true,
+    reason: 0,
+    reason_text: null,
+    w,
+    cells,
+    geometry: { type: 'LineString', coordinates: cells.map((i) => centreAt(cost, i)) },
+    ...t,
+    needed_min: needed,
+    over_budget: budget?.usable_min != null ? needed > budget.usable_min : false,
+  }
+}
+
+// Walking minutes (w = 0) or planning cost (w > 0) from src (a cell or a list of cells) to every cell.
+// Step costs are the same in both directions, so this is also the cost from every cell back to src.
+export function timeField(cost, src, w = 0) {
+  return searchFrom(cost, src, w).g
+}
+
 // The nearest walkable cell to (x, y), searching out to maxM metres. Returns { i, movedM } or null.
+// Only used to place mineral-area pins and order side quests; a route never snaps a point.
 export function snapToFree(cost, x, y, maxM = 100) {
   const { width, height, cellM, blocked } = cost
-  const cx = Math.min(width * cellM - 1e-6, Math.max(0, x))
-  const cy = Math.min(height * cellM - 1e-6, Math.max(0, y))
-  const home = cellOf(cx, cy, width, height, cellM)
+  const home = cellAt(cost, x, y)
   if (!home) return null
-  if (!blocked[home.i]) return { i: home.i, movedM: Math.hypot(cx - x, cy - y) }
+  if (!blocked[home.i]) return { i: home.i, movedM: 0 }
   const rc = Math.ceil(maxM / cellM)
   let best = null
   for (let dr = -rc; dr <= rc; dr++) {
@@ -245,7 +471,7 @@ export function snapToFree(cost, x, y, maxM = 100) {
       if (r < 0 || c < 0 || r >= height || c >= width) continue
       const i = r * width + c
       if (blocked[i]) continue
-      const [px, py] = centreOf(i, width, height, cellM)
+      const [px, py] = centreAt(cost, i)
       const d = Math.hypot(px - x, py - y)
       if (d <= maxM && (!best || d < best.movedM)) best = { i, movedM: d }
     }
@@ -253,96 +479,14 @@ export function snapToFree(cost, x, y, maxM = 100) {
   return best
 }
 
-// Least-cost path from cell a to cell b with risk weight w (A*; cost = time x (1 + w x risk),
-// averaged over the two cells of each step, like skimage MCP_Geometric). Returns cell indices or null.
-export function searchPath(cost, a, b, w) {
-  const { width, height, cellM, blocked, timeRate, riskRate, params } = cost
-  if (blocked[a] || blocked[b]) return null
-  const n = width * height
-  const g = new Float64Array(n).fill(Infinity)
-  const from = new Int32Array(n).fill(-1)
-  const done = new Uint8Array(n)
-  const minRate = 1 / speedMPerMin(0, params) // fastest possible: flat ground, no risk
-  const br = Math.floor(b / width)
-  const bc = b % width
-  const h = (i) => Math.hypot(Math.floor(i / width) - br, (i % width) - bc) * cellM * minRate
-  const rate = (i) => timeRate[i] * (1 + w * riskRate[i])
-  const heap = new Heap()
-  g[a] = 0
-  heap.push(h(a), a)
-  while (heap.size) {
-    const i = heap.pop()
-    if (done[i]) continue
-    done[i] = 1
-    if (i === b) break
-    const r = Math.floor(i / width)
-    const c = i % width
-    const ri = rate(i)
-    for (const [dr, dc, f] of NEIGH) {
-      const rr = r + dr
-      const cc = c + dc
-      if (rr < 0 || cc < 0 || rr >= height || cc >= width) continue
-      const j = rr * width + cc
-      if (blocked[j] || done[j]) continue
-      const ng = g[i] + ((ri + rate(j)) / 2) * f * cellM
-      if (ng < g[j]) {
-        g[j] = ng
-        from[j] = i
-        heap.push(ng + h(j), j)
-      }
-    }
-  }
-  if (!done[b]) return null
-  const path = [b]
-  while (path[path.length - 1] !== a) path.push(from[path[path.length - 1]])
-  return path.reverse()
-}
-
-// Walking minutes from cell src to every cell (fastest physical time, no risk weighting).
-// Speeds are the same uphill and downhill, so this is also the time from every cell back to src.
-// src can also be a list of cells: the time is then to the nearest of them (used for detours off a route).
-// w is an optional risk weight, the same one the route planner uses: a minute on careful ground or
-// near no-go ground then counts (1 + w x risk) minutes. With w = 0 (the default) the field is pure walking time.
-export function timeField(cost, src, w = 0) {
-  const { width, height, cellM, blocked, timeRate, riskRate } = cost
-  const rate = w ? (k) => timeRate[k] * (1 + w * riskRate[k]) : (k) => timeRate[k]
-  const n = width * height
-  const t = new Float64Array(n).fill(Infinity)
-  const heap = new Heap()
-  for (const s of Array.isArray(src) ? src : [src]) {
-    if (s == null || blocked[s] || t[s] === 0) continue
-    t[s] = 0
-    heap.push(0, s)
-  }
-  const done = new Uint8Array(n)
-  while (heap.size) {
-    const i = heap.pop()
-    if (done[i]) continue
-    done[i] = 1
-    const r = Math.floor(i / width)
-    const c = i % width
-    for (const [dr, dc, f] of NEIGH) {
-      const rr = r + dr
-      const cc = c + dc
-      if (rr < 0 || cc < 0 || rr >= height || cc >= width) continue
-      const j = rr * width + cc
-      if (blocked[j] || done[j]) continue
-      const nt = t[i] + ((rate(i) + rate(j)) / 2) * f * cellM
-      if (nt < t[j]) {
-        t[j] = nt
-        heap.push(nt, j)
-      }
-    }
-  }
-  return t
-}
-
-// Numbers for a path of cells: distance, physical walking time, risk minutes, slope and climb.
+// Numbers for a path of cells: the section 15.3 totals, plus slope, climb and ground class from the
+// terrain grids (when the cost has them) and a sample per cell for the charts.
 export function measurePath(cost, cells) {
-  const { width, height, cellM, dem, slope, hazard, timeRate, riskRate } = cost
+  const { dem, slope, hazard, timeRate } = cost
+  const { distance_m, walk_min, risk_min } = totals(cost, cells)
+  const diag = cost.cellM * Math.SQRT2
   let d = 0
-  let walk = 0
-  let risk = 0
+  let t = 0
   let ascent = 0
   let descent = 0
   let maxSlope = 0
@@ -350,32 +494,32 @@ export function measurePath(cost, cells) {
   const track = []
   for (let k = 0; k < cells.length; k++) {
     const i = cells[k]
-    const [x, y] = centreOf(i, width, height, cellM)
+    const [x, y] = centreAt(cost, i)
     if (k > 0) {
       const j = cells[k - 1]
-      const len = Math.hypot(...centreOf(j, width, height, cellM).map((v, q) => v - [x, y][q]))
-      const dt = ((timeRate[i] + timeRate[j]) / 2) * len
-      d += len
-      walk += dt
-      risk += ((riskRate[i] + riskRate[j]) / 2) * dt
-      const dz = dem[i] - dem[j]
-      if (dz > 0) ascent += dz
-      else descent -= dz
-      byClass[hazard[i]] += len
+      const step = Math.floor(i / cost.width) !== Math.floor(j / cost.width) && i % cost.width !== j % cost.width ? diag : cost.cellM
+      d += step
+      t += (step * (timeRate[i] + timeRate[j])) / 2
+      if (dem) {
+        const dz = dem[i] - dem[j]
+        if (dz > 0) ascent += dz
+        else descent -= dz
+      }
+      if (hazard) byClass[hazard[i]] += step
     }
-    maxSlope = Math.max(maxSlope, slope[i])
-    track.push({ i, d, x, y, z: dem[i], slope: slope[i], hazard: hazard[i], t: walk })
+    const s = slope ? slope[i] : NaN
+    if (Number.isFinite(s)) maxSlope = Math.max(maxSlope, s)
+    track.push({ i, d, x, y, z: dem ? dem[i] : NaN, slope: s, hazard: hazard ? hazard[i] : 0, t })
   }
-  return { distance_m: d, walk_min: walk, risk_min: risk, ascent_m: ascent, descent_m: descent, max_slope_deg: maxSlope, metres_by_class: byClass, track }
+  return { distance_m, walk_min, risk_min, ascent_m: ascent, descent_m: descent, max_slope_deg: maxSlope, metres_by_class: byClass, track }
 }
 
-// Plans one leg from point A to point B ({x, y} metres) with the given profile weight.
+// One leg from point A to point B ({x, y} metres) with weight w. A blocked or unreachable point is
+// never moved: the leg fails with the reason code and its text.
 export function planLeg(cost, A, B, w) {
-  const a = snapToFree(cost, A.x, A.y)
-  const b = snapToFree(cost, B.x, B.y)
-  if (!a || !b) return { ok: false, reason: !a ? 'start' : 'end' }
-  const cells = a.i === b.i ? [a.i] : searchPath(cost, a.i, b.i, w)
-  if (!cells) return { ok: false, reason: 'unreachable' }
-  const { width, height, cellM } = cost
-  return { ok: true, cells, points: cells.map((i) => centreOf(i, width, height, cellM)), snapM: [a.movedM, b.movedM], ...measurePath(cost, cells) }
+  const a = cellAt(cost, A.x, A.y)
+  const b = cellAt(cost, B.x, B.y)
+  const r = route(cost, a?.i, b?.i, w, null)
+  if (!r.reachable) return { ok: false, reason: r.reason, reason_text: r.reason_text, end: r.reason === 'landing_blocked' ? 'start' : 'end' }
+  return { ok: true, cells: r.cells, points: r.geometry.coordinates, ...measurePath(cost, r.cells) }
 }

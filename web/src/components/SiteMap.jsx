@@ -224,21 +224,24 @@ function button(position, html, onClick) {
 // Props:
 //  route        the active route (GeoJSON), drawn bold
 //  refRoute     the team planner's route.geojson, drawn thin for comparison (or null)
-//  waypoints    rover and stops; arrivals: { id: minutes } for the "T+hh:mm" labels
-//  landing      recommended landing spots [{ x, y, label, title }]
-//  missionPins  the custom mission's own points [{ x, y, label, kind, title }] (start, side quests, destination)
+//  altRoutes    the other route modes (GeoJSON list), drawn faint under the active route (or null)
+//  waypoints    the stops and, for the team outing, its 'start' (a 'rover' waypoint is ignored: there is no rover); arrivals: { id: minutes } for the "T+hh:mm" labels
+//  missionPins  the custom mission's own points [{ x, y, label, kind, title }] (side quests, destination)
+//  landingPin   the chosen landing { x, y, status: 'safe' | 'marginal', title, from }: a green or amber pin;
+//               from = { x, y } of the original click when it was moved, marked with a grey X and a dashed line
 //  targets      mineral areas to pick as side quests [{ id, x, y, color, mineral, areaM2 }]
 //  picking      'start' | 'quest' | 'dest' | null: the next map click (or pin click) sets that point (onPick)
 //  onInspect    gets { x, y } when the map is clicked inside the site and nothing is being picked
 //  inspect      { x, y }: the point being inspected, marked with a cross
 //  gridOn       draw latitude and longitude lines for the part of the map on screen
 //  onView       gets { centre: { x, y } } whenever the map stops moving
+//  extraLayers  image layers made in the app [{ id, url, boundsXY? }]; boundsXY places one by site metres
 //  sizeKey      changes whenever the map's box changes size without a new layout (sidebar dragged)
 //  onHover      gets { x, y } under the pointer (anywhere on the map, outside the site too), or null
 //  probe        { x, y }: a point to ring (from the profile chart)
 //  astronaut    null, or { x, y, storm, trail } while the HUD simulation runs
 //  layoutKey    changes whenever the page layout changes the map's size
-export default function SiteMap({ data, extraLayers = [], layerState, route, refRoute, waypoints, arrivals, landing, missionPins, targets, picking, onPick, onInspect, inspect, gridOn, onView, onHover, probe, selectedStop, onSelectStop, astronaut, layoutKey, sizeKey, mineralsShown = [] }) {
+export default function SiteMap({ data, extraLayers = [], layerState, route, refRoute, altRoutes, waypoints, arrivals, missionPins, landingPin, targets, picking, onPick, onInspect, inspect, gridOn, onView, onHover, probe, selectedStop, onSelectStop, astronaut, layoutKey, sizeKey, mineralsShown = [] }) {
   const elRef = useRef(null)
   const refit = useRef(() => {})
   const resizeOnly = useRef(() => {})
@@ -418,7 +421,11 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     const map = mapRef.current
     if (!map) return
     for (const l of extraLayers) {
-      if (!overlays.current[l.id] && l.url) overlays.current[l.id] = L.imageOverlay(l.url, geoRef.current.bounds, { pane: 'layers', zIndex: data.layers.length + 1 })
+      if (overlays.current[l.id] || !l.url) continue
+      // boundsXY: [[x0, y0], [x1, y1]] in site metres (south-west, north-east); otherwise the whole site.
+      const { toLL, bounds } = geoRef.current
+      const b = l.boundsXY ? L.latLngBounds(toLL(l.boundsXY[0][0], l.boundsXY[0][1]), toLL(l.boundsXY[1][0], l.boundsXY[1][1])) : bounds
+      overlays.current[l.id] = L.imageOverlay(l.url, b, { pane: 'layers', zIndex: data.layers.length + 1 + extraLayers.indexOf(l), className: l.id === 'landing_zones' ? 'pixelated' : '' })
     }
     for (const [id, state] of Object.entries(layerState)) {
       const overlay = overlays.current[id]
@@ -471,22 +478,33 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     drawGrid.current()
   }, [gridOn, data])
 
-  // Routes: the team planner's route thin underneath, the active route bold on top.
+  // Routes: the other modes faint and the team planner's route thin underneath, the active route bold on top.
   useEffect(() => {
     const g = groups.current.routes
     if (!g) return
     const toLL = (c) => geoRef.current.toLL(c[0], c[1])
     g.clearLayers()
+    for (const alt of altRoutes ?? []) {
+      L.geoJSON(alt, { coordsToLatLng: toLL, interactive: false, style: { color: '#f3e9e1', weight: 3, opacity: 0.35 } }).addTo(g)
+    }
     if (refRoute) {
       L.geoJSON(refRoute, { coordsToLatLng: toLL, interactive: false, style: { color: '#c9b8ad', weight: 2, opacity: 0.8, dashArray: '2 6' } }).addTo(g)
     }
     if (route) {
-      L.geoJSON(route, { coordsToLatLng: toLL, interactive: false, style: { color: '#1a0e09', weight: 7, opacity: 0.7 } }).addTo(g)
-      L.geoJSON(route, { coordsToLatLng: toLL, interactive: false, style: { color: '#ffffff', weight: 3, opacity: 0.95, dashArray: '6 6' } }).addTo(g)
+      const main = (f) => !f.properties?.escape
+      L.geoJSON(route, { filter: main, coordsToLatLng: toLL, interactive: false, style: { color: '#1a0e09', weight: 7, opacity: 0.7 } }).addTo(g)
+      L.geoJSON(route, { filter: main, coordsToLatLng: toLL, interactive: false, style: { color: '#ffffff', weight: 3, opacity: 0.95, dashArray: '6 6' } }).addTo(g)
+      // The walk out of a red zone (lib/escape.js): its own colour and a label, on top of the route.
+      for (const f of route.features ?? []) {
+        if (!f.properties?.escape) continue
+        L.geoJSON(f, { coordsToLatLng: toLL, interactive: false, style: { color: '#1a0e09', weight: 8, opacity: 0.7 } }).addTo(g)
+        const line = L.geoJSON(f, { coordsToLatLng: toLL, style: { color: '#ff6b3d', weight: 4, opacity: 1, dashArray: '8 6' } }).addTo(g)
+        line.bindTooltip(f.properties.label ?? 'Escape', { permanent: true, direction: 'top', className: 'stop-label escape-label' })
+      }
     }
-  }, [route, refRoute, data])
+  }, [route, refRoute, altRoutes, data])
 
-  // Pins: rover and stops, landing suggestions, the custom mission's own points.
+  // Pins: the stops, the landing and the custom mission's own points.
   useEffect(() => {
     const g = groups.current.pins
     if (!g) return
@@ -494,21 +512,36 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     g.clearLayers()
     let n = 0
     for (const f of waypoints?.features ?? []) {
-      const kind = f.properties.kind
-      if (kind !== 'rover' && kind !== 'stop') continue
-      const rover = kind === 'rover'
+      const [sx, sy] = f.geometry.coordinates
+      if (f.properties.kind === 'start') {
+        // the team outing's start (plan.json start: routing's demo start)
+        L.marker(toLL(sx, sy), { icon: pinIcon('S', 'm-start'), keyboard: false, zIndexOffset: 500 })
+          .bindTooltip(f.properties.name, { permanent: !missionPins?.length, direction: 'right', offset: [14, 0], className: 'stop-label' })
+          .on('click', pinClick(sx, sy, f.properties.name))
+          .addTo(g)
+        continue
+      }
+      if (f.properties.kind !== 'stop') continue
       const t = arrivals?.[f.properties.id]
-      const label = rover ? `${f.properties.name} · start` : `${f.properties.name}${t != null ? ` · T+${clock(t)}` : ''}`
+      const label = `${f.properties.name}${t != null ? ` · T+${clock(t)}` : ''}`
       const [x, y] = f.geometry.coordinates
-      L.marker(toLL(x, y), { icon: pinIcon(rover ? 'R' : ++n, rover ? 'rover' : 'stop', f.properties.id === selectedStop), keyboard: false })
+      L.marker(toLL(x, y), { icon: pinIcon(++n, 'stop', f.properties.id === selectedStop), keyboard: false })
         .bindTooltip(label, { permanent: !missionPins?.length, direction: 'right', offset: [14, 0], className: 'stop-label' })
         .on('click', pinClick(x, y, f.properties.name, f.properties.id))
         .addTo(g)
     }
-    for (const s of landing ?? []) {
-      L.marker(toLL(s.x, s.y), { icon: pinIcon(s.label, 'landing', s.id === selectedStop), keyboard: false })
-        .bindTooltip(s.title, { direction: 'top', offset: [0, -14], className: 'stop-label' })
-        .on('click', pinClick(s.x, s.y, `${s.label} landing spot`, s.id))
+    if (landingPin) {
+      const { x, y, status, title, from } = landingPin
+      if (from) {
+        L.polyline([toLL(from.x, from.y), toLL(x, y)], { interactive: false, className: 'landing-move-line', weight: 2, opacity: 0.95, dashArray: '5 6' }).addTo(g)
+        const xIcon = L.divIcon({ className: 'pin-icon', html: '<span class="landing-x" aria-hidden="true"></span>', iconSize: [18, 18], iconAnchor: [9, 9] })
+        L.marker(toLL(from.x, from.y), { icon: xIcon, keyboard: false, zIndexOffset: 400 })
+          .bindTooltip('Your click: not safe to land', { direction: 'top', offset: [0, -10], className: 'stop-label' })
+          .addTo(g)
+      }
+      L.marker(toLL(x, y), { icon: pinIcon('L', `landing-${status}`), keyboard: false, zIndexOffset: 600 })
+        .bindTooltip(title, { permanent: true, direction: 'right', offset: [14, 0], className: 'stop-label' })
+        .on('click', pinClick(x, y, 'Landing'))
         .addTo(g)
     }
     for (const p of missionPins ?? []) {
@@ -517,7 +550,7 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
         .on('click', pinClick(p.x, p.y, p.name))
         .addTo(g)
     }
-  }, [waypoints, arrivals, landing, missionPins, selectedStop, data])
+  }, [waypoints, arrivals, missionPins, landingPin, selectedStop, data])
 
   // Mineral areas that can be picked as side quests: small diamonds in the mineral's colour.
   useEffect(() => {

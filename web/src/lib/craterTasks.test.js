@@ -103,7 +103,7 @@ test('plans: a destination inside the no-data patch has no route', () => {
   const B = { id: 'b', name: 'B', kind: 'stop', ...at(85, 25) }
   const r = runCraterTask(s, 'plans', { points: [A, B], ingress: false, shelters: [A], profiles: [{ id: 'balanced', w: 1 }] }).balanced
   assert.equal(r.ok, false)
-  assert.equal(r.reason, 'end')
+  assert.equal(r.reason, 1) // mask code 1: no DEM data
 })
 
 test('the real crater grid files match their grid.json', { skip: !existsSync(new URL('../../../data/out/crater/grid.json', import.meta.url)) }, () => {

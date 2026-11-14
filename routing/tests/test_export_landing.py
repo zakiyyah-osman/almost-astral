@@ -203,7 +203,23 @@ def test_manifest_round_trips(site, exported):
     assert (g_["width"], g_["height"], g_["cell_m"], g_["origin_m"], g_["row0"]) == (64, 44, 5.0, [0.0, 0.0], "north edge")
     assert {k: v["dtype"] for k, v in m["grids"].items()} == {
         "landing_safety": "uint8", "landing_warn": "uint8", "nearest_safe": "uint16",
-        "nearest_safe_dist": "float32", "time_rate": "float64", "risk_rate": "float64", "mask": "uint8"}
+        "nearest_safe_dist": "float32", "time_rate": "float64", "risk_rate": "float64", "mask": "uint8",
+        "pad_slope_deg": "float32", "pad_roughness_m": "float32", "pad_height_range_m": "float32",
+        "hazard_dist_m": "float32", "escape_time_rate": "float64", "escape_risk_rate": "float64"}
+    assert {k: (v["unit"], v["limit_key"], v["limit"], v["fails_when"]) for k, v in m["grids"].items() if "limit" in v} == {
+        "pad_slope_deg": ("deg", "landing.max_pad_slope_deg", 5, "value > limit"),
+        "pad_roughness_m": ("m", "landing.max_roughness_m", 0.25, "value > limit"),
+        "pad_height_range_m": ("m", "landing.max_height_range_m", 1.0, "value > limit"),
+        "hazard_dist_m": ("m", "landing.hazard_clearance_m", 30, "value < limit")}
+    assert "Infinity" in m["measured_note"] and "Infinity" in m["grids"]["hazard_dist_m"]["meaning"]
+    z = m["zones_png"]
+    assert (z["file"], z["width"], z["height"], z["cell_m"], z["origin_m"], z["extent_m"]) == (
+        "landing_zones.png", 64, 44, 5.0, [0.0, 0.0], [320.0, 220.0])
+    assert [(e["code"], e["name"], e["rgba"]) for e in z["legend"]] == [
+        (0, "safe", CFG.value("landing.display_safe_rgba")), (1, "marginal", CFG.value("landing.display_marginal_rgba"))]
+    assert z["file"] in m["files"]
+    assert m["message_templates"]["templates"].keys() == L.MESSAGE_TEMPLATES.keys()
+    assert m["message_templates"]["moved"] == L.MOVED_TEMPLATE
     assert [c["code"] for c in m["safety_codes"]] == list(range(8))
     assert [c["code"] for c in m["mask_codes"]] == list(range(7))
     assert m["profiles"] == {"fastest": {"w": 0.0}, "balanced": {"w": 1.0}, "safest": {"w": 5.0}}
@@ -239,12 +255,152 @@ def test_landing_check_on_the_files_matches_the_computed_map(site, exported):
             assert a[k] == b[k]
 
 
+# ---- measured values, the zones image and the messages ------------------------
+def test_measured_grids_are_the_values_landing_py_checks(site, exported):
+    result, out, back = exported
+    s, model = model_of(site)
+    lm, _ = L.assess_site(s, model, CFG, site)
+    tile = result.manifest["tiles"][0]
+    for key, (attr, *_) in L.MEASURES.items():
+        want = getattr(lm.measures, attr).astype("<f4")              # the internal value, as float32
+        got = np.fromfile(out / tile["files"][key], dtype="<f4").reshape(SHAPE)
+        assert np.array_equal(got, want, equal_nan=True), key
+        assert np.array_equal(getattr(back.map.measures, attr), want.astype(np.float64), equal_nan=True), key
+    # NaN exactly where the pad was not computed; the distance is never NaN
+    missing = (lm.codes == L.OUTSIDE) | (lm.codes == L.NODATA)
+    assert missing.any() and not missing.all()
+    for attr in ("tilt_deg", "roughness_m", "height_range_m"):
+        assert np.array_equal(np.isnan(getattr(back.map.measures, attr)), missing)
+    assert np.isfinite(back.map.measures.clearance_m).all()
+    # the stored values and the stored codes agree with the limits (cells within float32 of a limit aside)
+    r, v = lm.rules, back.map.measures
+    ok = np.isin(lm.codes, L.ACCEPTED)
+    assert (v.tilt_deg[ok] <= np.float32(r.max_pad_slope_deg)).all()
+    assert (v.roughness_m[ok] <= np.float32(r.max_roughness_m)).all()
+    assert (v.height_range_m[ok] <= np.float32(r.max_height_range_m)).all()
+    assert (v.clearance_m[ok] >= r.hazard_clearance_m).all()
+    assert (v.tilt_deg[lm.codes == L.STEEP] >= np.float32(r.max_pad_slope_deg)).all()
+
+
+def test_hazard_distance_is_infinity_on_a_site_with_no_hazard(tmp_path):
+    folder = tmp_path / "open"
+    write_full_site(folder, np.zeros((40, 60), np.float32), np.zeros((40, 60), np.uint8), CELL,
+                    [("a", "A", "stop", 50.0, 50.0)])
+    res = E.run(folder)
+    from outputs import write_files
+    write_files(tmp_path / "out", res.files)
+    raw = np.fromfile(tmp_path / "out" / res.manifest["tiles"][0]["files"]["hazard_dist_m"], dtype="<f4")
+    assert np.isposinf(raw).all()                                   # +inf, not NaN
+    back = E.Landing.load(tmp_path / "out")
+    r = back.landing_check(150.0, 100.0)
+    assert r["status"] == "safe" and r["measured"]["hazard_dist_m"] == math.inf
+    assert r["measured"]["pad_slope_deg"] == 0.0
+    edge = back.landing_check(2.0, 2.0)                             # outside coverage: moved, no distance in any text
+    assert edge["status"] == "moved" and [m["reason"] for m in edge["messages"]] == ["outside_coverage"]
+    assert edge["measured"] == {"pad_slope_deg": None, "pad_roughness_m": None, "pad_height_range_m": None,
+                                "hazard_dist_m": math.inf}
+    for msg in (*r["messages"], *edge["messages"]):
+        assert "inf" not in msg["detail"].lower() and "{" not in msg["detail"]
+
+
+def test_landing_zones_png_is_green_amber_and_transparent(site, exported):
+    from PIL import Image
+    result, out, back = exported
+    with Image.open(out / E.ZONES_FILE) as im:
+        assert im.mode == "RGBA" and im.size == (SHAPE[1], SHAPE[0])
+        rgba = np.asarray(im)
+    with Image.open(site / "hazard.png") as hz:
+        assert im.size == hz.size                                   # the same grid as hazard.png
+    codes = back.map.codes
+    safe, marginal = CFG.value("landing.display_safe_rgba"), CFG.value("landing.display_marginal_rgba")
+    assert (codes == L.SAFE).any() and (codes == L.MARGINAL).any() and (codes > L.MARGINAL).any()
+    assert (rgba[codes == L.SAFE] == safe).all() and (rgba[codes == L.MARGINAL] == marginal).all()
+    assert (rgba[codes > L.MARGINAL] == 0).all()                    # every other cell fully transparent
+    assert 0 < safe[3] < 255 and 0 < marginal[3] < 255              # semi-transparent
+    assert np.array_equal(rgba, E.zones_rgba(codes, E.zone_colours(CFG)))
+
+
+def test_zone_colours_come_from_the_config(site, tmp_path):
+    res = E.run(site, write_cfg(tmp_path, display_safe_rgba=[1, 2, 3, 4]))
+    assert res.manifest["zones_png"]["legend"][0]["rgba"] == [1, 2, 3, 4]
+    assert res.manifest["zones_png"]["colours_from"] == ["landing.display_safe_rgba", "landing.display_marginal_rgba"]
+
+
+def fill_from_manifest(manifest, key, measured, moved_m):
+    """What the front end does: fill a manifest template from the grids' value, in plain Python."""
+    from decimal import ROUND_HALF_UP, Decimal
+
+    def fixed(v, d):
+        return str(Decimal(v).quantize(Decimal(1).scaleb(-d), rounding=ROUND_HALF_UP))
+
+    mt = manifest["message_templates"]
+    t = mt["templates"][key]
+    text = t["detail"]
+    fields = {k: f"{v:g}" for k, v in mt["fields"].items()}
+    if t["measure"] is not None:
+        fields["limit"] = f"{t['limit']:g}"
+        value = measured[t["measure"]]
+        usable = value is not None and math.isfinite(value)
+        if key == "hazard_or_clearance" and usable:
+            usable = value < t["limit"]
+        if usable:
+            fields["value"] = fixed(value, t["decimals"])
+        else:
+            text = t["detail_no_value"]
+    for name, v in fields.items():
+        text = text.replace("{" + name + "}", v)
+    return {"reason": key, "code": t["code"], "title": t["title"], "detail": text, "moved_m": moved_m}
+
+
+def test_messages_from_the_manifest_match_landing_check_everywhere(site, exported):
+    """Every cell of the window: the computed map, the files read back, and the manifest's templates
+    filled from the stored grids all give the same messages."""
+    result, _, back = exported
+    s, model = model_of(site)
+    lm, _ = L.assess_site(s, model, CFG, site)
+    m = result.manifest
+    seen = set()
+    for row in range(SHAPE[0]):
+        for col in range(SHAPE[1]):
+            x, y = lm.centre(row, col)
+            a, b = lm.landing_check(x, y), back.landing_check(x, y)
+            assert a["measured"] == b["measured"] and a["chosen_measured"] == b["chosen_measured"]
+            assert a["moved_text"] == b["moved_text"]
+            assert (a["moved_text"] is not None) == (a["status"] == "moved")
+            assert a["messages"] and all("{" not in t["detail"] for t in a["messages"])
+            if a["code"] not in (L.OUTSIDE, L.NODATA):              # a pad-cell hazard under 2 or 3 is not in the files
+                assert a["messages"] == b["messages"], (row, col)
+            assert b["messages"] == [fill_from_manifest(m, t["reason"], b["measured"], b["moved_m"])
+                                     for t in b["messages"]]
+            seen.update(t["reason"] for t in b["messages"])
+    assert {"safe", "outside_coverage", "hazard_or_clearance"} <= seen
+    out = lm.landing_check(-5.0, 10.0)
+    assert [t["reason"] for t in out["messages"]] == ["outside"] and out["measured"] is None
+
+
+def test_an_older_folder_without_measured_grids_still_loads(exported, tmp_path):
+    import shutil
+    _, out, _ = exported
+    old = tmp_path / "old"
+    shutil.copytree(out, old)
+    m = json.loads((old / E.MANIFEST_FILE).read_text(encoding="utf-8"))
+    for key in L.MEASURES:
+        del m["grids"][key]
+        for t in m["tiles"]:
+            (old / t["files"].pop(key)).unlink()
+    del m["zones_png"]
+    (old / E.MANIFEST_FILE).write_text(json.dumps(m), encoding="utf-8")
+    back = E.Landing.load(old)
+    r = back.landing_check(160.0, 110.0)
+    assert back.map.measures is None and r["measured"] is None and r["messages"]
+
+
 def test_one_tile_size_and_total(exported):
     result, _, _ = exported
     m = result.manifest
     assert len(m["tiles"]) == 1 and m["tiles"][0]["shape"] == [44, 64] and m["tile_cells"] == 1024
     cells = 44 * 64
-    grids = cells * (1 + 1 + 4 + 4 + 8 + 8 + 1)
+    grids = cells * (1 + 1 + 4 + 4 + 8 + 8 + 1 + 4 * 4 + 8 + 8)     # ... + the two escape grids
     assert sum(v["bytes"] for k, v in m["files"].items() if k.startswith("tiles/")) == grids
 
 

@@ -75,6 +75,227 @@
       "dtype": "uint8",
       "values_per_cell": 1,
       "meaning": "0 passable, else the blocked reason (mask_codes)"
+    },
+    "pad_slope_deg": {
+      "file": "pad_slope_deg.f32",
+      "dtype": "float32",
+      "values_per_cell": 1,
+      "meaning": "deg, tilt of the least-squares plane through the pad's DEM cells; NaN where not computed",
+      "unit": "deg",
+      "limit_key": "landing.max_pad_slope_deg",
+      "limit": 5,
+      "fails_when": "value > limit",
+      "decimals": 1
+    },
+    "pad_roughness_m": {
+      "file": "pad_roughness_m.f32",
+      "dtype": "float32",
+      "values_per_cell": 1,
+      "meaning": "m, pad roughness (roughness_source); NaN where not computed",
+      "unit": "m",
+      "limit_key": "landing.max_roughness_m",
+      "limit": 0.25,
+      "fails_when": "value > limit",
+      "decimals": 2
+    },
+    "pad_height_range_m": {
+      "file": "pad_height_range_m.f32",
+      "dtype": "float32",
+      "values_per_cell": 1,
+      "meaning": "m, highest minus lowest pad cell after removing the plane; NaN where not computed",
+      "unit": "m",
+      "limit_key": "landing.max_height_range_m",
+      "limit": 1.0,
+      "fails_when": "value > limit",
+      "decimals": 2
+    },
+    "hazard_dist_m": {
+      "file": "hazard_dist_m.f32",
+      "dtype": "float32",
+      "values_per_cell": 1,
+      "meaning": "m, from the cell centre to the centre of the nearest red, over-limit-slope or cliff-buffer cell; never NaN, +Infinity when there is none",
+      "unit": "m",
+      "limit_key": "landing.hazard_clearance_m",
+      "limit": 30,
+      "fails_when": "value < limit",
+      "decimals": 1
+    },
+    "escape_time_rate": {
+      "file": "escape_time_rate.f64",
+      "dtype": "float64",
+      "values_per_cell": 1,
+      "meaning": "min/m for walking out of a red zone (DESIGN section 17), -1 where it cannot be walked out of",
+      "unit": "min/m",
+      "minus_one": "-1: not walkable even in an emergency: mask code not in escape.zone_codes (passable ground, no data, or an excluded code), slope above escape.max_slope_deg, or NaN slope",
+      "formula": "cost.time_rate (1 / walking speed at the cell's slope), same parameters, not clipped by constraints.slope_max_deg"
+    },
+    "escape_risk_rate": {
+      "file": "escape_risk_rate.f64",
+      "dtype": "float64",
+      "values_per_cell": 1,
+      "meaning": "risk-min per min walked out of a red zone, 0 where escape_time_rate is -1",
+      "unit": "risk-min per min",
+      "zero": "0 wherever escape_time_rate is -1",
+      "value": "escape.risk_rate in every cell where escape_time_rate > 0"
+    }
+  },
+  "measured_note": "The four measured grids are the values landing.py compares with the limits, stored as float32. NaN means not computed: the pad or its clearance circle does not fit inside the site grid (code 2), or a pad cell has no DEM or slope value (code 3). hazard_dist_m is computed for every cell and is never NaN; +Infinity (IEEE 754, read by a Float32Array as Infinity) means there is no red, over-limit-slope or cliff-buffer cell anywhere on the site grid, so there is no distance to show. The codes were decided on the float64 values, so a float32 value can sit exactly on a limit that the code says it crossed.",
+  "zones_png": {
+    "file": "landing_zones.png",
+    "mode": "RGBA",
+    "width": 400,
+    "height": 400,
+    "cell_m": 5.0,
+    "origin_m": [0.0, 0.0],
+    "extent_m": [2000.0, 2000.0],
+    "placement": "one pixel per cell of the window, row 0 = north edge; it covers origin_m to origin_m + extent_m in site metres, the same grid as hazard.png when the window is the whole site",
+    "legend": [
+      {
+        "code": 0,
+        "name": "safe",
+        "rgba": [46, 160, 67, 140],
+        "label": "Safe landing spot"
+      },
+      {
+        "code": 1,
+        "name": "marginal",
+        "rgba": [240, 170, 30, 140],
+        "label": "Marginal landing spot"
+      }
+    ],
+    "other_codes": "fully transparent [0, 0, 0, 0]",
+    "colours_from": [
+      "landing.display_safe_rgba",
+      "landing.display_marginal_rgba"
+    ]
+  },
+  "message_templates": {
+    "templates": {
+      "safe": {
+        "code": 0,
+        "measure": null,
+        "title": "Safe landing spot",
+        "detail": "The {pad_radius_m} m pad passes every landing rule."
+      },
+      "marginal": {
+        "code": 1,
+        "measure": null,
+        "title": "Marginal landing spot",
+        "detail": "The pad passes every landing rule, but is within {marginal_pct}% of at least one limit."
+      },
+      "near_too_steep": {
+        "code": 1,
+        "measure": "pad_slope_deg",
+        "title": "Close to the tilt limit",
+        "detail": "The pad tilts {value} deg, within {marginal_pct}% of the {limit} deg limit.",
+        "limit_key": "landing.max_pad_slope_deg",
+        "limit": 5,
+        "decimals": 1
+      },
+      "near_height_range": {
+        "code": 1,
+        "measure": "pad_height_range_m",
+        "title": "Close to the height-range limit",
+        "detail": "Heights on the pad span {value} m once the tilt is removed, within {marginal_pct}% of the {limit} m limit.",
+        "limit_key": "landing.max_height_range_m",
+        "limit": 1.0,
+        "decimals": 2
+      },
+      "near_too_rough": {
+        "code": 1,
+        "measure": "pad_roughness_m",
+        "title": "Close to the roughness limit",
+        "detail": "The pad's roughness is {value} m, within {marginal_pct}% of the {limit} m limit.",
+        "limit_key": "landing.max_roughness_m",
+        "limit": 0.25,
+        "decimals": 2
+      },
+      "near_hazard_or_clearance": {
+        "code": 1,
+        "measure": "hazard_dist_m",
+        "title": "Close to a hazard",
+        "detail": "The nearest red, too-steep or cliff-edge cell is {value} m from the pad centre, within {marginal_pct}% of the {limit} m clearance.",
+        "limit_key": "landing.hazard_clearance_m",
+        "limit": 30,
+        "decimals": 1
+      },
+      "outside_coverage": {
+        "code": 2,
+        "measure": null,
+        "title": "Too close to the edge of the data",
+        "detail": "The {reach_m} m circle around this point does not fit inside the data."
+      },
+      "no_data": {
+        "code": 3,
+        "measure": null,
+        "title": "No terrain data here",
+        "detail": "A cell on the {pad_radius_m} m pad has no elevation or slope value."
+      },
+      "hazard_or_clearance": {
+        "code": 4,
+        "measure": "hazard_dist_m",
+        "title": "Hazard too close",
+        "detail": "A red, too-steep or cliff-edge cell is {value} m from the pad centre; at least {limit} m is required.",
+        "detail_no_value": "A cell on the {pad_radius_m} m pad is not green or cannot be walked on.",
+        "limit_key": "landing.hazard_clearance_m",
+        "limit": 30,
+        "decimals": 1
+      },
+      "too_steep": {
+        "code": 5,
+        "measure": "pad_slope_deg",
+        "title": "Too steep to land",
+        "detail": "The pad tilts {value} deg; the limit is {limit} deg.",
+        "detail_no_value": "The pad tilts more than {limit} deg.",
+        "limit_key": "landing.max_pad_slope_deg",
+        "limit": 5,
+        "decimals": 1
+      },
+      "height_range": {
+        "code": 6,
+        "measure": "pad_height_range_m",
+        "title": "Ground too uneven",
+        "detail": "Heights on the pad span {value} m once the tilt is removed; the limit is {limit} m.",
+        "detail_no_value": "Heights on the pad span more than {limit} m once the tilt is removed.",
+        "limit_key": "landing.max_height_range_m",
+        "limit": 1.0,
+        "decimals": 2
+      },
+      "too_rough": {
+        "code": 7,
+        "measure": "pad_roughness_m",
+        "title": "Ground too rough",
+        "detail": "The pad's roughness is {value} m; the limit is {limit} m.",
+        "detail_no_value": "The pad's roughness is more than {limit} m.",
+        "limit_key": "landing.max_roughness_m",
+        "limit": 0.25,
+        "decimals": 2
+      },
+      "outside": {
+        "code": null,
+        "measure": null,
+        "title": "Outside the map",
+        "detail": "This point is outside the data, so no landing spot was chosen."
+      }
+    },
+    "moved": "Landing spot moved {moved_m} m to the nearest safe spot.",
+    "moved_decimals": 1,
+    "fields": {
+      "pad_radius_m": 25.0,
+      "marginal_pct": 20.0,
+      "reach_m": 30.0
+    },
+    "rules": {
+      "which": "one message per entry of landing_check's reasons, in that order; a safe point gets the one 'safe' message; a marginal point with no near_* reason gets the one 'marginal' message; a click outside the data gets the one 'outside' message",
+      "value": "the template's `measure` grid at the CLICKED cell",
+      "detail_no_value": "use `detail_no_value` instead of `detail` when the template has one and the value is missing, NaN or Infinity, or (hazard_or_clearance only) the value is not below the limit: the pad then fails on one of its own cells, not on the distance, so no distance is shown",
+      "numbers": "{value}: fixed decimals, the template's `decimals`, halves rounded up (JavaScript toFixed). {moved_m}: 1 decimal the same way. {limit}, {pad_radius_m}, {marginal_pct}, {reach_m}: shortest form (JavaScript String(number)); their values are in `fields` and in each template's `limit`",
+      "moved": "`moved` is the sentence to add when the click was moved (landing_check's moved_text)"
+    },
+    "reasons": {
+      "failing codes 2-7": "every failure that holds at the clicked cell, lowest code first, by its code name; the stored code is always one of them",
+      "marginal (1)": "near_too_steep, near_height_range, near_too_rough (value > (1 - marginal_pct/100) * limit) and near_hazard_or_clearance (value < (1 + marginal_pct/100) * limit), in that order",
+      "from_files": "from the files a failure is: the stored code, plus too_steep / height_range / too_rough where the measured value is above its limit and hazard_or_clearance where hazard_dist_m is below its limit. A pad-cell hazard under code 2 or 3 is not in the files."
     }
   },
   "tile_size_m": 5120,
@@ -93,7 +314,13 @@
         "nearest_safe_dist": "tiles/0_0/nearest_safe_dist.f32",
         "time_rate": "tiles/0_0/time_rate.f64",
         "risk_rate": "tiles/0_0/risk_rate.f64",
-        "mask": "tiles/0_0/mask.u8"
+        "mask": "tiles/0_0/mask.u8",
+        "pad_slope_deg": "tiles/0_0/pad_slope_deg.f32",
+        "pad_roughness_m": "tiles/0_0/pad_roughness_m.f32",
+        "pad_height_range_m": "tiles/0_0/pad_height_range_m.f32",
+        "hazard_dist_m": "tiles/0_0/hazard_dist_m.f32",
+        "escape_time_rate": "tiles/0_0/escape_time_rate.f64",
+        "escape_risk_rate": "tiles/0_0/escape_risk_rate.f64"
       }
     }
   ],
@@ -284,7 +511,24 @@
     "rule": "one way only: needed_min = walk_min + ingress_min + stop_min; over budget when needed_min > usable_min, i.e. when walk_min > walk_limit_min. No return walk is counted."
   },
   "golden_cases": "golden_cases.json",
-  "config_sha256": "35840654e19ad39c7359c9c118dddee08e2900d0bde772640a77001f1050f642",
+  "escape": {
+    "zone_codes": [2, 3, 4, 5],
+    "risk_rate": 1.0,
+    "max_slope_deg": 35.0,
+    "cell_counts": {
+      "finite": 6985,
+      "excluded_by_max_slope": 205
+    },
+    "rule": "zone = the 8-connected region of cells whose mask code is in zone_codes that holds the start. Phase 1: Dijkstra from the start inside the zone with the edge rule of search.edge_rule, using escape_time_rate / escape_risk_rate in zone cells and time_rate / risk_rate on exit cells; a zone cell with escape_time_rate < 0 is never entered; an exit is a passable cell (mask 0) next to the zone, entered in one step and never expanded. If the start cell has escape_time_rate < 0 the result is no_exit with reason start_too_steep. Exit = the lowest escape walk cost at w = 0 among exits in the destination's 8-connected passable region (none: no_exit); exact ties go to the lowest total planning cost for the profile (escape at w + normal search from the exit). Phase 2: the normal search from the exit, never entering blocked ground.",
+    "note": "Team assumption (Tushaar), emergency estimate only: escape speeds apply the walking model to slopes above constraints.slope_max_deg, beyond the range it was meant for, so escape times are rough. risk_rate and max_slope_deg are team assumptions, not sourced values.",
+    "config_keys": [
+      "escape.zone_codes",
+      "escape.risk_rate",
+      "escape.max_slope_deg"
+    ],
+    "golden_cases": "golden_escape_cases.json"
+  },
+  "config_sha256": "678d729eee98bcbcc0bed92846dc2bd04daaec2d1e6cc45f805b8575270096d3",
   "inputs_sha256": {
     "dem.tif": "33f8e75891c43440beb248355acff907b160b029e6835d18ac2dabdf53a6fae4",
     "hazard.tif": "b75b7f6e01cb347cd93ecb469fe5f7c18048bd405d3a199b3dd667d3751d60da",
@@ -319,9 +563,41 @@
       "bytes": 160000,
       "sha256": "8fd66aa907485511e9158734230dbb2a6c02cc7b739c9bc56b72431f7a5bc83d"
     },
+    "tiles/0_0/pad_slope_deg.f32": {
+      "bytes": 640000,
+      "sha256": "e240d1ad8292d37d63f92ba7c1370ee1c26981d183c8fdae3f9123fe0705b68e"
+    },
+    "tiles/0_0/pad_roughness_m.f32": {
+      "bytes": 640000,
+      "sha256": "cb8076405b0917f5ff2b838816b565bc4151dff9736ef80c36df303224bcb686"
+    },
+    "tiles/0_0/pad_height_range_m.f32": {
+      "bytes": 640000,
+      "sha256": "dfafaf126061eb146f4414a906f39e7681d7b20a49004b3898b4cca5d7435181"
+    },
+    "tiles/0_0/hazard_dist_m.f32": {
+      "bytes": 640000,
+      "sha256": "5299a5b15d2216058d5d37dfd5c62432ce55d69ba41c9e2a138757019e251dbd"
+    },
+    "tiles/0_0/escape_time_rate.f64": {
+      "bytes": 1280000,
+      "sha256": "ee3dae03c40e8e87a9629326a7b2066a7b9e729fb3208a9be3e682ad152158bb"
+    },
+    "tiles/0_0/escape_risk_rate.f64": {
+      "bytes": 1280000,
+      "sha256": "5edbb558c6cb0db10e4a97cbdb4f0b73f479ef9f5bbdf1034507de5b513b2756"
+    },
+    "landing_zones.png": {
+      "bytes": 18577,
+      "sha256": "8d28d86b5ae3255c02293a85db7f9e401981e7ce5dc6f6a6b7c9becd605ff027"
+    },
     "golden_cases.json": {
       "bytes": 174525,
       "sha256": "c7a9f46ce2f338cfd9eea161ee86fa581a97e6e1867ba424d26e03adb1fcfca5"
+    },
+    "golden_escape_cases.json": {
+      "bytes": 37302,
+      "sha256": "5eff3758ed374ad2153b15557310805e42e2a095c438292c3a55fd7f041135d5"
     }
   },
   "warnings": []

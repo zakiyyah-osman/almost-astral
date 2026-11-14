@@ -230,6 +230,87 @@ def test_a_marginal_click_stays_and_says_which_limit():
 def test_a_click_outside_the_grid(lmap):
     r = lmap.landing_check(-5.0, 10.0)
     assert r["status"] == "outside" and r["chosen_xy_m"] is None
+    assert r["measured"] is None and r["chosen_measured"] is None and r["moved_text"] is None
+    assert [m["reason"] for m in r["messages"]] == ["outside"] and r["messages"][0]["code"] is None
+
+
+# ---- measured values and messages --------------------------------------------
+def test_every_code_and_every_reason_has_a_message_template():
+    codes = {t["code"] for t in L.MESSAGE_TEMPLATES.values()}
+    assert codes == set(L.CODE_NAMES) | {None}                      # every code 0-7, plus the click outside
+    for code, name in L.CODE_NAMES.items():
+        assert L.MESSAGE_TEMPLATES[name]["code"] == code            # each code's own name is a template
+    near = [f"near_{k}" for k in L.marginal_reasons(build()[1], RULES)]
+    assert set(L.MESSAGE_TEMPLATES) == set(L.CODE_NAMES.values()) | set(near) | {"outside"}
+    for key, t in L.MESSAGE_TEMPLATES.items():
+        assert t["title"] and t["detail"]
+        assert (t["measure"] is None) or t["measure"] in L.MEASURES
+        assert ("{value}" in t["detail"]) == (t["measure"] is not None), key
+        if "detail_no_value" in t:
+            assert "{value}" not in t["detail_no_value"]
+    for name in ("hazard_or_clearance", "too_steep", "height_range", "too_rough"):
+        assert "detail_no_value" in L.MESSAGE_TEMPLATES[name]
+
+
+def test_fixed_rounds_halves_up_like_javascript():
+    assert L.fixed(0.25, 1) == "0.3" and L.fixed(2.5, 0) == "3" and L.fixed(4.57, 1) == "4.6"
+    assert L.fixed(30.0, 1) == "30.0" and L.fixed(0.125, 2) == "0.13"
+
+
+def test_a_steep_pad_reports_its_measured_tilt_and_the_limit():
+    dem = plane(0.02)
+    dem[:, 20:] += (np.arange(11) * CELL * 0.2)[None, :]            # a steeper ramp in the east
+    codes, m, c = build(dem)
+    rows, cols, dist = L.nearest_safe(codes, CELL)
+    lm = L.LandingMap(c.grid, (0.0, 0.0), RULES, codes, np.zeros(SHAPE, np.uint8), rows, cols, dist, m)
+    cell = (15, 24)
+    assert codes[cell] == L.STEEP
+    r = lm.landing_check(*lm.centre(*cell))
+    tilt = float(np.float32(m.tilt_deg[cell]))
+    assert r["status"] == "moved" and r["measured"]["pad_slope_deg"] == tilt and tilt > 5
+    assert r["measured"] == {"pad_slope_deg": tilt, "pad_roughness_m": float(np.float32(m.roughness_m[cell])),
+                             "pad_height_range_m": float(np.float32(m.height_range_m[cell])),
+                             "hazard_dist_m": float(np.float32(m.clearance_m[cell]))}
+    chosen = tuple(r["chosen_cell"])
+    assert r["chosen_measured"]["pad_slope_deg"] == float(np.float32(m.tilt_deg[chosen])) <= 5
+    msg = next(t for t in r["messages"] if t["reason"] == "too_steep")
+    assert msg == {"reason": "too_steep", "code": L.STEEP, "title": "Too steep to land",
+                   "detail": f"The pad tilts {L.fixed(tilt, 1)} deg; the limit is 5 deg.", "moved_m": r["moved_m"]}
+    assert r["moved_text"] == f"Landing spot moved {L.fixed(r['moved_m'], 1)} m to the nearest safe spot."
+    assert [t["reason"] for t in r["messages"]] == r["reasons"]
+
+
+def test_hazard_message_gives_the_distance_only_when_the_distance_fails(lmap):
+    x, y = lmap.grid.cell_centre(*MID)
+    r = lmap.landing_check(x, y)                                    # a yellow pad cell, no red anywhere
+    assert r["measured"]["hazard_dist_m"] == float("inf")
+    assert r["messages"][0]["detail"] == "A cell on the 25 m pad is not green or cannot be walked on."
+    hazard = np.zeros(SHAPE, np.uint8)
+    hazard[MID[0], MID[1] + 4] = 2                                  # red 20 m east
+    dem = np.zeros(SHAPE)
+    slope = g.slope_deg(dem, CELL)
+    c = cost.build(dem, hazard, slope, g.Grid(SHAPE[1], SHAPE[0], CELL), P)
+    lm = L.assess(dem, slope, hazard, c, RULES)
+    r = lm.landing_check(x, y)
+    assert r["code"] == L.HAZARD and r["measured"]["hazard_dist_m"] == 20.0
+    assert r["messages"][0]["detail"] == ("A red, too-steep or cliff-edge cell is 20.0 m from the pad centre; "
+                                          "at least 30 m is required.")
+
+
+def test_safe_and_marginal_messages(lmap):
+    r = lmap.landing_check(33.3, 121.7)
+    assert [(t["reason"], t["code"], t["moved_m"]) for t in r["messages"]] == [("safe", L.SAFE, 0.0)]
+    assert r["messages"][0]["detail"] == "The 25 m pad passes every landing rule."
+    assert r["measured"] == r["chosen_measured"] and r["moved_text"] is None
+    codes, m, c = build(plane(0.08))
+    codes = codes.copy()
+    codes[6, 6] = L.SAFE
+    rows, cols, dist = L.nearest_safe(codes, CELL)
+    lm = L.LandingMap(c.grid, (0.0, 0.0), RULES, codes, np.zeros(SHAPE, np.uint8), rows, cols, dist, m)
+    r = lm.landing_check(*lm.centre(*MID))
+    tilt = L.fixed(float(np.float32(m.tilt_deg[MID])), 1)
+    assert r["messages"] == [{"reason": "near_too_steep", "code": L.MARGINAL, "title": "Close to the tilt limit",
+                              "detail": f"The pad tilts {tilt} deg, within 20% of the 5 deg limit.", "moved_m": 0.0}]
 
 
 def test_a_window_keeps_site_coordinates():

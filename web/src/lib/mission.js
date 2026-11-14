@@ -1,21 +1,21 @@
-// A custom mission: a start, any number of side quests, and a final destination (J0), with or
-// without the walk back to the start. Pure maths on the cost grid from pathfind.js, so it runs in
-// the browser and in tests.
+// A custom mission: a landing (the start), any number of side quests, and a final destination (J0).
+// One way only, as routing plans it (routing/docs/DESIGN.md section 15.5): no walk back is planned.
+// Pure maths on the cost grid from pathfind.js, so it runs in the browser and in tests.
 import { planOuting } from './outing.js'
 import { snapToFree, timeField } from './pathfind.js'
 import { centreOf } from './terrain.js'
 
 // The points of a mission in walking order, in the shape planOuting reads.
-// mission: { start, quests: [], dest, back } where each point is { x, y, name, stopMin? }.
+// mission: { start, quests: [], dest } where each point is { x, y, name, stopMin? }. Every quest and the
+// destination get their minutes on site (the destination's is the manifest's stop_min by default).
 export function missionPoints(mission, defaultStopMin) {
-  const { start, quests = [], dest, back } = mission
+  const { start, quests = [], dest } = mission
   if (!start || !dest) return null
-  const pts = [{ id: 'start', kind: 'rover', name: start.name ?? 'Start', x: start.x, y: start.y }]
+  const pts = [{ id: 'start', kind: 'start', name: start.name ?? 'Landing', x: start.x, y: start.y }]
   quests.forEach((q, k) =>
     pts.push({ id: `q${k + 1}`, kind: 'stop', name: q.name ?? `Side quest ${k + 1}`, x: q.x, y: q.y, stopMin: q.stopMin ?? defaultStopMin, why: q.why ?? '', extra: { quest: true } }),
   )
-  pts.push({ id: 'dest', kind: 'stop', name: dest.name ?? 'Destination', x: dest.x, y: dest.y, stopMin: dest.stopMin ?? (back ? defaultStopMin : 0), extra: { destination: true } })
-  if (back) pts.push({ ...pts[0] })
+  pts.push({ id: 'dest', kind: 'stop', name: dest.name ?? 'Destination', x: dest.x, y: dest.y, stopMin: dest.stopMin ?? defaultStopMin, extra: { destination: true } })
   return pts
 }
 
@@ -41,7 +41,7 @@ export function detourCosts(cost, mission, w, params, opts) {
 // The visiting order of the side quests that gives the shortest walk (physical walking time).
 // Exact for up to 7 quests; nearest-neighbour then 2-opt beyond that. Returns the quest indices.
 export function bestOrder(cost, mission) {
-  const { start, quests = [], dest, back } = mission
+  const { start, quests = [], dest } = mission
   const n = quests.length
   if (n < 2 || !start || !dest) return quests.map((_, k) => k)
   const pts = [start, ...quests, dest]
@@ -53,7 +53,7 @@ export function bestOrder(cost, mission) {
     let s = t(0, order[0] + 1)
     for (let k = 1; k < order.length; k++) s += t(order[k - 1] + 1, order[k] + 1)
     s += t(order[order.length - 1] + 1, D)
-    return s + (back ? t(D, 0) : 0)
+    return s
   }
   let best = quests.map((_, k) => k)
   let bestT = total(best)
