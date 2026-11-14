@@ -3,6 +3,7 @@
 // app still runs while another person has not handed their file over yet.
 
 import { setPhotos } from './photos.js'
+import { RESEARCH } from './research.js'
 
 async function getJson(path) {
   const res = await fetch(path)
@@ -32,5 +33,14 @@ export async function loadData() {
     ? [{ id: 'photos', title: `Ground photos (${photos.length}, Perseverance)`, scope: 'photos', default: true, opacity: 1,
          source: index.sources_notes?.[index.vectors.photos] ?? 'NASA/JPL-Caltech, Perseverance raw images' }]
     : []
-  return { ...index, layers: [...index.layers, ...craterLayers, ...photoLayers], route, waypoints, plan, photos }
+  // The 12 km mineral research (lib/research.js): rover sample stars always, and the CRISM colour
+  // layer once the data lead has put it in data/out (a missing file comes back as the HTML page).
+  const researchMap = await fetch(`./${RESEARCH.mapFile}`, { method: 'HEAD' })
+    .then((r) => (r.ok && (r.headers.get('content-type') ?? '').startsWith('image/') ? RESEARCH.mapFile : null))
+    .catch(() => null)
+  const researchLayers = index.site?.center_lat != null
+    ? [{ id: 'research', title: 'Minerals and rover samples (12 km)', scope: 'research', default: true, opacity: 0.75, file: researchMap,
+         source: `${RESEARCH.title} (${RESEARCH.author}, ${RESEARCH.date}). ${RESEARCH.caption}` }]
+    : []
+  return { ...index, layers: [...index.layers, ...craterLayers, ...photoLayers, ...researchLayers], route, waypoints, plan, photos }
 }
