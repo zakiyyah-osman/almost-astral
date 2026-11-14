@@ -3,18 +3,18 @@
   "simulated": true,
   "simulated_note": "SIMULATED DATA \u2014 some layers are stand-ins (marked FAKE). Not real Mars measurements until the NASA dataset replaces them.",
   "site": {
-    "name": "Mount Sharp boxwork region, Gale crater (placeholder: confirm with Zakiyyah)",
+    "name": "Jezero crater, delta front (eastern lobe)",
     "width_m": 2000.0,
     "height_m": 2000.0,
     "cell_m": 5.0,
     "origin_latlon": [
-      -4.7968706,
-      137.3630705
+      18.4431294,
+      77.3822142
     ],
     "origin_source_xy": null,
     "center_latlon": [
-      -4.78,
-      137.38
+      18.46,
+      77.4
     ]
   },
   "projection": {
@@ -47,6 +47,19 @@
       "source": "Computed from the terrain model, sun az 315\u00b0, alt 45\u00b0 \u2014 on SIMULATED terrain",
       "note": null,
       "href": "relief.png"
+    },
+    {
+      "id": "hirise",
+      "kind": "image",
+      "title": "HiRISE image",
+      "file": "hirise.png",
+      "visible": false,
+      "opacity": 1.0,
+      "legend": null,
+      "units": null,
+      "source": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: PSP_003798_1985_Edited_affine_25cm_Eqc_latTs0_lon0_offNadir.tif",
+      "note": null,
+      "href": "hirise.png"
     },
     {
       "id": "slope",
@@ -88,8 +101,8 @@
       "opacity": 0.6,
       "legend": null,
       "units": null,
-      "source": "FAKE (real: THEMIS, Mars Odyssey)",
-      "note": null,
+      "source": "THEMIS (Mars Odyssey), thermal inertia mosaic: THEMIS_TI_Mosaic_Quant_00N060E_100mpp.cub",
+      "note": "Values in J m^-2 K^-1 s^-1/2 are in thermal_inertia.tif (NaN = no data). Native pixels are much larger than the 5 m grid, so edges look soft.",
       "href": "thermal.png"
     },
     {
@@ -99,10 +112,26 @@
       "file": "minerals.png",
       "visible": false,
       "opacity": 0.8,
-      "legend": null,
+      "legend": {
+        "type": "classes",
+        "items": [
+          {
+            "name": "Olivine",
+            "color": "#78c846"
+          },
+          {
+            "name": "Clays (Fe/Mg smectite)",
+            "color": "#46aae6"
+          },
+          {
+            "name": "Carbonates",
+            "color": "#eb8c37"
+          }
+        ]
+      },
       "units": null,
-      "source": "FAKE (real: CRISM, MRO)",
-      "note": null,
+      "source": "CRISM (MRO), MTRDR summary parameters, image FRT00005C5E: frt00005c5e_07_su166j_mtr3.img",
+      "note": "Coloured where a CRISM summary parameter passes our threshold. Thresholds were tuned by eye.",
       "href": "minerals.png"
     },
     {
@@ -244,10 +273,13 @@
           "type": "Feature",
           "properties": {
             "id": "stop1",
-            "name": "Clay outcrop",
+            "name": "Clay-bearing outcrop",
             "kind": "stop",
-            "why": "Clay minerals can preserve traces of ancient water.",
-            "photo": null
+            "why": "Clay minerals form in the presence of water and can preserve traces of it.",
+            "photo": "stop1-clay-search-jigging-cove.jpg",
+            "photo_caption": "Example from Jezero: rock slabs at \"Jigging Cove\", where Perseverance searched for clay-bearing rocks.",
+            "photo_credit": "NASA/JPL-Caltech/ASU",
+            "photo_source": "https://science.nasa.gov/solar-system/continuing-the-quest-for-clays/"
           },
           "geometry": {
             "type": "Point",
@@ -261,10 +293,13 @@
           "type": "Feature",
           "properties": {
             "id": "stop2",
-            "name": "Crater rim ridges",
+            "name": "Delta front layers",
             "kind": "stop",
-            "why": "Ridges left by groundwater flowing through rock cracks.",
-            "photo": null
+            "why": "Tilted layers of sand and mud laid down where a river entered the lake show where and how the water moved.",
+            "photo": "stop2-kodiak-delta.jpg",
+            "photo_caption": "Example from Jezero: Kodiak, a butte of layered rock left from the river delta.",
+            "photo_credit": "NASA/JPL-Caltech/ASU/MSSS",
+            "photo_source": "https://photojournal.jpl.nasa.gov/catalog/PIA24802"
           },
           "geometry": {
             "type": "Point",
@@ -278,10 +313,13 @@
           "type": "Feature",
           "properties": {
             "id": "stop3",
-            "name": "Carbonate patch",
+            "name": "Carbonate margin",
             "kind": "stop",
-            "why": "Carbonates form in water and can trap signs of past life.",
-            "photo": null
+            "why": "Carbonates form when carbon-dioxide-rich water reacts with rock and can trap evidence of past conditions.",
+            "photo": "stop3-margin-core-turquoise-bay.jpg",
+            "photo_caption": "Example from Jezero: a rock core drilled in the Margin Unit, which NASA says may contain carbonate minerals.",
+            "photo_credit": "NASA/JPL-Caltech/ASU",
+            "photo_source": "https://science.nasa.gov/missions/mars-2020-perseverance/a-tale-of-turquoise-bay-sampling-unique-bedrock-at-the-margin-unit/"
           },
           "geometry": {
             "type": "Point",

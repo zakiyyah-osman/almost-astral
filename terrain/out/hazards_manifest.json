@@ -1,8 +1,8 @@
 {
   "generated_by": "hazards.run (Person 2)",
-  "generated_at": "2026-11-13T23:16:01+0400",
+  "generated_at": "2026-11-14T10:57:28+0400",
   "site": {
-    "name": "Mount Sharp boxwork region, Gale crater (placeholder: confirm with Zakiyyah)",
+    "name": "Jezero crater, delta front (eastern lobe)",
     "grid": {
       "width": 400,
       "height": 400,
@@ -12,11 +12,12 @@
       2000.0,
       2000.0
     ],
-    "center_lat": -4.78,
-    "center_lon_east": 137.38
+    "center_lat": 18.46,
+    "center_lon_east": 77.4
   },
   "inputs": {
-    "dtm": "dem.tif"
+    "dtm": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero: JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "thermal_inertia": "thermal_inertia.tif"
   },
   "config": {
     "slope_deg": {
@@ -219,24 +220,24 @@
     "safety_buffer": 2048
   },
   "area_share": {
-    "Go": 0.5762125,
-    "Caution": 0.3694,
-    "No-go": 0.0543875,
+    "Go": 0.8425125,
+    "Caution": 0.13004375,
+    "No-go": 0.02744375,
     "Unknown terrain coverage (no-go in hazard.tif)": 0.0
   },
   "reason_share": {
     "no_data": 0.0,
-    "slope_caution": 0.09379375,
-    "slope_nogo": 0.0408375,
-    "rough_caution": 0.385025,
-    "rough_nogo": 0.000125,
+    "slope_caution": 0.07275,
+    "slope_nogo": 0.01335625,
+    "rough_caution": 0.113675,
+    "rough_nogo": 0.00694375,
     "loose_ground": 0.0,
     "very_loose_ground": 0.0,
     "rock_density_caution": 0.0,
     "rock_density_nogo": 0.0,
     "large_rock": 0.0,
-    "cliff_edge": 0.00068125,
-    "safety_buffer": 0.013425
+    "cliff_edge": 0.00044375,
+    "safety_buffer": 0.00993125
   },
   "track_check": {
     "passed": false,

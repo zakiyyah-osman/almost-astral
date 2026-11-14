@@ -1,12 +1,19 @@
 {
   "tolerance_m": 7.5,
   "layers": {
-    "thermal": {
+    "thermal_inertia": {
       "note": "visual check only (landmark_chips.png)"
+    },
+    "hirise": {
+      "shift_to_apply_east_m": -9.0,
+      "shift_to_apply_north_m": -2.5,
+      "offset_m": 9.34,
+      "match_error": 0.728,
+      "passed": false
     },
     "minerals": {
       "note": "visual check only (landmark_chips.png)"
     }
   },
-  "passed": true
+  "passed": false
 }
