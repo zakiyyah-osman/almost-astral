@@ -18,6 +18,18 @@
     "label": "HiRISE (MRO), USGS Mars 2020 TRN mosaic of Jezero"
   },
 
+  "crater": {
+    "dem": "raw/ctx/M20_JezeroCrater_CTXDEM_20m.tif",
+    "name": "Jezero crater (whole crater and rim)",
+    "center_lat": 18.38,
+    "center_lon_east": 77.58,
+    "size_m": 64000,
+    "cell_m": 40,
+    "_bounds_note": "64 km square centred on the USGS crater centre (18.38 N, 77.58 E; also in web/src/lib/geo.js). The rim crest is irregular: on the CTX DEM (14 Nov) it lies 16.5 to 31.5 km from this centre, so 32 km each way keeps all of it. 40 m cells: 1600 x 1600, about 10 MB as uncompressed float32 (the web app's TIFF reader needs uncompressed).",
+    "_example_note": "The DEM is the USGS Mars 2020 CTX DTM mosaic of Jezero, 20 m/pixel, equirectangular (lat_ts 18.4663) on the 3,396,190 m sphere; it covers 77.00-78.58 E, 17.58-19.29 N.",
+    "label": "USGS Mars 2020 CTX DEM mosaic, 20 m"
+  },
+
   "themis": {
     "file": "raw/themis/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.cub",
     "_example": "raw/themis/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.tif",
@@ -43,15 +55,15 @@
   },
 
   "meda": {
-    "temp_files": null,
-    "pressure_files": null,
+    "temp_files": "raw/meda/*_ATS_*.[cC][sS][vV]",
+    "pressure_files": "raw/meda/*_PS_*.[cC][sS][vV]",
     "_example_temp_files": "raw/meda/*ATS*.CSV",
     "_example_pressure_files": "raw/meda/*PS*.CSV",
-    "sols": [420, 422],
-    "_sols_note": "Placeholder: sols early in the delta front campaign (it began on sol 415). Set them to the sols you downloaded.",
+    "sols": [420, 420],
+    "_sols_note": "Sol 420, early in the delta front campaign (it began on sol 415). Downloaded 14 Nov from the PDS Atmospheres Node: CAL_ATS (calibrated air temperature; sol 420 has no DER_ATS file) and DER_PS (pressure). Add more sols by downloading their files and widening this range.",
     "temp_columns": { "ltst": "LTST", "value": "ATS_LOCAL_TEMP1" },
     "pressure_columns": { "ltst": "LTST", "value": "PRESSURE" },
-    "_columns_note": "Column names are guesses until checked: run python data/tables.py <file> and copy the real names. Add \"sol\": \"<column>\" only if the sol is not in the file name.",
+    "_columns_note": "Checked 14 Nov against the .xml labels: LTST is local true solar time, ATS_LOCAL_TEMP1 is air temperature in kelvin (MEDA has five ATS sensors, TEMP1 to TEMP5; we use TEMP1), PRESSURE is in pascals. The sol comes from the file name.",
     "temp_units": "K",
     "dust_tau_estimate": 0.6,
     "_dust_note": "Not measured by MEDA in these files. A single estimate; replace it with a Mastcam-Z or SkyCam tau value if you find one.",
@@ -78,7 +90,7 @@
       "usv_per_day": 640,
       "source": "Curiosity RAD surface average at Gale, 0.64 mSv/day (Hassler et al. 2014, Science 343). Applied unchanged at Jezero, which sits about 2 km higher than Gale crater's floor under a thinner atmosphere, so the real dose is probably somewhat higher."
     },
-    "sols": [420, 422],
+    "sols": [420, 420],
     "columns": { "sol": "sol", "ltst": "ltst", "dose": "dose_rate" },
     "dose_units": "ugy_per_day",
     "_units_help": "ugy_per_day, ugy_per_h or usv_per_h",
