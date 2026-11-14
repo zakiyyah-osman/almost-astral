@@ -1,0 +1,456 @@
+{
+  "type": "FeatureCollection",
+  "coordinates": "[longitude east, latitude] in degrees on the Mars sphere (not site metres); site_xy_m gives the site-grid position when the photo is inside the 2 km square",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0408-zl0-8424_110.jpg",
+        "image_id": "ZL0_0408_0703172427_193ECM_N0212560ZCAM08424_1100LMJ",
+        "sol": 408,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2022-04-14T01:47:00.792",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.453833,
+        "lon_east": 77.414136,
+        "site_xy_m": [
+          1794.8,
+          634.4
+        ],
+        "in_site": true,
+        "rover_site": 21,
+        "rover_drive": 2560,
+        "mast_elevation_deg": 0.276681,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 21 drive 2560, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00408/ids/edr/browse/zcam/ZL0_0408_0703172427_193ECM_N0212560ZCAM08424_1100LMJ02.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.414136,
+          18.453833
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0416-zl0-8433_110.jpg",
+        "image_id": "ZL0_0416_0703883506_706ECM_N0231180ZCAM08433_1100LMJ",
+        "sol": 416,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2022-04-22T07:18:22.402",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.448306,
+        "lon_east": 77.404827,
+        "site_xy_m": [
+          1271.4,
+          306.8
+        ],
+        "in_site": true,
+        "rover_site": 23,
+        "rover_drive": 1180,
+        "mast_elevation_deg": -1.73768,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 23 drive 1180, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00416/ids/edr/browse/zcam/ZL0_0416_0703883506_706ECM_N0231180ZCAM08433_1100LMJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.404827,
+          18.448306
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0539-nlf-3539_04_.jpg",
+        "image_id": "NLF_0539_0714798632_132ECM_N0263008NCAM13539_04_195J",
+        "sol": 539,
+        "camera": "Navcam (left)",
+        "date_utc": "2022-08-26T15:18:20.157",
+        "credit": "NASA/JPL-Caltech",
+        "lat": 18.455319,
+        "lon_east": 77.407909,
+        "site_xy_m": [
+          1444.7,
+          722.5
+        ],
+        "in_site": true,
+        "rover_site": 26,
+        "rover_drive": 3008,
+        "mast_elevation_deg": -2.92139,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 26 drive 3008, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00539/ids/edr/browse/ncam/NLF_0539_0714798632_132ECM_N0263008NCAM13539_04_195J01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.407909,
+          18.455319
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0609-nlf-2609_01_.jpg",
+        "image_id": "NLF_0609_0721019534_476ECM_N0301172NCAM12609_01_195J",
+        "sol": 609,
+        "camera": "Navcam (left)",
+        "date_utc": "2022-11-06T15:20:52.017",
+        "credit": "NASA/JPL-Caltech",
+        "lat": 18.453644,
+        "lon_east": 77.399154,
+        "site_xy_m": [
+          952.4,
+          623.2
+        ],
+        "in_site": true,
+        "rover_site": 30,
+        "rover_drive": 1172,
+        "mast_elevation_deg": -9.50053,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 30 drive 1172, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00609/ids/edr/browse/ncam/NLF_0609_0721019534_476ECM_N0301172NCAM12609_01_195J01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.399154,
+          18.453644
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0647-nlf-3647_04_.jpg",
+        "image_id": "NLF_0647_0724388425_739ECM_N0312154NCAM13647_04_195J",
+        "sol": 647,
+        "camera": "Navcam (left)",
+        "date_utc": "2022-12-15T15:09:29.954",
+        "credit": "NASA/JPL-Caltech",
+        "lat": 18.451193,
+        "lon_east": 77.405124,
+        "site_xy_m": [
+          1288.1,
+          478.0
+        ],
+        "in_site": true,
+        "rover_site": 31,
+        "rover_drive": 2154,
+        "mast_elevation_deg": -6.07986,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 31 drive 2154, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00647/ids/edr/browse/ncam/NLF_0647_0724388425_739ECM_N0312154NCAM13647_04_195J01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.405124,
+          18.451193
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0658-nle-5658_06_.jpg",
+        "image_id": "NLE_0658_0725359947_510ECM_N0320378NCAM05658_06_0LLJ",
+        "sol": 658,
+        "camera": "Navcam (left)",
+        "date_utc": "2022-12-26T21:01:39.312",
+        "credit": "NASA/JPL-Caltech",
+        "lat": 18.45267,
+        "lon_east": 77.408056,
+        "site_xy_m": [
+          1452.9,
+          565.5
+        ],
+        "in_site": true,
+        "rover_site": 32,
+        "rover_drive": 378,
+        "mast_elevation_deg": -1.01548,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 32 drive 378, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00658/ids/edr/browse/ncam/NLE_0658_0725359947_510ECM_N0320378NCAM05658_06_0LLJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.408056,
+          18.45267
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0708-zl0-8710_110.jpg",
+        "image_id": "ZL0_0708_0729803952_534EBY_N0331756ZCAM08710_1100LMJ",
+        "sol": 708,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2023-02-16T07:29:27.734",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.460075,
+        "lon_east": 77.405842,
+        "site_xy_m": [
+          1328.5,
+          1004.4
+        ],
+        "in_site": true,
+        "rover_site": 33,
+        "rover_drive": 1756,
+        "mast_elevation_deg": -7.93703,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 33 drive 1756, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00708/ids/edr/browse/zcam/ZL0_0708_0729803952_534EBY_N0331756ZCAM08710_1100LMJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.405842,
+          18.460075
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0709-nlf-2709_04_.jpg",
+        "image_id": "NLF_0709_0729893167_568ECM_N0332864NCAM12709_04_195J",
+        "sol": 709,
+        "camera": "Navcam (left)",
+        "date_utc": "2023-02-17T08:15:55.495",
+        "credit": "NASA/JPL-Caltech",
+        "lat": 18.461671,
+        "lon_east": 77.402934,
+        "site_xy_m": [
+          1165.0,
+          1099.1
+        ],
+        "in_site": true,
+        "rover_site": 33,
+        "rover_drive": 2864,
+        "mast_elevation_deg": -8.36754,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 33 drive 2864, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00709/ids/edr/browse/ncam/NLF_0709_0729893167_568ECM_N0332864NCAM12709_04_195J01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.402934,
+          18.461671
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0714-nlf-3714_04_.jpg",
+        "image_id": "NLF_0714_0730336979_160ECM_N0334752NCAM13714_04_195J",
+        "sol": 714,
+        "camera": "Navcam (left)",
+        "date_utc": "2023-02-22T11:32:50.627",
+        "credit": "NASA/JPL-Caltech",
+        "lat": 18.465519,
+        "lon_east": 77.400638,
+        "site_xy_m": [
+          1035.9,
+          1327.2
+        ],
+        "in_site": true,
+        "rover_site": 33,
+        "rover_drive": 4752,
+        "mast_elevation_deg": -13.5078,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 33 drive 4752, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00714/ids/edr/browse/ncam/NLF_0714_0730336979_160ECM_N0334752NCAM13714_04_195J01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.400638,
+          18.465519
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0715-zl0-8718_110.jpg",
+        "image_id": "ZL0_0715_0730423736_098EBY_N0340000ZCAM08718_1100LMJ",
+        "sol": 715,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2023-02-23T11:38:58.618",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.468606,
+        "lon_east": 77.399879,
+        "site_xy_m": [
+          993.2,
+          1510.1
+        ],
+        "in_site": true,
+        "rover_site": 34,
+        "rover_drive": 0,
+        "mast_elevation_deg": -0.970034,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 34 drive 0, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00715/ids/edr/browse/zcam/ZL0_0715_0730423736_098EBY_N0340000ZCAM08718_1100LMJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.399879,
+          18.468606
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0716-zl0-8720_110.jpg",
+        "image_id": "ZL0_0716_0730511255_519EBY_N0340952ZCAM08720_1100LMJ",
+        "sol": 716,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2023-02-24T11:57:53.298",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.471477,
+        "lon_east": 77.399063,
+        "site_xy_m": [
+          947.3,
+          1680.3
+        ],
+        "in_site": true,
+        "rover_site": 34,
+        "rover_drive": 952,
+        "mast_elevation_deg": 1.19285,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 34 drive 952, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00716/ids/edr/browse/zcam/ZL0_0716_0730511255_519EBY_N0340952ZCAM08720_1100LMJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.399063,
+          18.471477
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0717-zl0-8724_110.jpg",
+        "image_id": "ZL0_0717_0730606614_456EBY_N0342098ZCAM08724_1100LMJ",
+        "sol": 717,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2023-02-25T14:26:58.051",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.474369,
+        "lon_east": 77.397434,
+        "site_xy_m": [
+          855.8,
+          1851.7
+        ],
+        "in_site": true,
+        "rover_site": 34,
+        "rover_drive": 2098,
+        "mast_elevation_deg": 0.600808,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 34 drive 2098, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00717/ids/edr/browse/zcam/ZL0_0717_0730606614_456EBY_N0342098ZCAM08724_1100LMJ03.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.397434,
+          18.474369
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0718-zl0-8727_063.jpg",
+        "image_id": "ZL0_0718_0730693560_394EBY_N0343196ZCAM08727_0630LMJ",
+        "sol": 718,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2023-02-26T14:36:07.737",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.475371,
+        "lon_east": 77.394098,
+        "site_xy_m": [
+          668.1,
+          1911.1
+        ],
+        "in_site": true,
+        "rover_site": 34,
+        "rover_drive": 3196,
+        "mast_elevation_deg": -7.55746,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 34 drive 3196, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00718/ids/edr/browse/zcam/ZL0_0718_0730693560_394EBY_N0343196ZCAM08727_0630LMJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.394098,
+          18.475371
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0721-zl0-8734_063.jpg",
+        "image_id": "ZL0_0721_0730957887_909EBY_N0345120ZCAM08734_0630LMJ",
+        "sol": 721,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2023-03-01T16:01:34.826",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.474442,
+        "lon_east": 77.389816,
+        "site_xy_m": [
+          427.4,
+          1856.1
+        ],
+        "in_site": true,
+        "rover_site": 34,
+        "rover_drive": 5120,
+        "mast_elevation_deg": -12.448,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 34 drive 5120, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00721/ids/edr/browse/zcam/ZL0_0721_0730957887_909EBY_N0345120ZCAM08734_0630LMJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.389816,
+          18.474442
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "file": "m20-sol0731-zl0-8739_063.jpg",
+        "image_id": "ZL0_0731_0731849471_723EBY_N0361610ZCAM08739_0630LMJ",
+        "sol": 731,
+        "camera": "Mastcam-Z (left)",
+        "date_utc": "2023-03-11T23:41:30.849",
+        "credit": "NASA/JPL-Caltech/ASU",
+        "lat": 18.472929,
+        "lon_east": 77.386751,
+        "site_xy_m": [
+          255.1,
+          1766.3
+        ],
+        "in_site": true,
+        "rover_site": 36,
+        "rover_drive": 1610,
+        "mast_elevation_deg": -7.97325,
+        "position_source": "NASA/JPL Mars 2020 traverse waypoints (mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json): rover at site 36 drive 1610, the same site/drive as in the image ID, so taken where the rover stood (cameras about 2 m up).",
+        "image_url": "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00731/ids/edr/browse/zcam/ZL0_0731_0731849471_723EBY_N0361610ZCAM08739_0630LMJ01.png"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.386751,
+          18.472929
+        ]
+      }
+    }
+  ]
+}

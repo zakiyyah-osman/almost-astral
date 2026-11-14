@@ -64,8 +64,8 @@ export default function App() {
         setData(d)
         const ids = d.layers.map((l) => l.id)
         const start = presetIds(PRESETS[0], ids) // open on the Safety view
-        // Crater-wide layers start from their own default; the site layers from the Safety preset.
-        setLayerState(Object.fromEntries(d.layers.map((l) => [l.id, { on: l.scope === 'crater' ? !!l.default : start.includes(l.id), opacity: l.opacity ?? 1 }])))
+        // Crater-wide layers and photo pins start from their own default; the site layers from the Safety preset.
+        setLayerState(Object.fromEntries(d.layers.map((l) => [l.id, { on: l.scope ? !!l.default : start.includes(l.id), opacity: l.opacity ?? 1 }])))
         if (d.tables?.radiation) {
           fetch(`./${d.tables.radiation}`)
             .then((r) => (r.ok ? r.text() : ''))
@@ -186,8 +186,8 @@ export default function App() {
     }
   }, [ready, hover, cost, terrain, back, ingress, data])
 
-  // Presets set the site layers only; crater-wide layers keep their own switches.
-  const craterIds = new Set((data?.layers ?? []).filter((l) => l.scope === 'crater').map((l) => l.id))
+  // Presets set the site layers only; crater-wide layers and photo pins keep their own switches.
+  const craterIds = new Set((data?.layers ?? []).filter((l) => l.scope).map((l) => l.id))
   const applyPreset = (preset) =>
     setLayerState((s) => {
       const on = presetIds(preset, Object.keys(s))

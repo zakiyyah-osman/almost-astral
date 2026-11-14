@@ -75,6 +75,26 @@ function withSiteHole(src, bounds, site) {
   })
 }
 
+// Camera pins for the ground photos (lib/photos.js records). Tapping one opens the photo with its
+// sol, camera and credit.
+const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+const cameraIcon = L.divIcon({ className: 'pin-icon', html: '<span class="photo-pin" aria-label="Ground photo"></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
+
+function photoPins(photos) {
+  const group = L.layerGroup()
+  for (const p of photos) {
+    const html =
+      `<figure class="photo-pop"><img src="${escapeHtml(p.url)}" alt="Perseverance ${escapeHtml(p.camera)} image, sol ${escapeHtml(p.sol)}" loading="lazy" />` +
+      `<figcaption><b>Sol ${escapeHtml(p.sol)}</b> · ${escapeHtml(p.camera)}${p.date_utc ? ` · ${escapeHtml(String(p.date_utc).slice(0, 10))}` : ''}<br />` +
+      `Taken where the rover stood, about 2 m up. <span class="credit">Credit: ${escapeHtml(p.credit)}</span><br />` +
+      `<small>${escapeHtml(p.image_id)}</small></figcaption></figure>`
+    L.marker([p.lat, lon180(p.lon)], { icon: cameraIcon, keyboard: false, title: `Ground photo, sol ${p.sol}` })
+      .bindPopup(html, { maxWidth: 340, minWidth: 260, className: 'photo-popup' })
+      .addTo(group)
+  }
+  return group
+}
+
 const pinIcon = (label, kind, selected) =>
   L.divIcon({
     className: 'pin-icon',
@@ -194,6 +214,10 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
 
     map.createPane('craterLayers').style.zIndex = 290 // crater-wide layers sit under the site layers
     data.layers.forEach((layer, i) => {
+      if (layer.scope === 'photos') {
+        if (geo.real) overlays.current[layer.id] = photoPins(data.photos ?? [])
+        return
+      }
       if (layer.scope === 'crater') {
         if (!geo.real || !layer.bounds) return // needs the lat/lon map
         const b = layer.bounds
@@ -256,7 +280,7 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     for (const [id, state] of Object.entries(layerState)) {
       const overlay = overlays.current[id]
       if (!overlay) continue
-      overlay.setOpacity(state.opacity)
+      overlay.setOpacity?.(state.opacity) // photo pins are a layer group: no opacity
       if (state.on && !map.hasLayer(overlay)) overlay.addTo(map)
       if (!state.on && map.hasLayer(overlay)) overlay.remove()
     }

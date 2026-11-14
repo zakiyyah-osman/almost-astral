@@ -19,7 +19,13 @@ export default function DataStatus({ data, terrain, params }) {
   rows.push({ name: 'Weather', kind: notes['weather.csv'] ? 'real' : 'fake', source: notes['weather.csv'] ?? 'weather.csv has no source yet: placeholder until the MEDA data is loaded' })
   rows.push({ name: 'Radiation', kind: 'estimate', source: notes['radiation.csv'] ?? 'radiation.csv' })
   if (data.tables?.space_weather) rows.push({ name: 'Solar storms', kind: 'real', source: notes['space_weather.csv'] ?? 'NASA DONKI' })
-  rows.push({ name: 'Stop photos', kind: 'real', source: 'NASA Perseverance images taken elsewhere in Jezero: examples, not this square (mission/photos/CREDITS.md)' })
+  rows.push({
+    name: 'Ground photos',
+    kind: 'real',
+    source: data.photos?.length
+      ? `${notes[data.vectors?.photos] ?? 'Perseverance raw images'} (photos.geojson, ${data.photos.length} photos). The pictures on the stop cards are separate illustrations from elsewhere in Jezero (mission/photos/CREDITS.md).`
+      : 'No photos.geojson yet. The pictures on the stop cards are illustrations from elsewhere in Jezero (mission/photos/CREDITS.md).',
+  })
   rows.push({ name: 'Limits: outing time, reserve, dose, slopes, pace', kind: 'assumption', source: 'Team choices in routing/config.toml and terrain/thresholds.toml' })
 
   return (
