@@ -23,12 +23,12 @@ def make_cost(hazard=None, shape=(20, 20), cell=CELL, p=P):
     return cost.build(np.zeros(shape), hazard, np.zeros(shape), g.Grid(shape[1], shape[0], cell), p)
 
 
-def shelter_for(c, rover=(10, 10), ingress=INGRESS):
-    return shelter.shelter_time(c, rover, ingress, 8)
+def shelter_for(c, start=(10, 10), ingress=INGRESS):
+    return shelter.shelter_time(c, start, ingress, 8)
 
 
 # ---- 4.1 the array -----------------------------------------------------------
-def test_rover_cell_equals_ingress():
+def test_start_cell_equals_ingress():
     s = shelter_for(make_cost())
     assert s.minutes[10, 10] == INGRESS == 15
     assert s.walk_min[10, 10] == 0
@@ -36,7 +36,7 @@ def test_rover_cell_equals_ingress():
 
 
 def test_flat_matches_distance_over_speed():
-    s = shelter_for(make_cost(), rover=(10, 10))
+    s = shelter_for(make_cost(), start=(10, 10))
     speed = 45.0                                        # m/min at 2.7 km/h
     for dr, dc in [(0, 1), (0, 6), (3, 0), (3, 4), (5, 5), (-2, 7), (-9, -9)]:
         steps_diag = min(abs(dr), abs(dc))
@@ -54,7 +54,7 @@ def test_blocked_cells_are_nan():
     s = shelter_for(c)
     assert np.isnan(s.minutes[5, 5])
     assert np.isnan(s.minutes[:, 15]).all()
-    assert np.isnan(s.minutes[:, 16:]).all()            # cut off from the rover
+    assert np.isnan(s.minutes[:, 16:]).all()            # cut off from the start
     assert np.isnan(s.walk_min[c.blocked]).all()
     assert np.isfinite(s.minutes[~c.blocked & (np.arange(20)[None, :] < 15)]).all()
 
@@ -85,7 +85,7 @@ def test_wide_site_uses_its_own_cell_size(wide_site):
     assert s.minutes[40, 119] == pytest.approx(59 * 10.0 / 45.0 + INGRESS)
 
 
-def test_return_path_comes_from_the_rover_tree():
+def test_return_path_comes_from_the_start_tree():
     s = shelter_for(make_cost())
     path = s.tree.path_to((10, 15))
     assert path.cells[0] == (10, 10) and path.cells[-1] == (10, 15)
@@ -149,7 +149,7 @@ def test_contours_at_interval():
 
 def test_contours_burn_where_neighbours_differ_in_band():
     c = make_cost(shape=(41, 41), cell=20.0)                # 20 m cells: the walk back spans past 20 min
-    s = shelter_for(c, rover=(20, 20))
+    s = shelter_for(c, start=(20, 20))
     interval = 10.0
     img = shelter.render_png(s.minutes, 60.0, interval)
     burned = np.all(img == np.array(shelter.CONTOUR_RGBA), axis=-1)

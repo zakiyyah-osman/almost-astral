@@ -101,14 +101,18 @@ class Tree:
     """Cheapest cost from one start cell to every cell, and the paths that give it.
 
     `planning_cost` is cumulative in the units of the rate array that was searched: planning
-    minutes for a Searcher, physical minutes for the shelter map. inf if unreachable.
+    minutes for a Searcher, physical minutes for the back-to-start map. inf if unreachable.
     """
 
-    def __init__(self, cost: Cost, mcp, start, planning_cost):
+    def __init__(self, cost: Cost, mcp, start, planning_cost, steps=None):
         self.cost = cost
         self.start = start
         self.planning_cost = planning_cost
         self._mcp = mcp
+        # MCP's own traceback array: steps[cell] indexes `offsets`, the move from the previous
+        # cell on the best path into this one. -1 at the start, -2 where there is no path.
+        self.steps = steps
+        self.offsets = np.asarray(mcp.offsets)
 
     def reachable(self, end):
         return bool(np.isfinite(self.planning_cost[end]))
@@ -132,8 +136,8 @@ def build_tree(cost: Cost, rate, start, connectivity):
         raise NoPath(f"cell {start} is blocked")
     cell_m = cost.grid.cell_m
     mcp = MCP_Geometric(rate, fully_connected=fully_connected(connectivity), sampling=(cell_m, cell_m))
-    cumulative, _ = mcp.find_costs([start])
-    return Tree(cost, mcp, start, cumulative)
+    cumulative, steps = mcp.find_costs([start])
+    return Tree(cost, mcp, start, cumulative, np.asarray(steps))
 
 
 class Searcher:

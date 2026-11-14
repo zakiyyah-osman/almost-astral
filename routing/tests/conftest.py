@@ -18,6 +18,32 @@ if str(ROUTING) not in sys.path:
     sys.path.insert(0, str(ROUTING))
 
 Site = namedtuple("Site", "folder dem hazard width height cell_m")
+REPO_CONFIG = ROUTING / "config.toml"
+START_KINDS = ("start", "rover")
+
+
+def start_file(folder):
+    """The file next to a synthetic site that records its start (written by write_full_site)."""
+    folder = Path(folder)
+    return folder.parent / f"{folder.name}.start.json"
+
+
+def start_of(folder):
+    """The start (x, y) recorded for a synthetic site, or None (then the demo start is used)."""
+    path = start_file(folder)
+    return tuple(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
+
+
+def with_start(folder):
+    """["--start", "x,y"] for a synthetic site with a recorded start, else []."""
+    xy = start_of(folder)
+    return [] if xy is None else ["--start", f"{xy[0]!r},{xy[1]!r}"]
+
+
+def run_site(folder, config_path=None):
+    """plan_route.run on a synthetic site, from its recorded start."""
+    import plan_route
+    return plan_route.run(folder, config_path, start_of(folder))
 
 
 def write_site(folder, dem, hazard, cell_m, name="Synthetic test site"):
@@ -94,10 +120,13 @@ def write_waypoints(folder, items):
     return path
 
 
-def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False):
+def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False, start=None):
     """A complete input folder as plan_route.py and data/validate.py expect it.
 
     waypoints: (id, name, kind, x, y) tuples. Adds radiation.csv, weather.csv and one layer image.
+    Also records the start the tests pass with --start (start_file): `start`, or else the first
+    start waypoint (kind start, or the deprecated rover). The routing code never takes the start
+    from a waypoint; only these tests do, to keep the old sites' geometry.
     """
     from PIL import Image
 
@@ -121,4 +150,11 @@ def write_full_site(folder, dem, hazard, cell_m, waypoints, fake=False):
     weather = ["sol,local_hour,temp_c,pressure_pa,dust_tau", "40,12,-20,700,0.5"]
     (folder / "weather.csv").write_text("\n".join(weather) + "\n", encoding="utf-8")
     write_waypoints(folder, waypoints)
+    if start is None:
+        start = next(((x, y) for _, _, kind, x, y in waypoints if kind in START_KINDS), None)
+    path = start_file(folder)
+    if start is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text(json.dumps([float(start[0]), float(start[1])]), encoding="utf-8")
     return site

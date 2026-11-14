@@ -2,7 +2,9 @@
 
 What the route planner does and why. Build order is in `CHECKLIST.md`; independent checks are in `QA.md`.
 
-Status: phases 1 to 5 are built (config, grid, walking, cost, search, tour, shelter, storm, timeline, outputs, entry point); the sweep, sensitivity and end-to-end checks are still to do. Items still waiting for a decision are collected in sections 11 and 12.
+Status: everything is built except the hard-mask validation against the Perseverance traverse (CHECKLIST 6.3), which waits for the traverse data. Phase 10 removed the fixed starts and the per-start reach export, and added landing safety (section 14) and the cost surface the browser searches (section 15). Items still waiting for a decision are collected in sections 11 and 12.
+
+The walk is for an astronaut on foot only. The user clicks anywhere to choose a landing zone; if it is not safe, the lander moves to the nearest safe spot. From the landing spot the user clicks a destination and gets three one-way walking paths (fastest, balanced, safest), found in the browser. The full outing (`plan_route.py`) starts at `--start x,y` or at the demo start (section 4.9) and ends there.
 
 ## 1. Scope
 
@@ -13,8 +15,9 @@ Reads from `data/out/` (never writes these):
 | `layers.json` | `site.grid` (width, height, cell_m), site name, whether inputs are still fake |
 | `dem.tif` | terrain slope, elevation along the route |
 | `hazard.tif` | red cells (blocked) and yellow cells (penalised) |
-| `waypoints.geojson` | the rover and the science stops |
+| `waypoints.geojson` | the science stops (unverified, section 4.9); a `start` waypoint (or the old `rover`) is never used, only reported as ignored |
 | `radiation.csv` | cross-check of the background rate, storm hours for the demo |
+| `thermal_inertia.tif` | landing warning only (section 14), while `layers.json` marks the thermal layer real |
 
 Writes to `data/out/`:
 
@@ -24,6 +27,7 @@ Writes to `data/out/`:
 | `shelter_time.png` | contract file |
 | `plan.json` | contract file, with added fields (section 9) |
 | `route_fastest.geojson`, `route_safest.geojson` | new files, same format as `route.geojson` |
+| `landing/` (`manifest.json`, `golden_cases.json`, `tiles/<ti>_<tj>/` grids) | new folder, written by `export_landing.py` (sections 14 to 16) |
 
 Writes inside `routing/` only: `reports/sweep.csv`, `reports/sensitivity.csv`, `reports/validation.csv`. These come from `analysis.py`, which never writes to `data/out/`.
 
@@ -41,25 +45,29 @@ Flat modules in `routing/`. The entry point stays `python routing/plan_route.py`
 | `walking.py` | walking speed as a function of slope |
 | `cost.py` | hard mask, risk rate, time-rate array and planning-cost array |
 | `search.py` | thin wrapper over `skimage.graph.MCP_Geometric`: cumulative cost from a start cell, path to any cell, time and risk summed along a path |
-| `tour.py` | load and check waypoints, decide stop order, build the three profile routes |
-| `shelter.py` | minutes-to-rover array and its PNG rendering |
+| `tour.py` | load and check waypoints, choose the start (`--start` or demo start), decide stop order, build the three profile routes |
+| `start.py` | the start checks (section 4.9) and the blocked-reason codes |
+| `landing.py` | landing safety per cell, nearest safe cell, `landing_check` (section 14) |
+| `shelter.py` | minutes-back-to-start array and its PNG rendering |
 | `storm.py` | return paths from sampled route points |
 | `timeline.py` | legs, totals, track samples, budget checks, radiation |
 | `outputs.py` | writers for the GeoJSON files and `plan.json` |
 | `analysis.py` | the w-sweep function, sensitivity runs, hard-mask validation against the Perseverance traverse. Run as a script it writes CSV reports only |
 | `plan_route.py` | wires everything; takes the command-line options below |
+| `export_landing.py` | the landing grids and the cost surface in tiles, golden cases, the manifest, and the reference `route` and `landing_check` (sections 14 to 16) |
 | `tests/` | pytest, on small synthetic grids built in `conftest.py`; only the end-to-end test reads `data/out/` |
 | `docs/` | `DESIGN.md`, `CHECKLIST.md`, `QA.md` |
 | `reports/` | CSV tables from `analysis.py` |
 
 **Command-line options.**
 
-| Option | `plan_route.py` | `analysis.py` | Meaning | Default |
-| --- | --- | --- | --- | --- |
-| `--in DIR` | yes | yes | folder the inputs are read from | `data/out` |
-| `--config FILE` | yes | yes | parameter file | `routing/config.toml` |
-| `--out DIR` | yes | no | folder the route files, `shelter_time.png` and `plan.json` are written to | the value of `--in` |
-| `--reports DIR` | no | yes | folder the CSV reports are written to | `routing/reports` |
+| Option | `plan_route.py` | `analysis.py` | `export_landing.py` | Meaning | Default |
+| --- | --- | --- | --- | --- | --- |
+| `--in DIR` | yes | yes | yes | folder the inputs are read from | `data/out` |
+| `--config FILE` | yes | yes | yes | parameter file | `routing/config.toml` |
+| `--out DIR` | yes | no | yes | folder the outputs are written to | `plan_route.py`: the value of `--in`; `export_landing.py`: `<--in>/landing` |
+| `--reports DIR` | no | yes | no | folder the CSV reports are written to | `routing/reports` |
+| `--start X,Y` | yes | yes | no | start of the walk, metres on the site grid | the demo start (section 4.9) |
 
 With no options, `plan_route.py` reads and writes `data/out`. When `--in` is set and `--out` is not, outputs go to the `--in` folder, never to `data/out`: a run pointed at a test folder cannot overwrite the shared data by accident.
 
@@ -80,11 +88,12 @@ hazard.tif ───► red, yellow ────┼─► hard mask (red, slope 
                                                                                      ▼
 config.toml ──► w per profile ───────────────► planning cost = time rate × (1 + w × risk rate)
                                                                                      │
+--start x,y or the demo start (4.9, landing.py) ─► start cell checked         ┐
 waypoints.geojson ─► snap to cells, check passable ──► MCP_Geometric from each waypoint
                                                                                      │
                                           stop order ─► fastest / balanced / safest routes
                                                                                      │
-                 MCP_Geometric from rover, w = 0 ─► shelter-time array ─► shelter_time.png
+                 MCP_Geometric from start, w = 0 ─► back-to-start time array ─► shelter_time.png
                                                           │
                                                           └─► storm return paths
                                                                                      │
@@ -138,15 +147,15 @@ After a path is chosen, three sums are taken along it with the same edge formula
 - `risk_min` from `time_rate × risk_rate`, also split into `yellow_min`, `steep_min`, `near_red_min`
 - `distance_m` from L
 
-So `planning cost = physical_min + w × risk_min` holds exactly, and only `physical_min` goes into the timeline, the shelter map, the budgets and `plan.json`. Risk never inflates a reported time.
+So `planning cost = physical_min + w × risk_min` holds exactly, and only `physical_min` goes into the timeline, the back-to-start map, the budgets and `plan.json`. Risk never inflates a reported time.
 
 ### 4.4 Slope is the terrain slope, not the slope along the path
 
-`MCP_Geometric` takes one cost per cell, so `v(S)` uses the steepest slope of the terrain at that cell. Walking along a contour is timed as slowly as climbing straight up. This overestimates time on slopes, which is the safe direction, and it keeps one model for routes, the shelter map and storm returns.
+`MCP_Geometric` takes one cost per cell, so `v(S)` uses the steepest slope of the terrain at that cell. Walking along a contour is timed as slowly as climbing straight up. This overestimates time on slopes, which is the safe direction, and it keeps one model for routes, the back-to-start map and storm returns.
 
 The direction-aware alternative is `MCP_Flexible` with `travel_cost` overridden and elevation as the cost array. Its hook receives only the two cell values, so blocks and risk would need a workaround. It is recorded as a possible upgrade and is not part of this design. This choice is listed in section 11.
 
-Because the cost is the same in both directions, the time from A to B equals the time from B to A. One search from the rover therefore gives the time back to the rover from every cell.
+Because the cost is the same in both directions, the time from A to B equals the time from B to A. One search from the start therefore gives the time back to the start from every cell.
 
 ### 4.5 Search
 
@@ -158,8 +167,10 @@ Because the cost is the same in both directions, the time from A to B equals the
 ### 4.6 Waypoints and stop order
 
 - A point `(x, y)` snaps to the cell that contains it. Route vertices are cell centres, so a marker can sit up to half a cell diagonal from the line.
-- Exactly one `kind: "rover"` is required.
-- A stop on a blocked cell, or with no path to the rover, stops the run with a non-zero exit code. The message names the stop id, its name, its coordinates and the reason (red cell, slope over limit, inside buffer, unreachable). No output file is written.
+- The start is `--start` or the demo start (section 4.9), never a waypoint position. At most one waypoint of `kind: "start"` is allowed; it is optional and only reported as ignored. The start's id is always `start` (the `from`/`to` of the first and last legs). A stop may not use the id `start`.
+- `kind: "rover"` is the old name for `start`. It is still read, as `start`, and logs a deprecation warning that is also written to `plan.json` `warnings`. Any other kind fails.
+- At least one `kind: "stop"` is required.
+- A stop on a blocked cell, or with no path to the start, stops the run with a non-zero exit code. The message names the stop id, its name, its coordinates and the reason (red cell, slope over limit, inside buffer, unreachable). No output file is written.
 - `timeline.stop_order` chooses the order: `as_listed` follows `waypoints.geojson`; `optimise` tries every order (3 to 5 stops is at most 120) on the balanced planning cost, uses that order for all three profiles, and breaks ties by file order. The pairwise costs come from one search per waypoint, computed once and reused for every order. With more than `timeline.optimise_max_stops` stops (8, which is 40,320 orders) `optimise` falls back to `as_listed` and records a warning in `plan.json` (`stop_order.warnings`). Default is `as_listed` until Zakiyyah answers.
 
 ### 4.7 Profiles
@@ -176,7 +187,27 @@ All three share the hard mask. They differ only in how much risk exposure they t
 
 - **w-sweep:** rerun the route for each value in `profiles.sweep_w`. One row per w: distance, walk minutes, risk minutes and its three parts. This is the time against risk-exposure table. `plan_route.py` writes it into `plan.json` (`sweep`); `analysis.py` writes the same rows to `reports/sweep.csv`. Both call one sweep function, so the two cannot disagree.
 - **Sensitivity:** every combination of `sensitivity.v_flat_kmh`, `sensitivity.slope_max_deg` and `sensitivity.w` (2 x 3 x 3 = 18 runs). One row each: walk minutes, total minutes, risk minutes, budget status, or `infeasible` with the stop that failed. Goes to `reports/sensitivity.csv`.
-- **Hard-mask validation:** the share of Perseverance traverse points that fall on passable cells, reported in `reports/validation.csv`. A rover drove there, so a low share means the mask is too strict. Blocked until Yaj supplies the traverse in grid coordinates (section 12).
+- **Hard-mask validation:** the share of Perseverance traverse points that fall on passable cells, reported in `reports/validation.csv`. Perseverance drove there, so a low share means the mask is too strict. Blocked until Yaj supplies the traverse in grid coordinates (section 12).
+
+### 4.9 The start
+
+There are no configured starts. In the app the start is the landing spot the user chose (section 14). For the full outing, `plan_route.py` and `analysis.py` take the start on the command line:
+
+- `--start x,y` (metres on the site grid): that point, used as given.
+- No `--start`: the **demo start**, the centre of the safe landing cell (code 0, section 14) nearest the cell that holds the grid centre, found with the same `nearest_safe` grid the app uses. It is labelled "demo start" in `plan.json` (`start.kind` = `demo`, `start.name` = "Demo start") and on the command line, with a warning saying so. With no safe cell anywhere the run stops with an error.
+
+Checks (`tour.choose_start` with `start.py`), in this order:
+
+1. The point must lie on the grid.
+2. The cell must be passable. Each blocked reason is its own error message: no DEM data, red cell, slope over `constraints.slope_max_deg`, inside the cliff buffer, sealed gap. These are exactly the hard constraints of section 4.1.
+3. A start on a yellow cell, or on slope above `risk.steep_onset_deg`, is allowed with a warning. A `--start` point whose landing-safety code is not safe or marginal is allowed with a warning too: the walk can start there, but a lander should not.
+4. A waypoint of kind `start` (or the old `rover`) in `waypoints.geojson` is never used as the start, whatever its position; a warning says it is ignored.
+
+A failed check stops the run with a non-zero exit code and writes nothing, for example `start (--start) (12.5, 47.5) m, cell (10, 2), is on a blocked cell: red hazard cell. Choose a start on passable ground (--start x,y).` In the sensitivity table, a start that becomes blocked under a tighter slope limit makes the run `infeasible` with `failed_stop` = `start`.
+
+The stops in `waypoints.geojson` are treated as unverified: they belong to Zakiyyah and were placed on earlier data. Nothing here depends on them being real, and `plan.json` always carries the warning that the outing plan is a demonstration.
+
+The blocked-reason codes are used per cell in `landing/mask.u8` (section 15): 0 passable, 1 no data, 2 red, 3 slope, 4 buffer, 5 sealed. A cell blocked for several reasons takes the first in that order. Code 6 (walled off: passable but not reachable from the landing spot) is a search result, never stored.
 
 ## 5. Walking model
 
@@ -196,24 +227,24 @@ v(S) = v_flat × exp(−k × (|S| + s0)) / exp(−k × s0)        k = 3.5, s0 = 
 
 Distances are plain metres on the local grid. No latitude, longitude or planetary-radius formula is used anywhere.
 
-## 6. Shelter map
+## 6. Back-to-start map
 
-- One `MCP_Geometric` run from the rover cell on `time_rate` (w = 0) gives the fastest physical minutes from every cell.
-- `shelter_min = walk minutes + timeline.ingress_min`. At the rover cell it equals the ingress time.
+- One `MCP_Geometric` run from the start cell on `time_rate` (w = 0) gives the fastest physical minutes from every cell. The layer is "minutes back to start".
+- `shelter_min = walk minutes + timeline.ingress_min`. At the start cell it equals the ingress time.
 - Blocked and unreachable cells have no value.
 
 `shelter_time.png` is RGBA, exactly `width x height`, row 0 at the north edge. Cells are coloured on a ramp from 0 to `shelter_map.colour_max_min` (longer times take the last colour). Contour lines are burned in wherever a cell and a neighbour fall in different `shelter_map.contour_interval_min` bands. Cells with no value are fully transparent.
 
-The web app cannot read minutes back out of a picture, so `plan.json` carries the legend (`shelter_map`: colour stops, interval, maximum) and the exact value at each track point (`track[].shelter_min`).
+The web app cannot read minutes back out of a picture, so `plan.json` carries the legend (`shelter_map`: `label` "Minutes back to start", colour stops, interval, maximum) and the exact value at each track point (`track[].shelter_min`). The file name and the `shelter_*` keys keep their names (contract).
 
 ## 7. Storm re-plan
 
 - Sample the balanced route every `storm.sample_spacing_m`, and at every stop.
-- For each sample, the return path is the `traceback` from the rover-rooted search of section 6: the fastest physical way back, ignoring risk weights but never crossing a blocked cell.
+- For each sample, the return path is the `traceback` from the start-rooted search of section 6: the fastest physical way back, ignoring risk weights but never crossing a blocked cell.
 - Each sample reports where it is, how far along the route, elapsed minutes on arrival, `return_min` (walk plus ingress), `return_distance_m` and the return path.
 - `worst` points at the sample with the largest `return_min`.
 
-**Solar-event dose.** Curiosity RAD measured 8.1 mGy absorbed dose on 20 May 2024 (NASA). `plan.json` reports it in its own field, in Gy, as the whole-event figure for someone who stays unsheltered. It is never converted to Sv and never added to `radiation_dose_usv`. Scaling it by the return time would need the event's duration, which this design has no source for (section 11).
+**Solar-event dose.** Curiosity RAD measured 8.1 mGy absorbed dose on 20 May 2024 (NASA). `plan.json` reports it in its own field, in Gy, as the whole-event figure for someone who stays unprotected. It is never converted to Sv and never added to `radiation_dose_usv`. Scaling it by the return time would need the event's duration, which this design has no source for (section 11).
 
 ## 8. Timeline and budgets
 
@@ -226,9 +257,9 @@ ingress_min = timeline.ingress_min
 total_min   = walk_min + stop_min + ingress_min
 ```
 
-The clock starts when the crew leaves the rover. Legs run rover → stops → rover. Each leg records arrival and departure times, so the web app can draw the timeline.
+The clock starts when the crew leaves the start. Legs run start → stops → start. Each leg records arrival and departure times, so the web app can draw the timeline.
 
-**Track.** The balanced route sampled every `track.spacing_m`: position, distance, elevation, slope, hazard class, elapsed minutes, minutes back to shelter. `elapsed_min` is clock time since leaving the rover, so it includes the time spent at every stop already visited, not only walking time. It feeds the slope profile chart and the HUD.
+**Track.** The balanced route sampled every `track.spacing_m`: position, distance, elevation, slope, hazard class, elapsed minutes, minutes back to the start. `elapsed_min` is clock time since leaving the start, so it includes the time spent at every stop already visited, not only walking time. It feeds the slope profile chart and the HUD.
 
 **Checks**, each written to `plan.json` with its value and limit:
 
@@ -252,7 +283,7 @@ The clock starts when the crew leaves the rover. Legs run rover → stops → ro
 
 ### 9.1 Route files
 
-`route.geojson`, `route_fastest.geojson` and `route_safest.geojson`: a `FeatureCollection` with one `LineString`, coordinates `[x, y]` in metres, rover to rover. Vertices on a straight run are dropped, which changes nothing about the line. No `fake` property.
+`route.geojson`, `route_fastest.geojson` and `route_safest.geojson`: a `FeatureCollection` with one `LineString`, coordinates `[x, y]` in metres, start to start. Vertices on a straight run are dropped, which changes nothing about the line. No `fake` property.
 
 Properties: `profile`, `w`, `distance_m`, `walk_min`, `risk_min`, `source` ("routing model over dem.tif and hazard.tif").
 
@@ -269,7 +300,7 @@ Shape (numbers are placeholders):
   "crew": 2,
   "legs": [
     {
-      "from": "rover", "to": "stop1", "distance_m": 812, "walk_min": 21,
+      "from": "start", "to": "stop1", "distance_m": 812, "walk_min": 21,
       "risk_min": 3.4, "ascent_m": 12.0, "descent_m": 4.5, "max_slope_deg": 8.2,
       "depart_min": 0.0, "arrive_min": 21.3, "stop_min": 25
     }
@@ -320,7 +351,7 @@ Shape (numbers are placeholders):
     "solar_event": {
       "absorbed_dose_mgy": 8.1, "date": "2024-05-20",
       "source": "Curiosity RAD (MSL), NASA",
-      "note": "Whole-event absorbed dose if unsheltered. In Gy; not added to radiation_dose_usv."
+      "note": "Whole-event absorbed dose if unprotected. In Gy; not added to radiation_dose_usv."
     }
   },
   "assumptions": {
@@ -335,6 +366,8 @@ Shape (numbers are placeholders):
 ```
 
 - `profiles` has the same block for `fastest` and `safest`.
+- `start` (added): `id` (always `start`), `name` ("Start" or "Demo start"), `landing_id` (kept, always `null` since phase 10), `xy_m`, `cell`, `source` (the command line, or the demo-start rule), `kind` (`cli` or `demo`) and `landing_status` (the landing-safety code name of the start cell). The first leg's `from` and the last leg's `to` are `start`. Phase 10 changed nothing else in `plan.json`, apart from `assumptions` now holding the `budget.*` and `landing.*` entries and no `start.*`, `starts.*` or `reach.*`.
+- `shelter_map.label` (added): "Minutes back to start".
 - `assumptions` is the whole of `config.toml`, copied.
 - `inputs_fake` is true while any layer `source` in `layers.json` contains `FAKE`. The file carries no top-level `fake` key, so `validate.py` treats the plan as real output.
 
@@ -345,12 +378,13 @@ Every parameter is a table with `value`, `unit`, `type` and `source`. Types:
 - `observation`: measured for this quantity at this site.
 - `proxy`: measured elsewhere or for a related quantity, and transferred.
 - `scenario`: a planning value the team chose.
+- `assumption`: a team assumption with no source yet, waiting for a teammate to confirm it (the `[landing]` limits).
 
 Values measured at Gale are `proxy` while the site is Jezero and become `observation` if the site switches to Gale.
 
 ```toml
 # routing/config.toml
-# Every parameter: value, unit, type (observation / proxy / scenario), source.
+# Every parameter: value, unit, type (observation / proxy / scenario / assumption), source.
 
 # ---- crew ---------------------------------------------------------------
 [crew.size]
@@ -507,7 +541,7 @@ source = "STOP_MIN in data/make_fake.py; to be replaced by the mission brief"
 value = 15
 unit = "min"
 type = "scenario"
-source = "Team choice, confirmed by Tushaar"
+source = "Team choice, confirmed by Tushaar: time to get back inside at the start"
 
 [timeline.eva_max_min]
 value = 360
@@ -559,7 +593,7 @@ unit = "m"
 type = "scenario"
 source = "Team choice: keeps plan.json small"
 
-# ---- shelter map --------------------------------------------------------
+# ---- back-to-start map (the keys keep the contract name shelter_map) ---
 [shelter_map.contour_interval_min]
 value = 10
 unit = "min"
@@ -585,6 +619,77 @@ value = 8
 unit = "neighbours"
 type = "scenario"
 source = "skimage.graph.MCP_Geometric with fully_connected=True"
+
+# ---- one-way budget (point-to-point paths from a landing spot) ------------
+[budget.destination_stop]
+value = true
+unit = "true | false"
+type = "scenario"
+source = "Team choice (Tushaar): the one-way over-budget limit counts one stop of timeline.stop_min_default at the destination; false sets it to 0"
+
+# ---- landing safety (landing.py, export_landing.py) ----------------------
+# Every limit is in metres or degrees, never in cells: the pad and the clearance are turned into
+# cells from cell_m, so the same values hold on any grid. All of them are team assumptions waiting
+# for Nahla's confirmation; none has a published source.
+[landing.pad_radius_m]
+value = 25
+unit = "m"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: radius of the circular lander pad that must be safe"
+
+[landing.max_pad_slope_deg]
+value = 5
+unit = "deg"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: tilt of the best-fit plane through the pad's DEM cells"
+
+[landing.max_roughness_m]
+value = 0.25
+unit = "m (RMS of the DEM about the pad's best-fit plane)"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: half of the yellow (careful) roughness of 0.5 m in terrain/thresholds.toml [roughness], so a pad is clearly smoother than ground that is only walkable with care. Scale differs: terrain measures RMS about the local mean in a 5 x 5 cell (25 m) window on the 5 m grid; this is RMS about a plane over the whole pad (50 m across) on the same grid"
+
+[landing.max_height_range_m]
+value = 1.0
+unit = "m (highest minus lowest DEM cell on the pad, after removing the best-fit plane)"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: catches a single step, mound or pit that the RMS roughness averages away; not a sourced lander clearance"
+
+[landing.hazard_clearance_m]
+value = 30
+unit = "m (from the pad centre)"
+type = "assumption"
+source = "Team assumption (Tushaar), pending Nahla: no red cell, over-limit slope cell or cliff-buffer cell this close to the pad centre"
+
+[landing.marginal_pct]
+value = 20
+unit = "percent of a limit"
+type = "assumption"
+source = "Team assumption (Tushaar): a pad that passes but is within this share of any limit is marked marginal"
+
+[landing.ti_warn_below]
+value = 150
+unit = "J m^-2 K^-1 s^-1/2"
+type = "assumption"
+source = "terrain/thresholds.toml [thermal_inertia] yellow_below (loose sand; terrain's starting value, not checked against Jezero data). Used only for a warning flag, never a hard rule, and only while layers.json marks the thermal layer as real"
+
+[landing.window_centre_m]
+value = "site"
+unit = "\"site\" (the centre of site.grid) or [x, y] in m on the site grid"
+type = "scenario"
+source = "Team choice: the export window is centred on the site"
+
+[landing.window_size_m]
+value = "full"
+unit = "\"full\" (the whole site.grid) or [width, height] in m"
+type = "scenario"
+source = "Team choice: the whole site grid of layers.json; a smaller window is for the future full-crater grid"
+
+[landing.tile_size_m]
+value = 5120
+unit = "m (square tiles; whole cells; edge tiles are smaller)"
+type = "scenario"
+source = "Team choice: 1024 cells at 5 m, so the current 2 km site is one tile and a 9,000 x 9,000 cell grid would be 9 x 9 tiles"
 ```
 
 Not in the config, because `CONTRACT.md` fixes them: file names, hazard codes (0, 1, 2), and the grid (always read from `layers.json`).
@@ -616,12 +721,12 @@ Values:
 
 Timeline and radiation:
 
-15. The clock starts outside the rover; egress time is not counted.
+15. The clock starts outside, at the start; egress time is not counted.
 16. `total_min` includes ingress, which the fake `plan.json` did not.
 17. Oxygen and battery are folded into `eva_max_min`.
 18. `stop_order` defaults to `as_listed`.
 19. The Sv dose uses the config background rate, not the hourly values in `radiation.csv`.
-20. The 8.1 mGy figure is reported as a whole-event value. There is no event duration here, so it is not scaled to the time needed to reach shelter.
+20. The 8.1 mGy figure is reported as a whole-event value. There is no event duration here, so it is not scaled to the time needed to get back to the start.
 21. Gale measurements are typed `proxy` for Jezero. The routing instructions word the background rate as a scenario.
 
 Sources and environment:
@@ -637,13 +742,24 @@ Grid and rasters:
 27. Slope is the central difference of the four neighbours, so a cell's own height does not enter its slope. A single-cell spike or pit is invisible to it and must come from the hazard map.
 28. A no-data DEM cell is NaN in the DEM and NaN in the slope, and so are its four neighbours (the central difference reads them). `cost.py` blocks every NaN-slope cell. The no-data marker is still an open question for Yaj (section 12).
 
-Shelter, storm, timeline and outputs:
+Back-to-start map, storm, timeline and outputs:
 
-29. The shelter map is built on `time_rate` directly (a search over the physical rate, w = 0), not through the fastest profile route. The colour ramp (ColorBrewer YlOrRd, five stops spread evenly over `colour_max_min`, alpha 210) and the contour colour are presentation choices; the ramp is written to `plan.json` (`shelter_map.stops`, `contour_rgba`). A contour cell is the one in the higher 10-minute band of two horizontally or vertically adjacent cells, so lines are one cell wide; a cell with no value never starts a line.
-30. Storm samples and track points sit on the route cell whose distance along the route is nearest to each multiple of the spacing, not on interpolated points. Every value (elevation, slope, hazard, shelter minutes, return path) is then the exact value of one cell, and the reported `distance_m` is the actual distance to that cell, within half a step of the multiple. The arrival at each stop is always a sample, and the track also ends at the final cell. `elapsed_min` counts the time spent at a stop from the cell after the arrival cell.
+29. The back-to-start map is built on `time_rate` directly (a search over the physical rate, w = 0), not through the fastest profile route. The colour ramp (ColorBrewer YlOrRd, five stops spread evenly over `colour_max_min`, alpha 210) and the contour colour are presentation choices; the ramp is written to `plan.json` (`shelter_map.stops`, `contour_rgba`). A contour cell is the one in the higher 10-minute band of two horizontally or vertically adjacent cells, so lines are one cell wide; a cell with no value never starts a line.
+30. Storm samples and track points sit on the route cell whose distance along the route is nearest to each multiple of the spacing, not on interpolated points. Every value (elevation, slope, hazard, minutes back to the start, return path) is then the exact value of one cell, and the reported `distance_m` is the actual distance to that cell, within half a step of the multiple. The arrival at each stop is always a sample, and the track also ends at the final cell. `elapsed_min` counts the time spent at a stop from the cell after the arrival cell.
 31. The `abort` check covers every track point and also the moment of leaving each stop (arrival time plus stop time plus the way back from the stop). It cannot fail while `reserve` passes, because the way back is never longer than finishing the route, so the worst moment is the end of the walk; it is kept because section 8 asks for it and because its limit is the hard EVA limit.
 32. `radiation.csv` that is missing gives a warning in `plan.json` (`warnings`) and skips the cross-check; a file with the wrong columns or non-numeric values stops the run. The date and source text of the 2024-05-20 solar event are fixed strings in `timeline.py`; its dose comes from `radiation.solar_event_dose_mgy`.
-33. `plan.json` carries extra fields beyond section 9.2: `warnings`, `stop_order.requested` and `stop_order.warnings`, `shelter_map.contour_rgba`, and `stop` on track and storm points that are a stop arrival. The `sweep` block is added with phase 6. Contract fields are whole minutes and metres; `totals.total_min` is the sum of the rounded parts. The file is about 120 kB for the fake site (arrays of numbers are kept on one line).
+33. `plan.json` carries extra fields beyond section 9.2: `warnings`, `stop_order.requested` and `stop_order.warnings`, `shelter_map.contour_rgba`, and `stop` on track and storm points that are a stop arrival.
+34. The w-sweep reruns the route for every w over the stop order chosen for the plan (balanced weight), so the rows differ only in w. Each sensitivity run rebuilds the cost for its walking speed and slope limit, chooses the stop order again as the plan does (`timeline.stop_order`, balanced weight) and routes at its own w. A run is `infeasible` when the start or a stop stands on a blocked cell or cannot be reached, and the row names that waypoint; the start (`failed_stop` = `start`) can be the one that fails, for example when a tighter slope limit puts it inside the cliff buffer. Contract fields are whole minutes and metres; `totals.total_min` is the sum of the rounded parts. The file is about 120 kB for the fake site (arrays of numbers are kept on one line).
+
+Start and landing (phase 10):
+
+35. The demo start is the safe landing cell nearest the cell that holds the grid centre. It is a demonstration start, not a recommendation.
+36. A destination is over budget when `walk_min + ingress_min + stop_min > usable_min` (section 15.5): one way only. One stop of `timeline.stop_min_default` is counted at the destination; `budget.destination_stop = false` sets it to 0.
+37. With a window smaller than the site, paths cannot leave it. The mask, the risk and the landing codes are built on the whole grid first, so the buffer, the near-red term, the pad and the clearance see cells just outside it.
+38. The landing pad is judged on the 5 m grid. Boulders smaller than a cell, and slopes shorter than one, are not seen; the hazard map is the only place a sub-cell rock could show.
+39. The `[landing]` limits (section 14.3) are team assumptions pending Nahla, with the roughness scale caveat of 14.3.
+40. An unsafe click moves to the nearest safe cell measured from the clicked cell's centre (up to half a cell diagonal from the true nearest to the click point). Marginal cells are accepted but never a move target.
+41. The landing spot is assumed reachable on foot from where the lander sits: a safe pad is always passable (section 14.2), but it can still be walled off from a chosen destination (reason 6).
 
 ## 12. Open questions for teammates
 
@@ -673,10 +789,154 @@ Shelter, storm, timeline and outputs:
 - Does the HUD need separate oxygen and battery figures, or is one "time remaining" enough?
 - For the demo: at which point of the walk does the storm hit, and what local hour does the EVA start?
 
+**Phase 10: landing safety and the browser search**
+
+- Loick: delete the spot selection in `web/src/lib/landing.js` (`recommendLanding`). Read `data/out/landing/manifest.json` and the tiles: `landing_safety.u8` for the click, `nearest_safe.u16` / `nearest_safe_dist.f32` to move an unsafe click, and `time_rate.f64`, `risk_rate.f64`, `mask.u8` for the search. Run the Dijkstra in `pathfind.js` exactly as section 15.2 says (float64, the step-cost order, the diagonal length, strict `<`), with totals as in 15.3, and test it against `golden_cases.json` (same cells; totals within 1e-9 relative). Then `buildCost` in `pathfind.js` is no longer needed for the walk. Remove the L1–L3 markers, the Rover start marker and the team planner route from the map.
+- Zakiyyah: verify or replace the stops in `waypoints.geojson`, and remove the start/rover waypoint (routing ignores it and warns).
+- Nahla: confirm the `[landing]` thresholds (section 14.3): 25 m pad, 5° tilt, 0.25 m roughness, 1.0 m height range, 30 m clearance, 20% marginal band, and the thermal-inertia warning at 150. Also: the hazard source note in `layers.json` still describes the older `terrain/hazards` pipeline (3 x 3 plane roughness, thermal 250 / 150), not `hazard_map.py` and `thresholds.toml`. Which one built the current `hazard.tif`?
+- Yaj: add `data/out/landing/` to `layers.json` (for example `"landing": "landing/manifest.json"`). The `shelter_time` layer's title still says "Minutes back to rover".
+- Team: `CONTRACT.md` still describes `kind` as `"rover"` or `"stop"`, and `data/validate.py` rejects any other kind.
+
 **Loick (front end)**
 
 - `totals.total_min` in `plan.json` now includes ingress (walk + stops + ingress), which the fake file did not. `totals.ingress_min` is added so the parts still sum. Does anything in the app assume the old meaning?
 - Will the app show all three routes, with a way to switch?
-- Is `plan.json` `track[]` (distance, elevation, slope, elapsed, shelter minutes) enough for the slope profile and the timeline chart?
+- Is `plan.json` `track[]` (distance, elevation, slope, elapsed, minutes back to the start) enough for the slope profile and the timeline chart?
 - Contour lines are burned into `shelter_time.png`. Is that fine, or do you want to draw them yourself?
 - `plan.json` grows to roughly 120 kB with the track and return paths. Any problem?
+
+## 13. The per-start reach export (removed)
+
+Phases 8 and 9 exported, for each of three configured landing spots, the best path from that spot to every cell (`export_reach.py`, `data/out/reach/`). It was removed in phase 10: the landing spots came from fake data, and the user now picks any landing spot, so the browser runs the search itself on the exported cost surface (section 15). The one-way over-budget rule of that export is kept unchanged in section 15.5.
+
+## 14. Landing safety (`landing.py`)
+
+The user clicks anywhere to choose a landing zone. Every cell gets a safety code for a lander pad centred on it; an unsafe click is moved to the nearest safe cell.
+
+### 14.1 The pad and its measures
+
+- **Pad:** the cells whose centre is within `landing.pad_radius_m` (25 m) of the centre cell's centre: 81 cells at 5 m, more on a finer grid. Every limit is in metres or degrees and turned into cells from `cell_m`.
+- **Tilt:** the slope of the least-squares plane `z = a + b·x + c·y` through the pad's DEM heights, `atan(hypot(b, c))` in degrees. It uses the whole pad, not the centre cell's own slope. The steepest single 5 m cell on the pad is not used: at that scale it is noisy (median 6.7° over the all-green pads of the current site against a median plane tilt of 2.5°).
+- **Roughness:** RMS of the DEM about that plane over the pad. `layers.json` lists no roughness layer, so it is computed from `dem.tif`. If terrain's roughness becomes a real layer (`id` "roughness", `roughness.tif`), the pad roughness becomes its maximum over the pad, compared with the same limit.
+- **Height range:** highest minus lowest pad cell about the plane. The raw range is not used, because the allowed 5° tilt alone gives 4.4 m across 50 m and would only repeat the slope rule; the range about the plane catches a single step, block or pit that the RMS averages away.
+- **Clearance:** distance from the centre cell's centre to the nearest red, over-limit-slope or cliff-buffer cell (`distance_transform_edt`, metres).
+- **Hazard:** any pad cell that is not green, or that is blocked for walking (section 4.1).
+- **Coverage:** the pad and the clearance circle (the larger of the two radii) must fit inside the grid; any NaN DEM or slope on the pad is "no data".
+
+### 14.2 Codes (`landing_safety.u8`)
+
+| Code | Name | Fails when |
+| --- | --- | --- |
+| 0 | safe | nothing fails and nothing is within the marginal band |
+| 1 | marginal | nothing fails, but tilt, roughness or height range is above (1 − `landing.marginal_pct`/100) × its limit, or the clearance is below (1 + `marginal_pct`/100) × its limit |
+| 2 | outside_coverage | the pad or the clearance circle reaches past the grid edge |
+| 3 | no_data | a pad cell has no DEM or slope value |
+| 4 | hazard_or_clearance | a pad cell is not green or is blocked, or the clearance is below `landing.hazard_clearance_m` (30 m) |
+| 5 | too_steep | tilt > `landing.max_pad_slope_deg` (5°) |
+| 6 | height_range | range > `landing.max_height_range_m` (1.0 m) |
+| 7 | too_rough | roughness > `landing.max_roughness_m` (0.25 m) |
+
+When several failures apply, **the lowest code wins**: outside coverage > no data > hazard or clearance > too steep > height range > too rough. The order puts first what makes the other measures meaningless (no data, no coverage), then what is dangerous whatever the terrain (hazards), then the terrain measures from the most to the least severe. Because blocked cells fail rule 4, a safe or marginal cell can always be walked from.
+
+On the current site: 30,564 safe, 15,243 marginal, 9,456 outside coverage, 66,518 hazard or clearance, 7,731 too steep, 30,326 height range, 162 too rough. The 0.25 m roughness limit rarely decides on its own: the 1.0 m height range catches most rough pads first.
+
+**Warnings (`landing_warn.u8`, bits, never a rule):** bit 1 when a pad cell's THEMIS thermal inertia is below `landing.ti_warn_below` (150, loose ground), bit 2 when a pad cell has no thermal-inertia value. Only checked while `layers.json` marks the `thermal` layer as real and `thermal_inertia.tif` exists; otherwise the grid is all zero and the manifest says so. On the current data the lowest value is 241, so no pad is flagged.
+
+### 14.3 Where the thresholds come from
+
+All seven are team assumptions pending Nahla (type `assumption` in `config.toml`); none has a published source.
+
+- 25 m pad, 5° tilt, 30 m clearance: the team's starting values.
+- **Roughness 0.25 m:** half of terrain's yellow (careful) roughness of 0.5 m in `terrain/thresholds.toml` [roughness], the current file read by `terrain/hazard_map.py`. A pad should be clearly smoother than ground that is only walkable with care. **Scale caveat:** terrain's roughness is the RMS about the local mean in a 5 x 5 cell (25 m) window on the 5 m grid; the older `terrain/hazards` pipeline (`terrain/config/hazards.yaml`, 0.15 / 0.40 m) used a 5 m window on 1 m data; ours is the RMS about one plane over the whole 50 m pad on the 5 m grid. The three numbers are not directly comparable. (An earlier proposal of 0.15 m came from that older file, which is no longer the live one.)
+- **Height range 1.0 m:** a team assumption, not a sourced lander clearance.
+- **Thermal inertia 150:** `terrain/thresholds.toml` [thermal_inertia] `yellow_below`, terrain's loose-sand value (itself a starting value, not checked against Jezero data).
+- Marginal band 20%: team choice.
+
+### 14.4 Nearest safe cell and the landing check
+
+`nearest_safe`: `scipy.ndimage.distance_transform_edt(codes != 0, sampling=cell_m, return_indices=True)` gives, for every cell, the row and column of the nearest **safe** (code 0) cell and the distance between the two cell centres in metres. Marginal cells are accepted where they are clicked but are never a move target. Ties go to the cell scipy returns, which is the same on every run. With no safe cell in the window the run stops with an error.
+
+`landing_check(x, y)` (reference: `export_landing.landing_check`, `landing.LandingMap.landing_check`) returns `{status, reasons, chosen_xy_m, moved_m}` plus `code`, `code_name`, `cell`, `chosen_cell` and `warnings`:
+
+- safe or marginal cell: `status` "safe" / "marginal", `chosen_xy_m` = the clicked point, `moved_m` = 0. A marginal result lists the limits it is close to (`near_too_steep`, ...).
+- any other cell: `status` "moved", `chosen_xy_m` = the centre of the nearest safe cell, `moved_m` = the straight-line distance from the click to it (a lander comes down from above, so no walking path is needed). The move target is the nearest safe cell to the clicked cell's centre, so it can be up to half a cell diagonal from the true nearest to the click.
+- outside the grid: `status` "outside", nothing chosen.
+
+## 15. The cost surface and the browser's search (`export_landing.py`)
+
+The browser runs the search from any landing spot, so it gets exactly what the Python search uses, and the exact rule.
+
+### 15.1 Grids
+
+`time_rate.f64` (minutes per metre, −1 where blocked), `risk_rate.f64` (risk-minutes per minute walked, 0 where blocked) and `mask.u8` (0 passable, else the blocked reason 1–5 of section 4.9) are `cost.build`'s `time_rate`, `risk_rate` and the block codes, bit for bit. They are float64 so the browser computes the same numbers: rounding them to float32 would change paths. They do not depend on the profile; only w does. They are written once, not per profile, and the browser forms the planning rate itself.
+
+### 15.2 The edge rule (what `MCP_Geometric` does here, checked bit for bit)
+
+For profile weight w (fastest 0, balanced 1, safest 5):
+
+1. Planning rate per cell, in float64: `p = time_rate × (1 + w × risk_rate)`, multiplied in that order (`w × risk_rate`, then `1 +`, then `time_rate ×`). Cells with `mask ≠ 0` are impassable.
+2. Neighbours: the 8 cells around the current one (`search.connectivity` = 8). A neighbour outside the window, or with `mask ≠ 0`, is never entered. No corner check is needed: the sealing rule (section 4.1) has already blocked every free cell that two diagonal blocked cells would squeeze.
+3. Step length `L`: `cell_m` for a straight step; `sqrt(cell_m × cell_m + cell_m × cell_m)` for a diagonal one. (This is how skimage builds it from `sampling`; it can differ from `cell_m × sqrt(2)` in the last bit.)
+4. Step cost from cell a to cell b: `L × (p_a + p_b) / 2`, evaluated as `L × (p_a + p_b)` then `/ 2`. The skimage docstring writes `(L/2)·p_a + (L/2)·p_b`, which differs in the last bit; the form here is the one that matches.
+5. Dijkstra from the landing cell, cost 0. A neighbour is updated only when `g + step < g_neighbour` (strictly less).
+6. The path is the chain of predecessors from the destination back to the landing cell, reversed.
+
+`tests/replay.py` is a plain Dijkstra written only from these six lines. On random grids and on the export, its cumulative costs equal `MCP_Geometric.find_costs` exactly, for every reachable cell and all three profiles (`test_export_landing.py::test_the_edge_rule_reproduces_mcp_cumulative_costs_bit_for_bit`). Paths agree unless two paths cost exactly the same, which does not happen in the golden cases. On ties the two heaps may pick differently, and both answers are optimal.
+
+### 15.3 Totals along a path
+
+Taken after the path is found, in path order from the landing cell, in float64, as `search.summarise` defines them (section 4.3). Here `step_m` is `cell_m` straight and `cell_m × sqrt(2)` diagonal:
+
+```
+distance_m += step_m
+walk_min   += step_m × (time_rate_a + time_rate_b) / 2
+risk_min   += step_m × (time_rate_a × risk_rate_a + time_rate_b × risk_rate_b) / 2
+```
+
+`walk_min` is physical time: risk never inflates it. `summarise` adds the three risk parts separately, so its `risk_min` can differ from this single sum in the last digits; golden totals are compared within 1e-9 relative.
+
+### 15.4 Reference route and golden cases
+
+`export_landing.route(landing_xy, dest_xy, profile)` gives the output the front end will produce: a GeoJSON Feature with a `LineString` of cell centres (`[x, y]` metres, landing first) and `profile`, `w`, `reachable`, `reason`, `reason_text`, `distance_m`, `walk_min`, `risk_min`, `needed_min`, `over_budget`, `landing_cell`, `dest_cell` and `cells` (`[row, col]` in window cells). With no path the geometry is null and `reason` is a mask code (1–5) for a blocked destination, 6 for walled off, `"outside"` for a point outside the window, or `"landing_blocked"`.
+
+`golden_cases.json`: 10 landing/destination pairs between real safe cells × 3 profiles, computed by that function. The landing spots are the nearest safe cells to a 3 x 3 lattice over the window (1/6, 1/2, 5/6 of each side), each paired with the spot half the list away. There are 8 ordinary pairs, one destination that is passable but walled off from the first spot (or a blocked cell if none is walled off; on a site where every cell is reachable the case is left out and `skipped` says why), and one over-budget case. No walk on a 2 km site comes near the 212 min limit, so the over-budget case is the longest pair under its own smaller test budget, stored in the case: the same rule with an `eva_max_min` that leaves about half of that walk.
+
+### 15.5 Over budget (unchanged from the old reach export)
+
+```
+usable_min        = eva_max_min × (1 − reserve_pct / 100)                       252 with the current values
+stop_min          = timeline.stop_min_default if budget.destination_stop else 0  25
+walk_limit_min    = usable_min − ingress_min − stop_min                         252 − 15 − 25 = 212
+needed_min        = walk_min + ingress_min + stop_min                           for one destination
+```
+
+One way only: no return walk is counted. A destination is over budget when `needed_min > usable_min`, i.e. when `walk_min > walk_limit_min`. The manifest carries every number and the rule text.
+
+## 16. Files, window and tiles
+
+```
+data/out/landing/
+  manifest.json
+  golden_cases.json
+  tiles/<ti>_<tj>/landing_safety.u8  landing_warn.u8  nearest_safe.u16  nearest_safe_dist.f32
+                  time_rate.f64  risk_rate.f64  mask.u8
+```
+
+| File | Type | Values per cell |
+| --- | --- | --- |
+| `landing_safety.u8` | uint8 | the code of section 14.2 |
+| `landing_warn.u8` | uint8 | warning bits (14.2) |
+| `nearest_safe.u16` | uint16 | 2: `[2i]` = row, `[2i+1]` = col of the nearest safe cell, in **window** rows/cols (not tile rows/cols) |
+| `nearest_safe_dist.f32` | float32 | metres, cell centre to cell centre |
+| `time_rate.f64`, `risk_rate.f64` | float64 | 15.1 |
+| `mask.u8` | uint8 | 15.1 |
+
+Raw values, no header, little-endian, row-major inside each tile, row 0 = the tile's north edge. The u16 limits a window to 65,536 cells a side, enough for a 9,000 x 9,000 cell crater grid.
+
+**Window.** `landing.window_centre_m` ("site" or `[x, y]`) and `landing.window_size_m` ("full" or `[width, height]`, metres) pick the exported box, snapped outward to whole cells; it must lie inside the site grid. The defaults ("site", "full") give the whole site grid. Safety codes and the cost are computed on the whole site grid and then cut, so the pad, the clearance and the cliff buffer see cells just outside the window. `nearest_safe` is computed on the whole window before tiling, so it is right across tile edges; it never points outside the window. The browser only searches inside the window.
+
+**Tiles.** `landing.tile_size_m` (5120 m) must be a whole number of cells (1024 at 5 m); the window is cut into square tiles from its north-west corner, and the tiles on the south and east edges are smaller. With the defaults the current 400 x 400 site is one tile; a 9,000 x 9,000 grid at 5 m would be 9 x 9 tiles. Crater-scale processing is not built: the whole site grid is still loaded in memory. Only the formats and the functions are ready for it.
+
+**Manifest** (`manifest.json`): `format_version` (1), `site`, `fake` (same rule as `plan.json` `inputs_fake`); `grid` (`width`, `height`, `cell_m`, `origin_m` = the south-west corner of the window in site metres, `extent_m`, `row0` "north edge", `window` and `site_grid`); `layout` (cell formulas, tile lookup, the `nearest_safe` layout, the search bound); `byte_order` "little"; `grids` (file, dtype, values per cell, meaning); `tile_size_m`, `tile_cells`; `tiles` (per tile: `index` [ti, tj], `row0`, `col0`, `shape` [rows, cols], `origin_m`, `files`); `safety_codes`, `safety_order`, `safety_counts`, `warning_bits`, `landing_rule`; `thresholds` (the `[landing]` entries of the config with value, unit, type and source); `roughness_source`, `roughness_note` (the scale caveat), `height_range_note` (a team assumption); `thermal_inertia` (checked or not, and why); `mask_codes`; `profiles` (w); `search` (connectivity and the edge rule of 15.2–15.3); `budget` (15.5); `golden_cases`; `config_sha256`; `inputs_sha256` (`dem.tif`, `hazard.tif`, and `thermal_inertia.tif` when used); `files` (bytes and SHA-256 of every file); `warnings`. There is no timestamp: the same inputs give the same bytes.
+
+**Size on the current site:** 160,000 bytes for each u8 grid, 640,000 for `nearest_safe.u16` and `nearest_safe_dist.f32`, 1,280,000 for each f64 grid, plus 174,508 bytes of golden cases and 11,974 of manifest: **4,506,482 bytes (4.51 MB) in 9 files**, against 19.2 MB for the old reach export. The grids scale with the number of cells: 25 bytes per cell.

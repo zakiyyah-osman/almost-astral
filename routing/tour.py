@@ -1,10 +1,15 @@
 """Waypoints, stop order and the three profile routes (DESIGN sections 4.6 and 4.7).
 
-The tour is rover -> stops -> rover. The stop order is chosen once, on the balanced planning
-cost, and used for all three profiles; the profiles differ only in the risk weight w.
+The tour is start -> stops -> start. The start comes from the command line (--start x,y) or, without
+it, is the demo start: the safe landing cell nearest the grid centre (landing.py). Its id is always
+"start". A waypoint of kind 'start' (or the old 'rover', read as 'start' with a deprecation
+warning) is never used as the start; it only gives a warning that it is ignored. The stop order is chosen
+once, on the balanced planning cost, and used for all three profiles; the profiles differ only
+in the risk weight w.
 """
 import itertools
 import json
+import logging
 import math
 import numbers
 from dataclasses import dataclass
@@ -16,8 +21,15 @@ from config import Config, ConfigError
 from cost import Cost
 from grid import WAYPOINTS_FILE, Grid, GridError
 from search import NoPath, PathSummary, Searcher, path_profile
+import start as start_mod
 
-KIND_ROVER, KIND_STOP = "rover", "stop"
+log = logging.getLogger(__name__)
+log.addHandler(logging.NullHandler())       # no stderr fallback: the command line prints each warning once
+
+KIND_START, KIND_STOP = "start", "stop"
+KIND_ROVER = "rover"            # deprecated name for KIND_START, still accepted
+KINDS = (KIND_START, KIND_STOP, KIND_ROVER)
+START_NAME = "Start"
 ORDER_MODES = ("as_listed", "optimise")
 PROFILES = (
     ("fastest", "profiles.w_fastest"),
@@ -28,7 +40,14 @@ TIE_TOL = 1e-9          # relative slack when two stop orders cost the same
 
 
 class RouteError(ConfigError):
-    """The waypoints cannot be turned into a tour (bad file, blocked or unreachable stop)."""
+    """The waypoints cannot be turned into a tour (bad file, blocked or unreachable stop).
+
+    `waypoint_id` names the start or stop that failed, when the failure is about one.
+    """
+
+    def __init__(self, message, waypoint_id=None):
+        super().__init__(message)
+        self.waypoint_id = waypoint_id
 
 
 @dataclass(frozen=True)
@@ -39,6 +58,11 @@ class Waypoint:
     x: float
     y: float
     cell: tuple             # (row, col) of the cell containing (x, y)
+    deprecated_kind: object = None      # 'rover' when the file used the old kind name
+    landing_id: object = None           # always None now (kept for the plan.json start.landing_id key)
+    start_kind: object = None           # the start only: "cli" (--start) or "demo" (demo start)
+    landing_status: object = None       # the start only: its landing-safety code name (landing.py)
+    label: object = None                # the start only: how messages name it ("demo start", "start (--start)")
 
     def describe(self):
         return f"{self.kind} {self.id!r} ({self.name}) at ({self.x:g}, {self.y:g}) m"
@@ -53,13 +77,13 @@ class Leg:
 
 @dataclass(frozen=True)
 class Route:
-    """One profile's route: rover -> stops -> rover."""
+    """One profile's route: start -> stops -> start."""
 
     profile: str
     w: float
     order: tuple            # stop ids in visiting order
     legs: tuple
-    cells: tuple            # whole route as cells, rover to rover, no repeated joints
+    cells: tuple            # whole route as cells, start to start, no repeated joints
 
     def _sum(self, field):
         return float(sum(getattr(leg.path, field) for leg in self.legs))
@@ -74,7 +98,7 @@ class Route:
 
 @dataclass(frozen=True)
 class TourPlan:
-    rover: Waypoint
+    start: Waypoint
     order: tuple            # stops in visiting order (Waypoint objects)
     mode: str               # the mode actually used
     routes: dict            # profile name -> Route
@@ -96,7 +120,10 @@ def _number(v):
 
 
 def load_waypoints(folder, grid: Grid):
-    """All waypoints in file order, each snapped to its cell. Exactly one must be the rover."""
+    """All waypoints in file order, each snapped to its cell.
+
+    Kind 'rover' is read as 'start' and logs a deprecation warning (see deprecation_warnings).
+    """
     path = Path(folder) / WAYPOINTS_FILE
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -123,10 +150,17 @@ def load_waypoints(folder, grid: Grid):
         if not isinstance(props, dict) or not isinstance(props.get("id"), str) or not props["id"]:
             raise RouteError(f"{where}: needs a text id")
         wid = props["id"]
-        if props.get("kind") not in (KIND_ROVER, KIND_STOP):
-            raise RouteError(f"{where} ({wid!r}): kind must be 'rover' or 'stop', got {props.get('kind')!r}")
+        kind = props.get("kind")
+        if kind not in KINDS:
+            raise RouteError(
+                f"{where} ({wid!r}): kind must be 'start' or 'stop' (or the old 'rover'), got {kind!r}"
+            )
         if wid in seen:
             raise RouteError(f"{WAYPOINTS_FILE}: id {wid!r} appears twice")
+        if kind == KIND_STOP and wid == start_mod.START_ID:
+            raise RouteError(
+                f"{where}: a stop cannot use the id {wid!r}, which is the id of the start; give it another id"
+            )
         seen.add(wid)
         name = props.get("name")
         name = name if isinstance(name, str) and name else wid
@@ -134,54 +168,120 @@ def load_waypoints(folder, grid: Grid):
         try:
             cell = grid.xy_to_cell(x, y)
         except GridError as e:
-            raise RouteError(f"{props['kind']} {wid!r} ({name}): {e}") from None
-        waypoints.append(Waypoint(wid, name, props["kind"], x, y, cell))
+            raise RouteError(f"{kind} {wid!r} ({name}): {e}") from None
+        deprecated = None
+        if kind == KIND_ROVER:
+            deprecated, kind = KIND_ROVER, KIND_START
+            log.warning(_deprecation_message(wid))
+        waypoints.append(Waypoint(wid, name, kind, x, y, cell, deprecated))
     return waypoints
 
 
+def _deprecation_message(wid):
+    return (
+        f"{WAYPOINTS_FILE}: waypoint {wid!r} uses kind 'rover', which is deprecated; "
+        "it is read as 'start'. Please change it to 'start'."
+    )
+
+
+def deprecation_warnings(waypoints):
+    """One message per waypoint that used a deprecated kind (for plan.json warnings)."""
+    return tuple(_deprecation_message(w.id) for w in waypoints if w.deprecated_kind)
+
+
 def split_waypoints(waypoints):
-    """(rover, stops). Exactly one rover and at least one stop are required."""
-    rovers = [w for w in waypoints if w.kind == KIND_ROVER]
+    """(start waypoint or None, stops). At most one start and at least one stop are required.
+
+    The start waypoint is never used as the start (choose_start); it is only reported as ignored.
+    """
+    starts = [w for w in waypoints if w.kind == KIND_START]
     stops = [w for w in waypoints if w.kind == KIND_STOP]
-    if len(rovers) != 1:
-        raise RouteError(f"exactly one waypoint of kind 'rover' is required, found {len(rovers)}")
+    if len(starts) > 1:
+        raise RouteError(
+            f"at most one waypoint of kind 'start' (or the old 'rover') is allowed, found {len(starts)}"
+        )
     if not stops:
         raise RouteError("at least one waypoint of kind 'stop' is required, found none")
-    return rovers[0], stops
+    return (starts[0] if starts else None), stops
+
+
+DEMO_LABEL, CLI_LABEL = "demo start", "start (--start)"
+UNVERIFIED_STOPS = (
+    f"the stops in {WAYPOINTS_FILE} are unverified (Zakiyyah's file, not yet confirmed as real science "
+    "targets): treat this outing plan as a demonstration"
+)
+
+
+def choose_start(cfg: Config, site, cost: Cost, start_xy=None, waypoint=None):
+    """(the start Waypoint, warnings).
+
+    With `start_xy` ((x, y) metres, from --start) that point is the start. Without it the start is
+    the demo start: the centre of the safe landing cell nearest the grid centre (landing.py, on
+    the whole site grid). Either way the cell must be passable (start.check_start); careful ground
+    gives a warning, and so does a --start point that is not a safe or marginal landing spot. A
+    start waypoint in waypoints.geojson is ignored, with a warning.
+    """
+    import landing as landing_mod
+    rules = landing_mod.Rules.from_config(cfg)
+    codes = landing_mod.classify(landing_mod.measure(site.dem, site.slope, site.hazard, cost, rules), rules)
+    warnings = []
+    grid = cost.grid
+    if start_xy is None:
+        kind, name, label = "demo", "Demo start", DEMO_LABEL
+        rows, cols, _ = landing_mod.nearest_safe(codes, grid.cell_m)
+        centre = grid.xy_to_cell(grid.extent_m[0] / 2.0, grid.extent_m[1] / 2.0)
+        cell = (int(rows[centre]), int(cols[centre]))
+        x, y = grid.cell_centre(*cell)
+        warnings.append(
+            f"no --start given: the walk starts at the demo start ({x:g}, {y:g}) m, the safe landing cell "
+            "nearest the grid centre"
+        )
+    else:
+        kind, name, label = "cli", START_NAME, CLI_LABEL
+        x, y = float(start_xy[0]), float(start_xy[1])
+        cell = start_mod.start_cell(grid, (x, y), name=label)
+    warnings.extend(start_mod.check_start(cost, cell, (x, y), site.hazard, label))
+    status = landing_mod.CODE_NAMES[int(codes[cell])]
+    if kind == "cli" and int(codes[cell]) not in landing_mod.ACCEPTED:
+        warnings.append(f"{label} ({x:g}, {y:g}) m is not a safe landing spot: landing safety '{status}'")
+    if waypoint is not None:
+        msg = (
+            f"{WAYPOINTS_FILE} has a start waypoint {waypoint.id!r} at ({waypoint.x:g}, {waypoint.y:g}) m; it is "
+            "ignored: the start comes from --start or the demo start"
+        )
+        log.warning(msg)
+        warnings.append(msg)
+    return Waypoint(
+        start_mod.START_ID, name, KIND_START, x, y, (int(cell[0]), int(cell[1])),
+        start_kind=kind, landing_status=status, label=label,
+    ), tuple(warnings)
 
 
 def block_reason(cost: Cost, cell):
     """Why a cell is blocked, in words, or None if it is passable."""
-    if not cost.blocked[cell]:
-        return None
-    r = cost.reasons
-    for key, text in (
-        ("nodata", "no DEM data"),
-        ("red", "red hazard cell"),
-        ("slope", f"slope over the limit ({cost.params.slope_max_deg:g} deg)"),
-        ("buffer", f"inside the {cost.params.cliff_buffer_m:g} m buffer around over-limit slopes"),
-        ("sealed", "sealed gap between blocked cells"),
-    ):
-        if r[key][cell]:
-            return text
-    return "blocked"
+    code = start_mod.block_code(cost, cell)
+    return None if code == start_mod.REACHABLE else start_mod.reason_text(code, cost.params)
 
 
-def check_waypoints(cost: Cost, rover: Waypoint, stops, searcher: Searcher):
-    """Fail by name if the rover or a stop is on a blocked cell, or a stop cannot be reached."""
-    for wp in [rover, *stops]:
+def check_waypoints(cost: Cost, start: Waypoint, stops, searcher: Searcher):
+    """Fail by name if the start or a stop is on a blocked cell, or a stop cannot be reached.
+
+    A blocked start raises start.StartError; a stop problem raises RouteError naming the stop.
+    """
+    start_mod.check_start(cost, start.cell, (start.x, start.y), name=start.label)
+    for wp in stops:
         reason = block_reason(cost, wp.cell)
         if reason:
-            raise RouteError(f"{wp.describe()} is on a blocked cell: {reason}")
-    tree = searcher.tree(rover.cell)
+            raise RouteError(f"{wp.describe()} is on a blocked cell: {reason}", wp.id)
+    tree = searcher.tree(start.cell)
     for wp in stops:
         if not tree.reachable(wp.cell):
-            raise RouteError(f"{wp.describe()} cannot be reached from the rover: no passable path")
+            raise RouteError(f"{wp.describe()} cannot be reached from the start: no passable path", wp.id)
 
 
 # ---- stop order --------------------------------------------------------------
-def _tour_cost(searcher: Searcher, rover, order):
-    chain = [rover, *order, rover]
+def _tour_cost(searcher: Searcher, start, order):
+    chain = [start, *order, start]
     return sum(searcher.planning_cost(a.cell, b.cell) for a, b in zip(chain, chain[1:]))
 
 
@@ -192,7 +292,7 @@ def cost_matrix(searcher: Searcher, waypoints):
     return [[float(tree.planning_cost[cell]) for cell in cells] for tree in trees]
 
 
-def stop_order(searcher: Searcher, rover: Waypoint, stops, mode):
+def stop_order(searcher: Searcher, start: Waypoint, stops, mode):
     """Stops in visiting order. `searcher` carries the balanced risk weight.
 
     as_listed keeps the file order. optimise tries every order and keeps the cheapest tour on
@@ -205,7 +305,7 @@ def stop_order(searcher: Searcher, rover: Waypoint, stops, mode):
     stops = list(stops)
     if mode == "as_listed":
         return stops
-    matrix = cost_matrix(searcher, [rover, *stops])      # index 0 is the rover, i + 1 is stops[i]
+    matrix = cost_matrix(searcher, [start, *stops])      # index 0 is the start, i + 1 is stops[i]
     best, best_cost = stops, math.inf
     for perm in itertools.permutations(range(len(stops))):       # file order comes first
         order = [stops[i] for i in perm]
@@ -216,7 +316,7 @@ def stop_order(searcher: Searcher, rover: Waypoint, stops, mode):
     return best
 
 
-def choose_order(searcher: Searcher, rover: Waypoint, stops, mode, max_stops):
+def choose_order(searcher: Searcher, start: Waypoint, stops, mode, max_stops):
     """stop_order with the stop limit: optimise over more than `max_stops` stops uses as_listed."""
     if mode not in ORDER_MODES:
         raise ConfigError(f"stop order mode must be one of {', '.join(ORDER_MODES)}, got {mode!r}")
@@ -228,7 +328,7 @@ def choose_order(searcher: Searcher, rover: Waypoint, stops, mode, max_stops):
             f"stop order 'optimise' skipped: {len(stops)} stops is more than the limit of "
             f"{max_stops}; the order in waypoints.geojson is used",
         )
-    return OrderChoice(tuple(stop_order(searcher, rover, stops, used)), used, mode, warnings)
+    return OrderChoice(tuple(stop_order(searcher, start, stops, used)), used, mode, warnings)
 
 
 # ---- clock along a route -----------------------------------------------------
@@ -238,7 +338,7 @@ class RouteClock:
 
     distance_m: np.ndarray      # cumulative distance from the start
     walk_min: np.ndarray        # cumulative physical walking minutes
-    elapsed_min: np.ndarray     # clock since leaving the rover: walking + time at stops already done
+    elapsed_min: np.ndarray     # clock since leaving the start: walking + time at stops already done
     arrival_index: dict         # stop id -> index of the route cell where the crew arrives
 
 
@@ -246,7 +346,7 @@ def route_clock(cost: Cost, route: "Route", stop_min):
     """The clock along a route. Time at a stop counts from the cell after the arrival cell."""
     distance, walk = path_profile(cost, route.cells)
     arrivals, at = {}, 0
-    for leg in route.legs[:-1]:                      # the last leg returns to the rover
+    for leg in route.legs[:-1]:                      # the last leg returns to the start
         at += len(leg.path.cells) - 1
         arrivals[leg.to_id] = at
     done = np.zeros(len(route.cells))
@@ -266,33 +366,33 @@ def sample_indices(distance_m, spacing_m):
 
 
 # ---- routes ------------------------------------------------------------------
-def build_route(searcher: Searcher, rover: Waypoint, order, profile):
-    """The route rover -> order -> rover at the searcher's risk weight."""
-    chain = [rover, *order, rover]
+def build_route(searcher: Searcher, start: Waypoint, order, profile):
+    """The route start -> order -> start at the searcher's risk weight."""
+    chain = [start, *order, start]
     legs, cells = [], []
     for a, b in zip(chain, chain[1:]):
         try:
             path = searcher.path(a.cell, b.cell)
         except NoPath as e:
-            raise RouteError(f"no route from {a.id!r} to {b.id!r}: {e}") from None
+            raise RouteError(f"no route from {a.id!r} to {b.id!r}: {e}", b.id) from None
         legs.append(Leg(a.id, b.id, path))
         cells.extend(path.cells if not cells else path.cells[1:])
     return Route(profile, searcher.w, tuple(s.id for s in order), tuple(legs), tuple(cells))
 
 
-def plan_routes(cost: Cost, rover: Waypoint, stops, cfg: Config, mode=None):
+def plan_routes(cost: Cost, start: Waypoint, stops, cfg: Config, mode=None):
     """The three profile routes, sharing one stop order chosen on the balanced cost."""
     mode = cfg.value("timeline.stop_order") if mode is None else mode
     connectivity = cfg.value("search.connectivity")
     searchers = {
         name: Searcher(cost, cfg.value(key), connectivity) for name, key in PROFILES
     }
-    check_waypoints(cost, rover, stops, searchers["balanced"])
+    check_waypoints(cost, start, stops, searchers["balanced"])
     choice = choose_order(
-        searchers["balanced"], rover, stops, mode, cfg.value("timeline.optimise_max_stops")
+        searchers["balanced"], start, stops, mode, cfg.value("timeline.optimise_max_stops")
     )
-    routes = {name: build_route(s, rover, choice.order, name) for name, s in searchers.items()}
+    routes = {name: build_route(s, start, choice.order, name) for name, s in searchers.items()}
     return TourPlan(
-        rover=rover, order=choice.order, mode=choice.mode, routes=routes,
+        start=start, order=choice.order, mode=choice.mode, routes=routes,
         requested_mode=choice.requested_mode, warnings=choice.warnings,
     )

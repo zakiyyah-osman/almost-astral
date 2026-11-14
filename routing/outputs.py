@@ -26,7 +26,17 @@ ROUTE_FILES = {
     "safest": "route_safest.geojson",
 }
 ROUTE_SOURCE = "routing model over dem.tif and hazard.tif"
+START_SOURCES = {
+    "cli": "command line: plan_route.py --start x,y",
+    "demo": ("demo start: the safe landing cell nearest the grid centre (routing/landing.py, [landing] "
+             "thresholds in routing/config.toml); no --start was given"),
+}
 COORD_DECIMALS = 3          # metres; cell centres can be fractions of a metre on a fine grid
+
+
+def inputs_fake(layers):
+    """True while any layer `source` in layers.json contains FAKE (plan.json inputs_fake, reach.json fake)."""
+    return any("FAKE" in str(layer.get("source", "")) for layer in layers.get("layers", []))
 
 
 def r1(x):
@@ -61,7 +71,7 @@ def cells_to_xy(grid: Grid, cells):
 
 # ---- route files -------------------------------------------------------------
 def route_geojson(route: Route, grid: Grid):
-    """A FeatureCollection with one LineString: the whole walk, rover to stops and back."""
+    """A FeatureCollection with one LineString: the whole walk, start to stops and back."""
     return {
         "type": "FeatureCollection",
         "features": [{
@@ -122,8 +132,11 @@ def _storm(rep: StormReplan, grid: Grid):
 
 
 def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines: dict,
-               storm: StormReplan, legend: dict, rad: RadiationInfo, warnings):
-    """The plan.json dictionary. `timelines` maps profile name to Timeline; balanced is the plan."""
+               storm: StormReplan, legend: dict, rad: RadiationInfo, warnings, sweep):
+    """The plan.json dictionary. `timelines` maps profile name to Timeline; balanced is the plan.
+
+    `sweep` is the list of w-sweep rows from analysis.sweep (the time against risk-exposure table).
+    """
     tl: Timeline = timelines["balanced"]
     walk, stop, ingress = whole(tl.walk_min), whole(tl.stop_min), whole(tl.ingress_min)
     profiles = {}
@@ -136,7 +149,7 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
             "steep_min": r1(route.steep_min), "near_red_min": r1(route.near_red_min),
             "total_min": r1(t.total_min), "status": t.status,
         }
-    fake = any("FAKE" in str(layer.get("source", "")) for layer in layers.get("layers", []))
+    fake = inputs_fake(layers)
     return {
         "crew": cfg.value("crew.size"),
         "legs": [_leg(t) for t in tl.legs],
@@ -156,6 +169,7 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
             "order": [s.id for s in tour.order], "warnings": list(tour.warnings),
         },
         "profiles": profiles,
+        "sweep": [dict(row) for row in sweep],
         "track": [_track(p) for p in tl.track],
         "storm_replan": _storm(storm, grid),
         "shelter_map": legend,
@@ -166,6 +180,13 @@ def build_plan(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines:
             "solar_event": rad.solar_event,
         },
         "assumptions": cfg.assumptions(),
+        "start": {
+            "id": tour.start.id, "name": tour.start.name, "landing_id": tour.start.landing_id,
+            "xy_m": xy((tour.start.x, tour.start.y)), "cell": [int(v) for v in tour.start.cell],
+            "source": START_SOURCES.get(tour.start.start_kind, "set in code"),
+            "kind": tour.start.start_kind,
+            "landing_status": tour.start.landing_status,
+        },
         "inputs": {
             "site": layers.get("site", {}).get("name"),
             "grid": {"width": grid.width, "height": grid.height, "cell_m": grid.cell_m},
@@ -196,7 +217,7 @@ def png_bytes(minutes, colour_max_min, interval_min):
 
 
 def render_outputs(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timelines: dict,
-                   storm: StormReplan, shelter_minutes, legend: dict, rad: RadiationInfo, warnings):
+                   storm: StormReplan, shelter_minutes, legend: dict, rad: RadiationInfo, warnings, sweep):
     """Every output file as {file name: bytes}. Nothing is written here."""
     files = {
         name: dumps(route_geojson(tour.routes[profile], grid)).encode("utf-8")
@@ -206,7 +227,7 @@ def render_outputs(cfg: Config, grid: Grid, layers: dict, tour: TourPlan, timeli
         shelter_minutes, cfg.value("shelter_map.colour_max_min"), cfg.value("shelter_map.contour_interval_min")
     )
     files[PLAN_FILE] = dumps(
-        build_plan(cfg, grid, layers, tour, timelines, storm, legend, rad, warnings)
+        build_plan(cfg, grid, layers, tour, timelines, storm, legend, rad, warnings, sweep)
     ).encode("utf-8")
     return files
 
@@ -216,5 +237,7 @@ def write_files(out_dir, files):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
-        (out_dir / name).write_bytes(data)
+        path = out_dir / name                   # a name may hold folders: "tiles/0_0/mask.u8"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
     return [out_dir / name for name in files]
