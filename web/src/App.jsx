@@ -12,6 +12,7 @@ import ModeCompare from './components/ModeCompare.jsx'
 import Icon from './components/Icon.jsx'
 import Tag from './components/Tag.jsx'
 import MineralKey from './components/MineralKey.jsx'
+import { MINERAL_CLASSES } from './lib/research.js'
 import { buildTimeline, doseTotal, parseTable, radiationModel } from './hud/sim.js'
 import { useTerrain, mineralAt } from './lib/useTerrain.js'
 import { PROFILES, timeField } from './lib/pathfind.js'
@@ -101,6 +102,7 @@ export default function App() {
   const [sideShut, setSideShut] = useState(() => stored('aa.sidebarShut', false))
   const [dragging, setDragging] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [mineralsShown, setMineralsShown] = useState([]) // minerals switched on in the Minerals card; none until picked
   const visor = visorOn && view === 'hud'
 
   useEffect(() => {
@@ -769,6 +771,7 @@ export default function App() {
                             <input type="range" min="0" max="1" step="0.05" value={layerState[l.id]?.opacity ?? 1} onChange={(e) => update(l.id, { opacity: Number(e.target.value) })} aria-label={`${l.title} opacity`} />
                           </label>
                         )}
+                        {on && l.id === 'minerals' && l.research && <MineralKey shown={mineralsShown} onChange={setMineralsShown} traced={l.research.traced} />}
                       </div>
                     )
                   })}
@@ -884,6 +887,7 @@ export default function App() {
             selectedStop={selectedStop}
             onSelectStop={selectStop}
             astronaut={view === 'hud' ? astronaut : null}
+            mineralsShown={layerState.minerals?.on ? mineralsShown : []}
             layoutKey={`${view}-${large}-${visor}`}
             sizeKey={`${shut}-${sideW}`}
           />
@@ -972,7 +976,7 @@ export default function App() {
                 </div>
               ))}
             {layerState.minerals?.on &&
-              (mineralLayer?.legend ?? []).map((e) => (
+              (mineralLayer?.research ? MINERAL_CLASSES.filter((c) => mineralsShown.includes(c.id)).map((c) => ({ label: c.short, color: c.color })) : mineralLayer?.legend ?? []).map((e) => (
                 <div key={e.label}>
                   <i style={{ background: e.color }} />
                   {e.label}
@@ -1031,7 +1035,6 @@ export default function App() {
               </div>
             )}
           </div>
-          {layerState.research?.on && <MineralKey hasMap={!!data.layers.find((l) => l.id === 'research')?.file} />}
         </div>
         {view === 'hud' && <HudView key={hudKey} data={hudData} onPosition={setAstronaut} large={large} onLarge={setLarge} visor={visor} onVisor={setVisor} />}
       </main>
