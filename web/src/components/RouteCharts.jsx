@@ -56,7 +56,7 @@ function LineChart({ series, unit, marks, area, domain, limits = [], strip, hove
       ))}
       {marks.map((m) => (
         <g key={`${m.id}-${m.d}`}>
-          <line x1={x(m.d)} x2={x(m.d)} y1={PAD.t} y2={base} className={m.rover ? 'mark rover' : 'mark'} />
+          <line x1={x(m.d)} x2={x(m.d)} y1={PAD.t} y2={base} className={m.home ? 'mark home' : 'mark'} />
           {m.label && <text x={x(m.d)} y={PAD.t + 6} textAnchor="middle" className="tick mark-label">{m.label}</text>}
         </g>
       ))}
@@ -73,7 +73,8 @@ function LineChart({ series, unit, marks, area, domain, limits = [], strip, hove
 
 // Height, slope (with the limits), minutes back to the start and the hazard class along the active
 // route, then the outing timeline against the time allowance. All from the active route.
-export default function RouteCharts({ plan, waypoints, route, track, limits, onProbe, hazardNote }) {
+// homeWord: where "back to" points, e.g. "the landing" (My mission) or "the start" (Team outing).
+export default function RouteCharts({ plan, waypoints, route, track, limits, onProbe, hazardNote, homeWord = 'the landing' }) {
   const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
   const [hover, setHover] = useState(null)
   if (!tl) return null
@@ -81,7 +82,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
   let stopNo = 0
   const marks = tl.segments
     .filter((s) => s.type === 'walk')
-    .map((s) => ({ id: s.to, d: s.d1, rover: s.to === tl.roverId, label: s.to === tl.roverId ? 'R' : waypoints.features.find((f) => f.properties.id === s.to)?.properties.kind === 'stop' ? String(++stopNo) : 'B' }))
+    .map((s) => ({ id: s.to, d: s.d1, home: s.to === tl.roverId, label: s.to === tl.roverId ? 'S' : waypoints.features.find((f) => f.properties.id === s.to)?.properties.kind === 'stop' ? String(++stopNo) : 'B' }))
   const maxMin = plan.budgets?.eva_max_min ?? Math.ceil(tl.totalMin)
   const axisMax = Math.max(maxMin, plan.totals.total_min)
   const slopeMax = Math.max(...(track ?? []).map((p) => p.slope).filter(Number.isFinite), limits.red)
@@ -127,7 +128,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
               height={100}
             />
             <p className="chart-title">
-              Minutes back to the start <Tag kind="calc" title="Fastest walk back from each point, plus the time to get into the rover, on the same terrain model" />
+              Minutes back to {homeWord} <Tag kind="calc" title="Fastest walk back from each point, plus the time to get into the lander, on routing's cost surface" />
             </p>
             <LineChart series={track.map((p) => ({ d: p.d, v: p.back }))} unit="minutes" marks={marks} hoverD={hover} onHover={setH} domain={[0, niceMax(Math.max(...track.map((p) => p.back).filter(Number.isFinite), 10))]} height={70} />
             <p className="muted chart-readout" aria-live="polite">
@@ -150,7 +151,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
             </div>
           ))}
           {plan.totals.ingress_min > 0 && (
-            <div className="seg ingress" style={{ left: `${(tl.totalMin / axisMax) * 100}%`, width: `${(plan.totals.ingress_min / axisMax) * 100}%` }} title={`Back into the rover: ${plan.totals.ingress_min} min`} />
+            <div className="seg ingress" style={{ left: `${(tl.totalMin / axisMax) * 100}%`, width: `${(plan.totals.ingress_min / axisMax) * 100}%` }} title={`Back into the lander: ${plan.totals.ingress_min} min`} />
           )}
           {plan.budgets?.usable_min && <div className="usable" style={{ left: `${(plan.budgets.usable_min / axisMax) * 100}%` }} title={`Usable time: ${plan.budgets.usable_min} min`} />}
         </div>
@@ -163,7 +164,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
           ))}
         </div>
         <p className="muted">
-          <i className="swatch walk" /> Walking <i className="swatch stop" /> At a stop (numbered) <i className="swatch ingress" /> Into the rover. The thin line is the usable time
+          <i className="swatch walk" /> Walking <i className="swatch stop" /> At a stop (numbered) <i className="swatch ingress" /> Into the lander. The thin line is the usable time
           ({plan.budgets?.usable_min} min: the {maxMin} min limit minus a {plan.budgets?.reserve_pct}% reserve). Ends at T+{clock(plan.totals.total_min)}, leaving{' '}
           {Math.round(maxMin - plan.totals.total_min)} min to the limit. Small times are local Mars time, leaving at 09:00 (an assumption).
         </p>

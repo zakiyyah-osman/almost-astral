@@ -11,7 +11,7 @@ export default function DataStatus({ data, terrain, params }) {
   }))
   rows.push({ name: 'Terrain heights (dem.tif)', kind: notes['dem.tif'] ? 'real' : 'fake', source: notes['dem.tif'] ?? 'No source given' })
   rows.push({
-    name: 'Routes, times, slopes, landing spots',
+    name: 'Routes, times, slopes',
     kind: 'calc',
     source: `Calculated in the app on the terrain heights, with the walking model and limits from ${params?.from ?? 'routing/config.toml'}. ${terrain?.hazardInterim ? 'Hazards: interim, from slope only.' : ''}`,
   })

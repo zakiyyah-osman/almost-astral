@@ -9,7 +9,8 @@ export default function MissionCard({ data, routeLabel }) {
   const arrival = {}
   for (const s of tl?.segments ?? []) if (s.type === 'walk') arrival[s.to] = s.t1
   const stops = waypoints.features.filter((f) => f.properties.kind === 'stop')
-  const rover = waypoints.features.find((f) => f.properties.kind === 'rover')
+  const startName = plan.start?.name ?? 'Landing'
+  const loop = plan.legs.at(-1)?.to === plan.legs[0]?.from // the team outing goes back; a mission is one way
   const names = Object.fromEntries(waypoints.features.map((f) => [f.properties.id, f.properties.name]))
   const walkedM = plan.legs.reduce((s, l) => s + l.distance_m, 0)
   const fake = data.layers.some((l) => l.source.startsWith('FAKE'))
@@ -20,7 +21,7 @@ export default function MissionCard({ data, routeLabel }) {
       {fake && <p className="mc-fake">Some layers are still placeholder data. Do not use this card for a real outing.</p>}
       {routeLabel && <p><b>Route: {routeLabel}.</b></p>}
       <p>
-        {stops.length ? `Two crew walk out from ${rover?.properties.name ?? 'the rover'} and back.` : 'Two crew walk from point A to point B.'} Outing {Math.round(plan.totals.total_min)} min of{' '}
+        {loop ? `Two crew walk out from ${startName} and back.` : `Two crew walk one way from ${startName} to ${names[plan.legs.at(-1)?.to] ?? 'the destination'}.`} Outing {Math.round(plan.totals.total_min)} min of{' '}
         {plan.budgets?.eva_max_min ?? '?'} allowed, walk {(walkedM / 1000).toFixed(1)} km, dose about {plan.radiation_dose_usv} µSv
         {plan.budgets?.radiation_limit_usv ? ` of ${plan.budgets.radiation_limit_usv} µSv allowed` : ''}.
       </p>
@@ -69,7 +70,7 @@ export default function MissionCard({ data, routeLabel }) {
 
       <h2>Turn back if</h2>
       <ul>
-        <li>A solar storm alert appears: stop sampling and take the shorter way back to the rover.</li>
+        <li>A solar storm alert appears: stop sampling and take the shorter way back to the {startName.toLowerCase()}.</li>
         <li>The outing time, oxygen or battery reaches its limit, or a suit fault or injury happens.</li>
       </ul>
 

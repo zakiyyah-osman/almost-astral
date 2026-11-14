@@ -23,6 +23,10 @@
   --pin-rover: #378add;
   --pin-landing: #2f9e74;
   --pin-quest: #e2679f; /* side quests: rose, kept apart from the orange stops */
+  /* landing pins: the colours of routing's landing_zones.png legend (manifest zones_png), fully opaque */
+  --pin-landing-safe: rgb(46, 160, 67);
+  --pin-landing-marginal: rgb(240, 170, 30);
+  --landing-moved: #9a9a9a; /* the original click of a moved landing and the line to the pin */
 
   --raise: #33261f; /* hover / selected surface one step above --panel-2 */
   --ease: cubic-bezier(0.22, 1, 0.36, 1); /* fast ease-out for state changes */
@@ -123,7 +127,7 @@ select:hover:not(:disabled) { border-color: var(--muted); }
 .chart .line-path { fill: none; stroke: var(--accent-strong); stroke-width: 1.6; stroke-linejoin: round; }
 .chart .area { fill: var(--accent-soft); stroke: none; }
 .chart .mark { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
-.chart .mark.rover { stroke: var(--ok); }
+.chart .mark.home { stroke: var(--ok); }
 .chart .window { fill: var(--accent-soft); }
 .timeline { position: relative; height: 18px; border-radius: 5px; background: var(--bg); border: 1px solid var(--border); overflow: hidden; }
 .timeline .seg { position: absolute; top: 0; bottom: 0; }
@@ -207,7 +211,6 @@ select:hover:not(:disabled) { border-color: var(--muted); }
   cursor: pointer;
   transition: transform 0.12s, box-shadow 0.12s;
 }
-.pin.rover { background: var(--pin-rover); }
 .pin.selected { transform: scale(1.25); box-shadow: 0 0 0 3px rgba(20, 10, 6, 0.65), 0 0 0 7px rgba(255, 255, 255, 0.45), 0 2px 6px rgba(0, 0, 0, 0.5); }
 
 .leaflet-tooltip.stop-label { padding: 2px 7px; border: 1px solid var(--border); border-radius: 5px; background: rgba(19, 14, 12, 0.9); color: var(--text); font-size: 0.75rem; font-weight: 600; white-space: nowrap; box-shadow: none; }
@@ -253,7 +256,6 @@ select:hover:not(:disabled) { border-color: var(--muted); }
 .map-legend i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
 .map-legend i.line { height: 0; border-top: 3px dashed #fff; border-radius: 0; width: 18px; }
 .map-legend i.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--pin-stop); border: 2px solid #fff; }
-.map-legend i.dot.rover { background: var(--pin-rover); margin-left: 6px; }
 .astro { display: block; width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 5px solid var(--ok); box-shadow: 0 0 0 7px rgba(94, 234, 212, 0.3), 0 2px 6px rgba(0, 0, 0, 0.5); }
 .astro.storm { border-color: var(--bad); box-shadow: 0 0 0 7px rgba(255, 107, 87, 0.35), 0 2px 6px rgba(0, 0, 0, 0.5); }
 
@@ -403,7 +405,7 @@ select:hover:not(:disabled) { border-color: var(--muted); }
 .ends { display: grid; gap: 6px; }
 .end-row { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: center; }
 .end-row .pin { width: 24px; height: 24px; font-size: 12px; cursor: default; }
-.end-row button, .landing-list button { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.end-row button { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .end-row button.active { background: var(--accent); color: #130e0c; border-color: var(--accent); }
 button.link { justify-self: start; border: 0; background: none; color: var(--accent-strong); font-size: 0.78rem; cursor: pointer; padding: 0; }
 button.link:disabled { color: var(--muted); cursor: default; }
@@ -420,10 +422,6 @@ button.link:disabled { color: var(--muted); cursor: default; }
 .safety-grid b { color: var(--text); text-align: right; font-weight: 600; }
 .budget { position: relative; }
 .budget i { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); opacity: 0.6; }
-.landing-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; font-size: 0.78rem; }
-.landing-list li { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 4px; border-radius: 8px; }
-.landing-list li.on { background: var(--accent-soft); }
-.landing-list .pin { width: 24px; height: 24px; cursor: default; }
 
 .tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 4px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px; cursor: help; }
 .tag.real { background: rgba(94, 234, 212, 0.16); color: var(--ok); }
@@ -673,3 +671,33 @@ body { -webkit-user-select: none; user-select: none; }
 input, textarea, [contenteditable], .coords b, .coords small, .point-head b { -webkit-user-select: text; user-select: text; }
 .coords { pointer-events: auto; }
 
+
+/* ---- landing choice (lib/landingCheck.js, LandingNotice.jsx) ---- */
+.pin.landing-safe { background: var(--pin-landing-safe); }
+.pin.landing-marginal { background: var(--pin-landing-marginal); color: #130e0c; }
+.map-legend i.dot.landing-safe { background: var(--pin-landing-safe); }
+.landing-x { display: block; width: 18px; height: 18px; position: relative; }
+.landing-x::before, .landing-x::after { content: ''; position: absolute; left: 7px; top: -1px; width: 4px; height: 20px; border-radius: 2px; background: var(--landing-moved); box-shadow: 0 0 0 1px rgba(20, 10, 6, 0.6); }
+.landing-x::before { transform: rotate(45deg); }
+.landing-x::after { transform: rotate(-45deg); }
+path.landing-move-line { stroke: var(--landing-moved); }
+.landing-status { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.78rem; line-height: 1.4; display: grid; gap: 4px; }
+.landing-status ul { margin: 0; padding-left: 16px; }
+.landing-status p { margin: 0; }
+.landing-status.ok { border-color: var(--pin-landing-safe); background: rgba(46, 160, 67, 0.12); }
+.landing-status.warn { border-color: var(--pin-landing-marginal); background: rgba(240, 170, 30, 0.12); }
+.landing-status.moved { border-color: var(--landing-moved); background: rgba(154, 154, 154, 0.12); }
+.landing-status.bad { border-color: var(--bad); background: rgba(255, 107, 87, 0.14); }
+.notice-backdrop { position: absolute; inset: 0; z-index: 900; display: grid; place-items: center; padding: 16px; background: rgba(10, 6, 4, 0.55); }
+.landing-notice { width: min(420px, 100%); display: grid; gap: 10px; padding: 16px; border: 1px solid var(--landing-moved); border-radius: 12px; background: var(--panel); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); font-size: 0.85rem; }
+.landing-notice h2 { margin: 0; font-size: 1rem; }
+.landing-notice ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.landing-notice .moved { margin: 0; font-weight: 600; }
+.landing-notice button { justify-self: end; padding: 6px 18px; border: 0; border-radius: 8px; background: var(--accent); color: #130e0c; font-weight: 700; cursor: pointer; }
+.landing-notice button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.leaflet-image-layer.pixelated { image-rendering: pixelated; } /* landing_zones.png: one pixel per 5 m cell, keep the cells crisp */
+
+/* over budget is a warning (routing's one-way budget), not a failure */
+.profiles button.warn { border-color: rgba(251, 191, 36, 0.6); }
+.profiles button em.warn { color: var(--warn); }
+.checks li.warn { color: var(--warn); font-weight: 600; }

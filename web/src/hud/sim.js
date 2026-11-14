@@ -2,7 +2,7 @@
 //
 // The astronaut follows the planned route. Time comes from plan.json: each leg
 // takes walk_min, then the crew samples at the stop. A solar storm can be
-// triggered at any moment; the astronaut then heads back to the rover: along the
+// triggered at any moment; the astronaut then heads back to the landing: along the
 // storm return path in plan.json when the planner gave one, otherwise the shorter
 // way back along the planned route, which is already known to avoid the hazards.
 //
@@ -11,7 +11,7 @@
 // hours and bad rows.
 
 // ASSUMPTIONS (not from NASA data). Replace with the limits in mission/brief.md.
-export const START_LOCAL_HOUR = 9 // the EVA leaves the rover at 09:00 local
+export const START_LOCAL_HOUR = 9 // the EVA leaves the start at 09:00 local
 export const BATTERY_MIN_PER_EVA = 1.5 // battery lasts 1.5 x the EVA time limit
 export const DUST_WARN_TAU = 1.5 // dust opacity above this triggers a dust alert
 
@@ -146,10 +146,11 @@ export function buildTimeline(plan, waypoints, route) {
   const byId = {}
   for (const f of waypoints.features) byId[f.properties.id] = f
   const name = (id) => byId[id]?.properties.name ?? (id === plan.start?.id ? plan.start.name : id)
-  // Home is the rover when there is one, otherwise where the walk starts (a walking-only plan starts at
-  // plan.start, id "start"). The last leg ends the outing (back home, or at a destination with a
-  // shelter), so it is never a sampling stop.
-  const roverId = waypoints.features.find((f) => f.properties.kind === 'rover')?.properties.id ?? plan.legs[0].from ?? ROVER_ID
+  // Home is where the walk starts: plan.start (routing's demo start, or the landing of a custom mission),
+  // else the first leg's start. A 'rover' waypoint is never used: there is no rover, only walking.
+  // (The field keeps its old name, roverId, for the HUD and the charts.) The last leg ends the outing
+  // (back home, or at a one-way destination), so it is never a sampling stop.
+  const roverId = plan.start?.id ?? plan.legs[0].from ?? ROVER_ID
   const homeIds = new Set([roverId, plan.legs[0].from])
   const isStop = (leg, i) => i < plan.legs.length - 1 && !homeIds.has(leg.to)
 
@@ -167,7 +168,7 @@ export function buildTimeline(plan, waypoints, route) {
   const stopMin = plan.totals?.stop_min ?? 0
 
   // Where each leg ends on the path: the nearest route point to the stop, moving forwards only.
-  // The last leg ends at the end of the route (back at the rover).
+  // The last leg ends at the end of the route (back at the start).
   const segments = []
   let t = 0
   let d = 0
@@ -217,7 +218,7 @@ export function stateAt(tl, t, storm) {
     }
   }
   if (storm && t >= storm.t) {
-    // Shorter way home: back the way we came, or on along the route to the rover.
+    // Shorter way home: back the way we came, or on along the route to the start.
     const back = storm.d <= tl.routeLen - storm.d
     const homeDist = back ? storm.d : tl.routeLen - storm.d
     const moved = Math.min((t - storm.t) * tl.speed, homeDist)

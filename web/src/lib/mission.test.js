@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { slopeDeg, hazardFromSlope } from './terrain.js'
-import { DEFAULT_PARAMS, buildCost, timeField } from './pathfind.js'
+import { DEFAULT_PARAMS, paramsFrom, timeField } from './pathfind.js'
+import { gridCost, realCost, readOutJson } from './testGrid.js'
 import { planOuting } from './outing.js'
 import { missionPoints, detourCosts, bestOrder, mineralTargets } from './mission.js'
 import { graticule } from './graticule.js'
@@ -9,36 +9,56 @@ import { xyToLatLon } from './geo.js'
 
 const P = { ...DEFAULT_PARAMS }
 
-function flat(W = 60, H = 60) {
-  const dem = new Float32Array(W * H)
-  const slope = slopeDeg(dem, W, H, 5)
-  return buildCost({ dem, slope, hazard: hazardFromSlope(slope), width: W, height: H, cellM: 5, params: P })
-}
+const flat = (W = 60, H = 60) => gridCost({ width: W, height: H })
 
-const mission = (quests, back = true) => ({ start: { x: 22, y: 22, name: 'Pad' }, quests, dest: { x: 272, y: 272, name: 'J0' }, back })
+const mission = (quests) => ({ start: { x: 22, y: 22, name: 'Pad' }, quests, dest: { x: 272, y: 272, name: 'J0' } })
 
-test('mission points: start, quests in order, destination, and back to the start when asked', () => {
+test('mission points: landing, quests in order, destination; one way, no walk back', () => {
   const pts = missionPoints(mission([{ x: 100, y: 50 }, { x: 50, y: 100, stopMin: 10 }]), 25)
-  assert.deepEqual(pts.map((p) => p.id), ['start', 'q1', 'q2', 'dest', 'start'])
+  assert.deepEqual(pts.map((p) => p.id), ['start', 'q1', 'q2', 'dest'])
+  assert.equal(pts[0].kind, 'start')
   assert.equal(pts[1].stopMin, 25)
   assert.equal(pts[2].stopMin, 10)
-  assert.equal(missionPoints(mission([], false), 25).length, 2)
-  assert.equal(missionPoints(mission([], false), 25)[1].stopMin, 0) // no stop time at a one-way end
+  assert.equal(pts[3].stopMin, 25) // the destination stop of routing's one-way budget
+  assert.equal(missionPoints(mission([]), 25).length, 2)
   assert.equal(missionPoints({ start: { x: 0, y: 0 }, quests: [] }, 25), null)
+})
+
+test('a mission to one destination needs exactly what routing says (golden pair1, every profile)', async () => {
+  const { cost } = await realCost()
+  const golden = readOutJson('landing/golden_cases.json')
+  const c = golden.cases.find((k) => k.id === 'pair1')
+  const params = paramsFrom(null, readOutJson('landing/manifest.json'))
+  const m = { start: { x: c.landing_xy_m[0], y: c.landing_xy_m[1] }, quests: [], dest: { x: c.dest_xy_m[0], y: c.dest_xy_m[1] } }
+  for (const [name, want] of Object.entries(c.results)) {
+    const r = planOuting(cost, missionPoints(m, params.stop_min_default), golden.profiles[name].w, params, { ingress: true })
+    assert.ok(Math.abs(r.plan.needed_min - want.needed_min) <= 1e-9 * want.needed_min, `${name}: ${r.plan.needed_min} vs ${want.needed_min}`)
+    assert.ok(Math.abs(r.plan.exact.distance_m - want.distance_m) <= 1e-9 * want.distance_m)
+    assert.equal(r.plan.over_budget, want.over_budget)
+  }
+})
+
+test('over budget is a warning on the time check', () => {
+  const cost = flat()
+  const r = planOuting(cost, missionPoints(mission([]), 25), 0, { ...P, usable_min: 30 }, { ingress: true })
+  assert.equal(r.plan.over_budget, true)
+  const time = r.plan.checks.find((k) => k.id === 'time')
+  assert.equal(time.ok, false)
+  assert.equal(time.level, 'warn')
 })
 
 test('each quest uses its own minutes on site', () => {
   const cost = flat()
-  const r = planOuting(cost, missionPoints(mission([{ x: 150, y: 150, stopMin: 7 }], false), 25), 1, P)
+  const r = planOuting(cost, missionPoints(mission([{ x: 150, y: 150, stopMin: 7 }]), 25), 1, P)
   assert.equal(r.ok, true)
-  assert.equal(r.plan.totals.stop_min, 7)
+  assert.equal(r.plan.totals.stop_min, 7 + 25) // the quest's own 7 min, and the destination's 25
 })
 
 test('detour cost: a quest on the way costs its stop time, one off the way costs more', () => {
   const cost = flat()
   const cache = new Map()
-  const on = detourCosts(cost, mission([{ x: 147, y: 147 }], false), 1, P, { cache })
-  const off = detourCosts(cost, mission([{ x: 272, y: 22 }], false), 1, P, { cache })
+  const on = detourCosts(cost, mission([{ x: 147, y: 147 }]), 1, P, { cache })
+  const off = detourCosts(cost, mission([{ x: 272, y: 22 }]), 1, P, { cache })
   assert.ok(Math.abs(on[0].min - 25) < 2, `on the way: ${on[0].min}`)
   assert.ok(off[0].min > on[0].min + 3)
   assert.ok(off[0].m > 50)
@@ -56,7 +76,7 @@ test('the leg cache gives the same plan as planning from scratch', () => {
 
 test('best order visits quests along the way instead of zig-zagging', () => {
   const cost = flat()
-  const m = mission([{ x: 222, y: 222 }, { x: 72, y: 72 }, { x: 147, y: 147 }], false)
+  const m = mission([{ x: 222, y: 222 }, { x: 72, y: 72 }, { x: 147, y: 147 }])
   assert.deepEqual(bestOrder(cost, m), [1, 2, 0])
 })
 

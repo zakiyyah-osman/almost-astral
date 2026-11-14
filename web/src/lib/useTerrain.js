@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { readDem } from './profile.js'
 import { slopeDeg, hazardFromSlope, hazardFromImage } from './terrain.js'
-import { buildCost, paramsFrom } from './pathfind.js'
+import { paramsFrom } from './pathfind.js'
 import { classifyPixel } from './routeCheck.js'
 
-// Loads the real grids the route-finder and the point readout need: heights (dem.tif), thermal
-// inertia values (thermal_inertia.tif), and the hazard and mineral images as pixels.
+// Loads the terrain grids the charts and the point readout need: heights (dem.tif), thermal
+// inertia values (thermal_inertia.tif), and the hazard and mineral images as pixels. Route finding
+// does not use these: its cost surface is routing's export (landingData.js).
 // While the hazard layer is still marked FAKE, routes use hazards from the real slope instead
 // (the limits in terrain/thresholds.toml), so a made-up map never steers the crew.
 
@@ -72,13 +73,13 @@ export function useTerrain(data) {
     const slope = slopeDeg(dem.data, width, height, cellM)
     const fromImage = !!hazardImg
     const hazard = fromImage ? hazardFromImage(hazardImg, width, height, classifyPixel) : hazardFromSlope(slope, 10, params.slope_max_deg)
-    const cost = buildCost({ dem: dem.data, slope, hazard, width, height, cellM, params })
+    const grids = { dem: dem.data, slope, hazard, width, height, cellM }
     const hazardSource = fromImage
       ? data.layers.find((l) => l.id === 'hazard')?.source
       : 'Interim, from real slope only: careful over 10°, no-go over 20° (terrain/thresholds.toml), on the HiRISE terrain model. The hazard layer is still fake. Rocks and loose sand are not included yet.'
     const mineralLegend = data.layers.find((l) => l.id === 'minerals')?.legend ?? []
     const hazardLayer = fromImage ? null : { id: 'hazard_slope', title: 'Hazards from real slope (interim)', url: hazardImage(hazard, width, height), source: hazardSource, opacity: 0.7 }
-    return { status: 'ready', cost, params, ti, mineralImg, mineralLegend, hazardSource, hazardInterim: !fromImage, hazardLayer }
+    return { status: 'ready', grids, params, ti, mineralImg, mineralLegend, hazardSource, hazardInterim: !fromImage, hazardLayer }
   }, [raw, data])
 }
 

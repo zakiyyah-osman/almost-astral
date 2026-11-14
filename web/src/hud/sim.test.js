@@ -348,3 +348,11 @@ test('a one-way outing ends at its destination without a sampling stop there', (
   assert.deepEqual(stopList(tl).map((s) => s.to), ['stop1', 'stop2'])
   assert.equal(stateAt(tl, tl.totalMin, null).phase, 'done')
 })
+
+test('a rover waypoint is never home: with plan.start, home is the start even when the rover is listed', () => {
+  const p = { ...plan, legs: swapId(plan.legs, 'rover', 'start'), start: { id: 'start', name: 'Demo start' } }
+  const tl = buildTimeline(p, waypoints, route) // waypoints still has the 'rover' feature
+  assert.equal(tl.roverId, 'start')
+  assert.equal(tl.roverName, 'Demo start')
+  assert.equal(stateAt(tl, 30, startStorm(tl, 30, stateAt(tl, 30, null).d)).nextId, 'start')
+})

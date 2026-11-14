@@ -21,6 +21,10 @@ export async function loadData() {
     optional(index.vectors?.waypoints),
     optional(index.plan),
   ])
+  // The three route modes routing's planner exported for the team outing (plan.json profiles[*].file).
+  const routes = Object.fromEntries(
+    await Promise.all(Object.entries(plan?.profiles ?? {}).map(async ([id, p]) => [id, p.file === index.vectors?.route ? route : await optional(p.file)])),
+  )
   // Whole-crater layers (layers.json "crater", from data/build_real.py crater) join the layer list,
   // so they get the same switches and opacity sliders; scope and bounds tell the map where they go.
   const crater = index.crater
@@ -53,5 +57,5 @@ export async function loadData() {
       ? siteLayers.map((l) => (l.id === 'minerals' ? { ...l, research, source: `2 km site: ${l.source}. ${research.source}` } : l))
       : [...siteLayers, { id: 'minerals', title: 'Minerals', file: null, default: false, opacity: 0.85, research, source: research.source }]
   }
-  return { ...index, layers: [...siteLayers, ...craterLayers, ...photoLayers], route, waypoints, plan, photos }
+  return { ...index, layers: [...siteLayers, ...craterLayers, ...photoLayers], route, routes, waypoints, plan, photos }
 }

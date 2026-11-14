@@ -35,7 +35,7 @@ const PHASE_TEXT = {
   walk: 'WALKING',
   stop: 'SAMPLING',
   return: 'STORM: RETURNING',
-  done: 'AT ROVER',
+  done: 'AT LANDING',
 }
 
 function Compass({ heading }) {
@@ -113,12 +113,14 @@ function MiniMap({ tl, extent, pos, waypoints, trail, nextId, storm, stormPath }
       {stormPath && <polyline points={stormPath.map(pt).join(' ')} className="stormpath" />}
       <polyline points={trail.map(pt).join(' ')} className={storm ? 'trail storm' : 'trail'} />
       {waypoints.features.map((f) => {
+        if (f.properties.kind === 'rover') return null // there is no rover: home is the plan's start
         const [x, y] = f.geometry.coordinates
-        const rover = f.properties.kind === 'rover'
+        const home = f.properties.id === tl.roverId
+        const label = home ? (f.properties.name?.[0] ?? 'S').toUpperCase() : stopNumber[f.properties.id] ?? ''
         return (
           <g key={f.properties.id} className={f.properties.id === nextId ? 'next' : ''}>
-            <circle cx={x} cy={h - y} r={rover ? 60 : 55} className={rover ? 'rover' : 'stop'} />
-            <text x={x} y={h - y} className="label">{rover ? 'R' : stopNumber[f.properties.id]}</text>
+            <circle cx={x} cy={h - y} r={home ? 60 : 55} className={home ? 'home' : 'stop'} />
+            <text x={x} y={h - y} className="label">{label}</text>
           </g>
         )
       })}
@@ -170,7 +172,7 @@ export default function HudView({ data, onPosition, large, onLarge, visor, onVis
     const id = setInterval(() => {
       setT((prev) => {
         const next = prev + (SIM_MIN_PER_SECOND * speed) / 10
-        // Without a storm the walk ends at the planned total; after one it ends at the rover.
+        // Without a storm the walk ends at the planned total; after one it ends back at the start.
         return live.current.storm ? next : Math.min(next, live.current.tl.totalMin)
       })
     }, 100)

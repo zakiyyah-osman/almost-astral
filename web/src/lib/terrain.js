@@ -49,9 +49,11 @@ export function hazardFromImage(image, width, height, classify) {
 }
 
 // Grid cell (row, col) holding the point (x east, y north, metres), or null outside the site.
+// Same formula as routing's landing manifest (layout.window_cell_of_point), so a point on a cell
+// edge lands in the same cell here and in the route-finder: the north edge y = height * cellM is outside.
 export function cellOf(x, y, width, height, cellM) {
   const col = Math.floor(x / cellM)
-  const row = Math.floor((height * cellM - y) / cellM)
+  const row = height - 1 - Math.floor(y / cellM)
   if (col < 0 || row < 0 || col >= width || row >= height) return null
   return { row, col, i: row * width + col }
 }

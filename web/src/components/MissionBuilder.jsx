@@ -3,10 +3,33 @@ import Tag from './Tag.jsx'
 
 const fmtXY = (p) => `x ${Math.round(p.x)} m, y ${Math.round(p.y)} m`
 
-// A custom mission: a start, side quests in visiting order, and the final destination.
-// Every point can be picked on the map (a click, or a click on a pin) or from the list of named places.
-export default function MissionBuilder({ mission, setMission, picking, setPicking, places, detours, targets, onBestOrder, defaultStopMin, mineralNote }) {
-  const { start, quests, dest, back } = mission
+// The landing check's result under the Landing row: the status and every message, from routing's
+// templates. It stays after the pop-up for a moved landing is closed.
+function LandingStatus({ landing }) {
+  if (!landing) return null
+  const cls = { safe: 'ok', marginal: 'warn', moved: 'moved', outside: 'bad' }[landing.status]
+  const head = { safe: null, marginal: 'Marginal landing spot', moved: 'Moved to a safe spot', outside: null }[landing.status]
+  return (
+    <div className={`landing-status ${cls}`} role="status">
+      {head && <b>{head}</b>}
+      <ul>
+        {landing.messages.map((m) => (
+          <li key={m.reason}>
+            <b>{m.title}.</b> {m.detail}
+          </li>
+        ))}
+      </ul>
+      {landing.moved_text && <p>{landing.moved_text}</p>}
+      {landing.warnings?.length > 0 && <p className="muted">Warning: {landing.warnings.join(', ').replaceAll('_', ' ')}.</p>}
+    </div>
+  )
+}
+
+// A custom mission: a landing, side quests in visiting order, and the final destination.
+// The landing is chosen on the map and checked against routing's landing rules (lib/landingCheck.js);
+// the other points can be picked on the map (a click, or a click on a pin) or from the list of named places.
+export default function MissionBuilder({ landing, landingReady, mission, setMission, picking, setPicking, places, detours, targets, onBestOrder, defaultStopMin, mineralNote }) {
+  const { start, quests, dest } = mission
   const set = (patch) => setMission((m) => ({ ...m, ...patch }))
   const setQuest = (k, patch) => setMission((m) => ({ ...m, quests: m.quests.map((q, j) => (j === k ? { ...q, ...patch } : q)) }))
   const moveQuest = (k, by) =>
@@ -47,14 +70,14 @@ export default function MissionBuilder({ mission, setMission, picking, setPickin
   return (
     <div className="mission">
       <div className="mrow">
-        <span className="pin m-start">S</span>
+        <span className={`pin landing-${landing?.status === 'marginal' ? 'marginal' : 'safe'}`}>L</span>
         <div className="mrow-main">
-          <b>Start</b>
-          <small>{start ? (start.name?.startsWith('Point') ? fmtXY(start) : start.name) : 'Not set'}</small>
+          <b>Landing</b>
+          <small>{start ? fmtXY(start) : landingReady ? 'Click the map to choose a landing site' : 'Loading the landing map…'}</small>
         </div>
-        {pickButton('start', 'On map')}
+        {landingReady && pickButton('landing', start ? 'Move' : 'On map')}
       </div>
-      {placeSelect('start', 'Start from a place')}
+      <LandingStatus landing={landing} />
 
       <div className="quests-head">
         <h3>
@@ -147,13 +170,7 @@ export default function MissionBuilder({ mission, setMission, picking, setPickin
         {placeSelect('dest', 'Pick a place')}
       </div>
 
-      <label className="check">
-        <input type="checkbox" className="switch" checked={back} onChange={(e) => set({ back: e.target.checked })} />
-        <span>
-          Walk back to the start
-          <small>{back ? 'The destination has no shelter: the plan includes the way back.' : 'The destination has a shelter: the outing ends there.'}</small>
-        </span>
-      </label>
+      <p className="muted">One way: the walk ends at the destination. The time needed counts the walk, {defaultStopMin} min there (or what you set), the minutes at each side quest and getting into the lander.</p>
     </div>
   )
 }

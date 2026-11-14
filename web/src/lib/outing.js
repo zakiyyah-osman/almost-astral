@@ -4,7 +4,7 @@ import { planLeg } from './pathfind.js'
 
 // points: [{ id, name, x, y, kind, stopMin? }] in visiting order. Minutes are spent at each point that
 // is a science stop (kind 'stop'): its own stopMin, else opts.stopMin, else the planner's default;
-// 0 for the start, the end and any rover or landing point. opts.cache: see cachedLeg.
+// 0 for the start and any point of another kind. opts.cache: see cachedLeg.
 export function planOuting(cost, points, w, params, opts = {}) {
   const legs = []
   const coords = []
@@ -13,7 +13,7 @@ export function planOuting(cost, points, w, params, opts = {}) {
     const A = points[k]
     const B = points[k + 1]
     const leg = cachedLeg(cost, A, B, w, opts.cache)
-    if (!leg.ok) return { ok: false, reason: leg.reason, from: A, to: B }
+    if (!leg.ok) return { ok: false, reason: leg.reason, reason_text: leg.reason_text, end: leg.end, leg: k, from: A, to: B }
     legs.push({ A, B, leg })
     const offset = tracks.length ? tracks[tracks.length - 1].d : 0
     for (let q = coords.length ? 1 : 0; q < leg.points.length; q++) {
@@ -60,14 +60,28 @@ function assemble(legs, coords, params, opts) {
   const total = r1(walk + stops + ingress)
   const usable = Math.round(params.eva_max_min * (1 - params.reserve_pct / 100))
   const dose = opts.doseFor ? Math.round(opts.doseFor(walk + stops)) : null
+  // Needed time, unrounded, the way routing's one-way rule adds it (DESIGN section 15.5): walk + ingress + the
+  // minutes on site. For one destination this equals export_landing.route's needed_min. Over budget is a
+  // warning, not a failure.
+  const walkExact = legs.reduce((s, { leg }) => s + leg.walk_min, 0)
+  const neededMin = walkExact + ingress + stops
+  const usableExact = params.usable_min ?? params.eva_max_min * (1 - params.reserve_pct / 100)
   const checks = []
-  checks.push({ id: 'time', ok: total <= usable, value: total, limit: usable, message: total <= usable ? `Fits in the ${usable} min usable (${params.eva_max_min} min limit minus a ${params.reserve_pct}% reserve).` : `Over the ${usable} min usable time (${params.eva_max_min} min limit minus a ${params.reserve_pct}% reserve).` })
+  checks.push({ id: 'time', level: 'warn', ok: neededMin <= usableExact, value: total, limit: usable, message: total <= usable ? `Fits in the ${usable} min usable (${params.eva_max_min} min limit minus a ${params.reserve_pct}% reserve).` : `Over the ${usable} min usable time (${params.eva_max_min} min limit minus a ${params.reserve_pct}% reserve).` })
   if (dose != null) checks.push({ id: 'dose', ok: dose <= params.radiation_limit_usv, value: dose, limit: params.radiation_limit_usv, message: `Dose about ${dose} of ${params.radiation_limit_usv} µSv.` })
   const nogo = planLegs.reduce((s, l) => s + l.metres_nogo, 0)
   checks.push({ id: 'nogo', ok: nogo === 0, value: nogo, limit: 0, message: nogo === 0 ? 'Never enters no-go ground.' : `${nogo} m on no-go ground.` })
 
   const plan = {
     computed: true,
+    start: { id: legs[0].A.id, name: legs[0].A.name, xy_m: [legs[0].A.x, legs[0].A.y] },
+    needed_min: neededMin,
+    over_budget: neededMin > usableExact,
+    exact: {
+      distance_m: legs.reduce((s, { leg }) => s + leg.distance_m, 0),
+      walk_min: walkExact,
+      risk_min: legs.reduce((s, { leg }) => s + leg.risk_min, 0),
+    },
     crew: 2,
     legs: planLegs,
     totals: { walk_min: walk, stop_min: stops, ingress_min: ingress, total_min: total },
