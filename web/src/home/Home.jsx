@@ -1,14 +1,17 @@
 // The landing page: a Mars globe with Jezero marked, between two panels. Left: what this is, the live
-// clock at Jezero and a day of real weather. Right: the planned walk, or, once Jezero is clicked, a card
-// of site stats. Every number names where it comes from (the Real / Calc / Estimate tags; hover for the source).
+// clock at Jezero, a day of real weather and a "Show Jezero site details" button. Right: Perseverance
+// photos from the site (click one to open the map where it was taken: #map?photo=<id>) and the
+// "Open the Jezero map" link. The site details (SiteDialog) open as a popup
+// over the whole page, from the left button or the glowing marker on the globe. Every number names where
+// it comes from (the Real / Calc / Estimate tags; hover for the source).
 // main.jsx shows the map (App) at #map.
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Tag from '../components/Tag.jsx'
 import { loadData } from '../lib/loadData.js'
 import { parseTable, cardinal } from '../hud/sim.js'
 import { distanceBearing, fmtLat, fmtLon, PLACES } from '../lib/geo.js'
 import { hms, marsTime, season } from '../lib/marsClock.js'
-import { distanceM } from '../lib/photos.js'
+import { distanceM, photoId } from '../lib/photos.js'
 import Starfield from './Starfield.jsx'
 import './home.css'
 
@@ -110,8 +113,8 @@ function WeatherDay({ weather, hour }) {
   )
 }
 
-// The left panel: what this is, Jezero's clock right now, a day of real weather, the way in.
-function IntroPanel({ data, now }) {
+// The left panel: what this is, Jezero's clock right now, a day of real weather, the site details.
+function IntroPanel({ data, now, onOpen, disabled }) {
   const site = data?.site
   const t = site ? marsTime(now, site.center_lon_east) : null
   const hour = t ? Math.floor(t.ltst) : null
@@ -149,15 +152,20 @@ function IntroPanel({ data, now }) {
         </section>
       )}
 
-      <a className="btn-primary" href="#map">Open the Jezero map <span aria-hidden="true">→</span></a>
+      <div className="cta">
+        <button type="button" className="btn-ghost" onClick={onOpen} disabled={disabled} aria-haspopup="dialog">
+          <span className="pin-dot" aria-hidden="true" /> Show Jezero site details
+        </button>
+        <p className="hint">or click the glowing marker on the globe</p>
+      </div>
     </aside>
   )
 }
 
-// The right panel before Jezero is clicked: real Perseverance photos taken in or near the site,
-// nearest the site centre first, as a slideshow.
+// The right panel: real Perseverance photos taken in or near the site, nearest the site centre
+// first, as a slideshow, and the way into the map.
 const NEAR_SITE_M = 1500
-function GroundPhotos({ photos, site, onOpen, disabled }) {
+function GroundPhotos({ photos, site }) {
   const centre = site ? { lat: site.center_lat, lon: site.center_lon_east } : null
   const list = centre
     ? (photos ?? []).filter((p) => p.url).map((p) => ({ ...p, away: distanceM(centre, p) })).sort((a, b) => a.away - b.away)
@@ -191,7 +199,11 @@ function GroundPhotos({ photos, site, onOpen, disabled }) {
       {p ? (
         <>
           <figure className="photo">
-            <img key={p.url} src={p.url} alt={`Jezero crater seen by Perseverance's ${p.camera} on sol ${p.sol}`} loading="lazy" />
+            {/* The photo opens the map on the place it was taken. The arrows sit beside the link, not in it. */}
+            <a className="photo-link" href={photoId(p) ? `#map?photo=${encodeURIComponent(photoId(p))}` : '#map'} aria-label="Show this photo's location on the map">
+              <img key={p.url} src={p.url} alt={`Jezero crater seen by Perseverance's ${p.camera} on sol ${p.sol}`} loading="lazy" />
+              <span className="photo-cta" aria-hidden="true"><span className="pin-dot" /> View on map</span>
+            </a>
             {n > 1 && (
               <>
                 <button type="button" className="photo-nav prev" onClick={() => setI(k - 1 + n)} aria-label="Previous photo">‹</button>
@@ -209,25 +221,60 @@ function GroundPhotos({ photos, site, onOpen, disabled }) {
       ) : (
         <p className="small">The ground photos have not loaded.</p>
       )}
-      <button type="button" className="btn-ghost" onClick={onOpen} disabled={disabled} aria-controls="site-card">
-        <span className="pin-dot" aria-hidden="true" /> Show Jezero site details
-      </button>
-      <p className="hint">or click the glowing marker on the globe</p>
+      <a className="btn-primary" href="#map">Open the Jezero map <span aria-hidden="true">→</span></a>
     </section>
   )
 }
 
-function SiteCard({ data, now, onClose }) {
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+// The site details as a modal popup over the whole page. Focus moves into it on open and Tab stays
+// inside; Escape, the × button or a click on the backdrop closes it (Home puts focus back on the opener).
+function SiteDialog({ data, now, onClose }) {
   const ref = useRef(null)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
-  // Focus the card once when it opens; Escape closes it.
+  const downOnBackdrop = useRef(false)
+
   useEffect(() => {
-    ref.current?.focus({ preventScroll: true })
-    const onKey = (e) => e.key === 'Escape' && closeRef.current()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const card = ref.current
+    card?.focus({ preventScroll: true })
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeRef.current()
+        return
+      }
+      if (e.key !== 'Tab' || !card) return
+      const items = [...card.querySelectorAll(FOCUSABLE)].filter((el) => el.getClientRects().length)
+      if (!items.length) {
+        e.preventDefault()
+        card.focus()
+        return
+      }
+      const first = items[0]
+      const last = items.at(-1)
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || active === card || !card.contains(active))) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && (active === last || !card.contains(active))) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
   }, [])
+
+  // Close only when the press both starts and ends on the backdrop (not a drag out of the card).
+  const backdrop = {
+    onPointerDown: (e) => { downOnBackdrop.current = e.target === e.currentTarget },
+    onClick: (e) => {
+      if (downOnBackdrop.current && e.target === e.currentTarget) onClose()
+      downOnBackdrop.current = false
+    },
+  }
 
   const { site, notes, weather, radiation, storm } = data
   const t = marsTime(now, site.center_lon_east)
@@ -246,55 +293,57 @@ function SiteCard({ data, now, onClose }) {
   const toLanding = distanceBearing(here, PLACES.landing)
 
   return (
-    <div className="glass site-card" id="site-card" role="dialog" aria-labelledby="site-card-title" tabIndex={-1} ref={ref}>
-      <header className="site-card-head">
-        <div>
-          <p className="eyebrow">Our site</p>
-          <h2 id="site-card-title">Jezero crater</h2>
-          <p className="small">{site.name.replace(/^Jezero crater,\s*/i, '')}</p>
-        </div>
-        <button type="button" className="card-close" onClick={onClose} aria-label="Close the Jezero card">×</button>
-      </header>
-
-      <div className="tiles">
-        <Tile label="Air" tag={<Tag kind="real" title={wxNote} />}>
-          <p className="big mono">{wxRow ? wxRow.temp_c.toFixed(0) : '–'}<span className="unit">°C</span></p>
-          <p className="small">sol {wxSol} · {String(hour).padStart(2, '0')}:00</p>
-        </Tile>
-        <Tile label="Pressure" tag={<Tag kind="real" title={wxNote} />}>
-          <p className="big mono">{wxRow ? Math.round(wxRow.pressure_pa) : '–'}<span className="unit">Pa</span></p>
-          <p className="small">about 0.7 % of Earth&apos;s</p>
-        </Tile>
-        <Tile label="Radiation" tag={<Tag kind="estimate" title={radNote} />}>
-          <p className="big mono">{radRow ? radRow.dose_rate_usv_h.toFixed(1) : '–'}<span className="unit">µSv/h</span></p>
-          <p className="small">{radDay ? `${Math.round(radDay)} µSv a day` : 'not loaded'}</p>
-        </Tile>
-        <Tile label="To landing site" tag={<Tag kind="real" title={`${PLACES.landing.name}: ${fmtLat(PLACES.landing.lat)} ${fmtLon(PLACES.landing.lon)}. ${PLACES.landing.source}.`} />}>
-          <p className="big mono">{(toLanding.distanceM / 1000).toFixed(1)}<span className="unit">km</span></p>
-          <p className="small">{cardinal(toLanding.bearingDeg)} to Perseverance&apos;s landing</p>
-        </Tile>
-        <Tile wide label="Latest solar storm" tag={<Tag kind="real" title={`${notes['space_weather.csv'] ?? 'NASA DONKI'} Most recent event in our data, which runs to 31 Dec 2025.`} />}>
-          {storm ? (
-            <div className="storm">
-              <div>
-                <p className="mid">{STORM_TYPES[storm.type] ?? storm.type}</p>
-                <p className="small mono">{fmtDate(storm.start_utc)}{storm.detail ? ` · ${storm.detail}` : ''}</p>
+    <div className="site-modal" {...backdrop}>
+      <div className="glass site-card" id="site-card" role="dialog" aria-modal="true" aria-labelledby="site-card-title" tabIndex={-1} ref={ref}>
+        <header className="site-card-head">
+          <div>
+            <p className="eyebrow">Our site</p>
+            <h2 id="site-card-title">Jezero crater</h2>
+            <p className="small">{site.name.replace(/^Jezero crater,\s*/i, '')}</p>
+          </div>
+          <button type="button" className="card-close" onClick={onClose} aria-label="Close the Jezero card">×</button>
+        </header>
+  
+        <div className="tiles">
+          <Tile label="Air" tag={<Tag kind="real" title={wxNote} />}>
+            <p className="big mono">{wxRow ? wxRow.temp_c.toFixed(0) : '–'}<span className="unit">°C</span></p>
+            <p className="small">sol {wxSol} · {String(hour).padStart(2, '0')}:00</p>
+          </Tile>
+          <Tile label="Pressure" tag={<Tag kind="real" title={wxNote} />}>
+            <p className="big mono">{wxRow ? Math.round(wxRow.pressure_pa) : '–'}<span className="unit">Pa</span></p>
+            <p className="small">about 0.7 % of Earth&apos;s</p>
+          </Tile>
+          <Tile label="Radiation" tag={<Tag kind="estimate" title={radNote} />}>
+            <p className="big mono">{radRow ? radRow.dose_rate_usv_h.toFixed(1) : '–'}<span className="unit">µSv/h</span></p>
+            <p className="small">{radDay ? `${Math.round(radDay)} µSv a day` : 'not loaded'}</p>
+          </Tile>
+          <Tile label="To landing site" tag={<Tag kind="real" title={`${PLACES.landing.name}: ${fmtLat(PLACES.landing.lat)} ${fmtLon(PLACES.landing.lon)}. ${PLACES.landing.source}.`} />}>
+            <p className="big mono">{(toLanding.distanceM / 1000).toFixed(1)}<span className="unit">km</span></p>
+            <p className="small">{cardinal(toLanding.bearingDeg)} to Perseverance&apos;s landing</p>
+          </Tile>
+          <Tile wide label="Latest solar storm" tag={<Tag kind="real" title={`${notes['space_weather.csv'] ?? 'NASA DONKI'} Most recent event in our data, which runs to 31 Dec 2025.`} />}>
+            {storm ? (
+              <div className="storm">
+                <div>
+                  <p className="mid">{STORM_TYPES[storm.type] ?? storm.type}</p>
+                  <p className="small mono">{fmtDate(storm.start_utc)}{storm.detail ? ` · ${storm.detail}` : ''}</p>
+                </div>
+                <span className={`chip ${storm.mars_impact === 'True' ? 'bad' : 'ok'}`}>{storm.mars_impact === 'True' ? 'Hits Mars' : 'Misses Mars'}</span>
               </div>
-              <span className={`chip ${storm.mars_impact === 'True' ? 'bad' : 'ok'}`}>{storm.mars_impact === 'True' ? 'Hits Mars' : 'Misses Mars'}</span>
-            </div>
-          ) : (
-            <p className="small">space_weather.csv not loaded.</p>
-          )}
-        </Tile>
-        <Tile wide label="Site centre" tag={<Tag kind="assumption" title="Site centre chosen by the team on the USGS HiRISE DTM mosaic of Jezero (data/site.json); not a published coordinate." />}>
-          <p className="mid mono">{fmtLat(site.center_lat)} · {fmtLon(site.center_lon_east)}</p>
-        </Tile>
+            ) : (
+              <p className="small">space_weather.csv not loaded.</p>
+            )}
+          </Tile>
+          <Tile wide label="Site centre" tag={<Tag kind="assumption" title="Site centre chosen by the team on the USGS HiRISE DTM mosaic of Jezero (data/site.json); not a published coordinate." />}>
+            <p className="mid mono">{fmtLat(site.center_lat)} · {fmtLon(site.center_lon_east)}</p>
+          </Tile>
+        </div>
+  
+        <footer className="site-card-foot">
+          <a className="btn-primary" href="#map">Open the Jezero map <span aria-hidden="true">→</span></a>
+          <p className="hint">Hover a label to see where a number comes from.</p>
+        </footer>
       </div>
-
-      <footer className="site-card-foot">
-        <a className="btn-primary" href="#map">Open the Jezero map <span aria-hidden="true">→</span></a>
-        <p className="hint">Hover a label to see where a number comes from.</p>
-      </footer>
     </div>
   )
 }
@@ -305,6 +354,8 @@ export default function Home() {
   const [error, setError] = useState(null)
   const [open, setOpen] = useState(false)
   const opener = useRef(null)
+  const homeRef = useRef(null)
+  const dialogOpen = open && Boolean(data)
 
   useEffect(() => {
     let live = true
@@ -322,22 +373,39 @@ export default function Home() {
     return () => { live = false }
   }, [])
 
-  const show = () => {
-    opener.current = document.activeElement
+  // Remember what opened the popup (the left button or the globe marker) to give focus back to it.
+  // Prefer the clicked element: Safari does not focus buttons on click.
+  const show = (e) => {
+    opener.current = e?.currentTarget instanceof HTMLElement ? e.currentTarget : document.activeElement
     setOpen(true)
   }
-  const hide = () => {
-    setOpen(false)
-    opener.current?.focus?.({ preventScroll: true })
-  }
+  const hide = () => setOpen(false)
+
+  // Give focus back once the popup has closed: a layout effect runs right after React removes the
+  // popup and the inert attributes, so the opener can take focus again.
+  useLayoutEffect(() => {
+    if (dialogOpen || !opener.current) return
+    const el = opener.current
+    opener.current = null
+    el.focus?.({ preventScroll: true })
+  }, [dialogOpen])
+
+  // Lock page scrolling while the popup is open. The page scrolls inside .home, not body.
+  useEffect(() => {
+    if (!dialogOpen) return undefined
+    const el = homeRef.current
+    const prev = el?.style.overflow
+    if (el) el.style.overflow = 'hidden'
+    return () => { if (el) el.style.overflow = prev ?? '' }
+  }, [dialogOpen])
 
   const utc = new Date(now).toISOString()
   const site = data?.site
 
   return (
-    <div className="home">
+    <div className="home" ref={homeRef}>
       <Starfield />
-      <header className="home-bar">
+      <header className="home-bar" inert={dialogOpen}>
         <div className="home-brand">
           <span className="logo" aria-hidden="true" />
           <div>
@@ -352,8 +420,8 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="home-main">
-        <IntroPanel data={data} now={now} />
+      <main className="home-main" inert={dialogOpen}>
+        <IntroPanel data={data} now={now} onOpen={show} disabled={!site} />
 
         <div className="globe-area">
           {site && (
@@ -365,9 +433,11 @@ export default function Home() {
         </div>
 
         <div className="panel panel-right">
-          {open && data ? <SiteCard data={data} now={now} onClose={hide} /> : <GroundPhotos photos={data?.photos} site={site} onOpen={show} disabled={!site} />}
+          <GroundPhotos photos={data?.photos} site={site} />
         </div>
       </main>
+
+      {dialogOpen && <SiteDialog data={data} now={now} onClose={hide} />}
     </div>
   )
 }
