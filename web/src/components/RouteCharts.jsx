@@ -142,7 +142,8 @@ export function RouteProfile({ track, marks = [], limits, hazardNote, homeWord =
 
 // The route profile, then the outing timeline against the time allowance. All from the active route.
 // homeWord: where "back to" points, e.g. "the landing" (My mission) or "the start" (Team outing).
-export default function RouteCharts({ plan, waypoints, route, track, limits, onProbe, hazardNote, homeWord = 'the landing' }) {
+// showProfile: false leaves out the three profile charts (the sidebar does: the HUD shows them).
+export default function RouteCharts({ plan, waypoints, route, track, limits, onProbe, hazardNote, homeWord = 'the landing', showProfile = true }) {
   const tl = useMemo(() => buildTimeline(plan, waypoints, route), [plan, waypoints, route])
   if (!tl) return null
   const marks = marksFor(tl, waypoints)
@@ -155,7 +156,7 @@ export default function RouteCharts({ plan, waypoints, route, track, limits, onP
 
   return (
     <>
-      <RouteProfile track={track} marks={marks} limits={limits} hazardNote={hazardNote} homeWord={homeWord} onProbe={onProbe} />
+      {showProfile && <RouteProfile track={track} marks={marks} limits={limits} hazardNote={hazardNote} homeWord={homeWord} onProbe={onProbe} />}
 
       <section>
         <h2>Timeline</h2>
