@@ -26,10 +26,10 @@ export default function RoutePhotos({ site, dest, route }) {
 
   if (!near && !along.length) return null
   return (
-    <section className="route-photos">
-      <h2>
-        Ground photos <Tag kind="real" title="NASA/JPL-Caltech Perseverance raw images; position from the rover's traverse on the day each was taken" />
-      </h2>
+    <details className="more route-photos">
+      <summary>
+        Photos along the route <Tag kind="real" title="NASA/JPL-Caltech Perseverance raw images; position from the rover's traverse on the day each was taken" />
+      </summary>
       {near && (
         <div className="rp-near">
           <b>At {dest.name || 'the destination'}</b>
@@ -57,6 +57,6 @@ export default function RoutePhotos({ site, dest, route }) {
           <small>Distance along the walk. Credit: NASA/JPL-Caltech (Mastcam-Z: NASA/JPL-Caltech/ASU).</small>
         </div>
       )}
-    </section>
+    </details>
   )
 }

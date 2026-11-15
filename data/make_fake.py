@@ -166,7 +166,7 @@ def make_layers_json():
             layer("thermal", "Thermal inertia", "thermal.png", "FAKE (real: THEMIS, Mars Odyssey)", False, 0.6),
             layer("minerals", "Minerals", "minerals.png", "FAKE (real: CRISM, MRO)", False, 0.8),
             layer("hazard", "Hazards", "hazard.png", "FAKE (real: slope, rocks and thermal inertia)", True, 0.7),
-            layer("shelter_time", "Minutes back to rover", "shelter_time.png", "FAKE (real: routing model)", False, 0.7),
+            layer("shelter_time", "Minutes back to start", "shelter_time.png", "FAKE (real: routing model)", False, 0.7),
         ],
         "vectors": {"route": "route.geojson", "waypoints": "waypoints.geojson"},
         "tables": {"weather": "weather.csv", "radiation": "radiation.csv"},
