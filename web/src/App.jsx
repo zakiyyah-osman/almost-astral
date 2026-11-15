@@ -87,7 +87,8 @@ export default function App() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [layerState, setLayerState] = useState({})
-  const [view, setView] = useState('planning')
+  const [view, setViewRaw] = useState('planning')
+  const setView = (v) => setViewRaw(v === 'hud' ? 'hud' : 'planning') // only Planning and HUD; an old 'tablet' falls back to Planning
   const [tab, setTab] = useState('route')
   const [selectedStop, setSelectedStop] = useState(null)
   const [astronaut, setAstronaut] = useState(null) // set by the HUD while it simulates
@@ -629,7 +630,7 @@ export default function App() {
 
   return (
     <div
-      className={`app${visor ? ' visor' : ''}${view === 'tablet' ? ' tablet' : ''}${shut ? ' shut' : ''}${dragging ? ' dragging' : ''}`}
+      className={`app${visor ? ' visor' : ''}${shut ? ' shut' : ''}${dragging ? ' dragging' : ''}`}
       style={{ '--sidebar-w': shut ? '0px' : `${sideW}px` }}
     >
       <MissionCard
@@ -653,7 +654,6 @@ export default function App() {
             {[
               ['planning', 'Planning'],
               ['hud', 'HUD'],
-              ['tablet', 'Tablet'],
             ].map(([id, label]) => (
               <button key={id} className={view === id ? 'active' : ''} aria-pressed={view === id} onClick={() => setView(id)}>
                 {label}
@@ -723,60 +723,55 @@ export default function App() {
                     My mission
                   </button>
                 </div>
+                <p className="muted mode-note">
+                  <b>Team outing</b>: the team&apos;s planned walk from the landing site. <b>My mission</b>: plan your own from a landing site you pick.
+                </p>
 
                 <div className="route-actions">
-                  <button type="button" className="ghost-btn" onClick={clearRoute} disabled={!hasRoute} title="Remove the route from the map, this panel and the HUD">
+                  <button type="button" className="ghost-btn small" onClick={clearRoute} disabled={!hasRoute} title="Remove the route from the map, this panel and the HUD">
                     <Icon name="close" size={13} /> Clear route
                   </button>
                   {outing && demoOff && !trip.start && (
-                    <button type="button" className="link inline" onClick={resetOuting}>
-                      Show routing&apos;s demo route
+                    <button type="button" className="link inline" onClick={resetOuting} title="routing's demo route (plan.json, as exported)">
+                      Show the team&apos;s walk
                     </button>
                   )}
                 </div>
-                {!hasRoute && <p className="muted">No route. {outing ? 'Pick a start on the map to plan an outing.' : 'Pick a landing site on the map to plan a mission.'}</p>}
+                {!hasRoute && <p className="muted">No route. {outing ? 'Choose a landing site on the map to plan an outing.' : 'Pick a landing site on the map to plan a mission.'}</p>}
 
                 {isDemo && (
-                  <p className="muted">
-                    Showing routing&apos;s demo route: {data.plan?.start?.name ?? 'the demo start'} to every team stop and back (plan.json, as exported).{' '}
+                  <p className="muted" title={`routing's demo route: ${data.plan?.start?.name ?? 'the demo start'} to every team stop and back (plan.json, as exported)`}>
+                    Showing the team&apos;s planned walk from {data.plan?.start?.name ?? 'the demo start'} to every stop and back.{' '}
                     {unverified && (
-                      <span className="badge" title={unverified}>
+                      <span className="badge" title={`These stops still need the team's confirmation. ${unverified}`}>
                         unverified stops
                       </span>
                     )}{' '}
-                    Choose a start to plan your own outing.
+                    Choose a landing site to plan your own outing.
                   </p>
                 )}
                 {outing && trip.start && (
                   <p className="muted">
                     Your own outing, one way.{' '}
                     <button type="button" className="link inline" onClick={resetOuting}>
-                      Back to the demo route
+                      Back to the team&apos;s walk
                     </button>
                   </p>
                 )}
-                <RoutePlanner
-                  startKind={outing ? 'start' : 'landing'}
-                  startNote={outing && startNote ? <p className={`route-check ${rp.inZone && escapeAvailable(cost) && active?.ok ? 'warn' : 'bad'}`}>{startNote}</p> : null}
-                  landing={landingInfo}
-                  landingReady={!!landingGrid}
-                  trip={trip}
-                  setTrip={setTrip}
-                  picking={picking}
-                  setPicking={setPicking}
-                  places={places}
-                  detours={detours}
-                  targets={targets.slice(0, 6)}
-                  onBestOrder={sortQuests}
-                  defaultStopMin={params?.stop_min_default ?? 25}
-                  mineralNote={mineralLayer?.source}
-                />
               </section>
 
+              {/* The mode comes second: it changes the route and the times. */}
               <section>
                 <h2>Mode</h2>
-                {!ready && <p className="muted">{routeError ? `Route finding needs routing's export in data/out/landing: ${routeError}` : terrain.status === 'missing' ? 'Route finding needs dem.tif, which is missing.' : 'Reading the terrain model and the cost surface…'}</p>}
-                {ready && status === 'incomplete' && <p className="muted">{!trip.start ? `Choose ${outing ? 'a start' : 'a landing site'}, then click where you want to go, to see the three routes.` : 'Click where you want to go to see the three routes.'}</p>}
+                {!ready && (
+                  <p
+                    className="muted"
+                    title={routeError ? `Route finding needs routing's export in data/out/landing: ${routeError}` : terrain.status === 'missing' ? 'Route finding needs dem.tif, which is missing.' : undefined}
+                  >
+                    {routeError || terrain.status === 'missing' ? 'Route finding is not available: terrain data is missing.' : 'Reading the terrain model and the cost surface…'}
+                  </p>
+                )}
+                {ready && status === 'incomplete' && <p className="muted">{!trip.start ? 'Choose a landing site, then where you want to go, to see the three routes.' : 'Click where you want to go to see the three routes.'}</p>}
                 {craterBusy && <p className="muted routing-busy">Calculating… (route across the crater, 40 m grid)</p>}
                 {ready && !allInSite && crater.status === 'error' && <p className="muted">The crater terrain could not be loaded: {crater.error}</p>}
                 {ok && craterRoute && (
@@ -802,6 +797,25 @@ export default function App() {
                     {profInfo.aim}. <button type="button" className="link inline" onClick={() => setTab('compare')}>Compare the three modes</button>
                   </p>
                 )}
+              </section>
+
+              <section>
+                <RoutePlanner
+                  startKind={outing ? 'start' : 'landing'}
+                  startNote={outing && startNote ? <p className={`route-check ${rp.inZone && escapeAvailable(cost) && active?.ok ? 'warn' : 'bad'}`}>{startNote}</p> : null}
+                  landing={landingInfo}
+                  landingReady={!!landingGrid}
+                  trip={trip}
+                  setTrip={setTrip}
+                  picking={picking}
+                  setPicking={setPicking}
+                  places={places}
+                  detours={detours}
+                  targets={targets.slice(0, 6)}
+                  onBestOrder={sortQuests}
+                  defaultStopMin={params?.stop_min_default ?? 25}
+                  mineralNote={mineralLayer?.source}
+                />
               </section>
 
               {plan && (
@@ -837,14 +851,18 @@ export default function App() {
                     )}
                     {ok && (
                       <>
-                        <ul className="checks">
-                          {plan.checks.map((c) => (
-                            <li key={c.id} className={c.ok ? 'ok' : c.level === 'warn' ? 'warn' : 'bad'}>
-                              {c.ok ? '✓' : '!'} {c.message}
-                            </li>
-                          ))}
-                          {!isDemo && <li className="note">One way: the walk ends at {trip.dest?.name || 'the destination'}; no walk back is planned.</li>}
-                        </ul>
+                        {/* Failed checks stay in view; the passed ones and the numbers fold into Safety checks. */}
+                        {plan.checks.some((c) => !c.ok) && (
+                          <ul className="checks">
+                            {plan.checks
+                              .filter((c) => !c.ok)
+                              .map((c) => (
+                                <li key={c.id} className={c.level === 'warn' ? 'warn' : 'bad'}>
+                                  ! {c.message}
+                                </li>
+                              ))}
+                          </ul>
+                        )}
                         {dropHint && (
                           <p className="route-check warn">
                             Over a limit. Dropping <b>{trip.quests[dropHint.k].name}</b> saves {Math.round(dropHint.d.min)} min.{' '}
@@ -853,39 +871,55 @@ export default function App() {
                             </button>
                           </p>
                         )}
-                        <div className="safety-grid">
-                          <span>Steepest</span>
-                          <b>{fmtN(extras.max_slope_deg, (v) => `${v.toFixed(1)}°`)}</b>
-                          <span>Climb / descent</span>
-                          <b>
-                            {fmtN(extras.ascent_m, String)} / {fmtN(extras.descent_m, String)} m
-                          </b>
-                          <span>On careful ground</span>
-                          <b>{fmtN(plan.metres_careful, (v) => `${v} m`)}</b>
-                          <span>Furthest from {shelterWord}</span>
-                          <b>{furthest ? `${Math.round(furthest.back)} min` : '–'}</b>
-                          <span>Walk + on site + into lander</span>
-                          <b>
-                            {Math.round(plan.totals.walk_min)} + {plan.totals.stop_min} + {plan.totals.ingress_min} min
-                          </b>
-                        </div>
+                        <details className="more">
+                          <summary>Safety checks</summary>
+                          <ul className="checks">
+                            {plan.checks
+                              .filter((c) => c.ok)
+                              .map((c) => (
+                                <li key={c.id} className="ok">
+                                  ✓ {c.message}
+                                </li>
+                              ))}
+                            {!isDemo && <li className="note">One way: the walk ends at {trip.dest?.name || 'the destination'}; no walk back is planned.</li>}
+                          </ul>
+                          <div className="safety-grid">
+                            <span>Steepest</span>
+                            <b>{fmtN(extras.max_slope_deg, (v) => `${v.toFixed(1)}°`)}</b>
+                            <span>Climb / descent</span>
+                            <b>
+                              {fmtN(extras.ascent_m, String)} / {fmtN(extras.descent_m, String)} m
+                            </b>
+                            <span>On careful ground</span>
+                            <b>{fmtN(plan.metres_careful, (v) => `${v} m`)}</b>
+                            <span>Furthest from {shelterWord}</span>
+                            <b>{furthest ? `${Math.round(furthest.back)} min` : '–'}</b>
+                            <span>Walk + on site + into lander</span>
+                            <b>
+                              {Math.round(plan.totals.walk_min)} + {plan.totals.stop_min} + {plan.totals.ingress_min} min
+                            </b>
+                          </div>
+                        </details>
                       </>
                     )}
-                    <ul className="legs">
-                      {plan.legs.map((leg, k) => (
-                        <li key={`${leg.from}-${leg.to}-${k}`}>
-                          <span>
-                            {names[leg.from] ?? leg.from} → {names[leg.to] ?? leg.to}
-                          </span>
-                          <span>
-                            {leg.distance_m} m · {Math.round(leg.walk_min)} min{leg.max_slope_deg != null ? ` · max ${leg.max_slope_deg}°` : ''}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <button className="print-btn" onClick={() => window.print()}>
-                      Print mission card
-                    </button>
+                    <details className="more">
+                      <summary>Leg by leg</summary>
+                      <ul className="legs">
+                        {plan.legs.map((leg, k) => (
+                          <li key={`${leg.from}-${leg.to}-${k}`}>
+                            <span>
+                              {names[leg.from] ?? leg.from} → {names[leg.to] ?? leg.to}
+                            </span>
+                            <span>
+                              {leg.distance_m} m · {Math.round(leg.walk_min)} min{leg.max_slope_deg != null ? ` · max ${leg.max_slope_deg}°` : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <button className="print-btn" onClick={() => window.print()}>
+                        Print mission card
+                      </button>
+                    </details>
                     {isDemo && profile !== 'balanced' && <p className="muted">The legs, checks, timeline and the HUD are routing&apos;s Balanced plan (plan.json); the map and the profile charts show the {profLabel} route file.</p>}
                   </div>
                 </section>
@@ -894,9 +928,12 @@ export default function App() {
               <RoutePhotos site={data.site} dest={trip.dest} route={ok ? shown.route : null} />
 
               {plan && ok && (
-                <div className="detail">
-                  <RouteCharts plan={plan} waypoints={shown.waypoints} route={shown.route} track={track} homeWord={shelterWord} limits={{ yellow: 10, red: params.slope_max_deg }} onProbe={setProbe} hazardNote={terrain.hazardSource} showProfile={false} />
-                </div>
+                <details className="more">
+                  <summary>Route charts</summary>
+                  <div className="detail">
+                    <RouteCharts plan={plan} waypoints={shown.waypoints} route={shown.route} track={track} homeWord={shelterWord} limits={{ yellow: 10, red: params.slope_max_deg }} onProbe={setProbe} hazardNote={terrain.hazardSource} showProfile={false} />
+                  </div>
+                </details>
               )}
             </>
           )}
@@ -1034,7 +1071,7 @@ export default function App() {
             sizeKey={`${shut}-${sideW}`}
           />
 
-          {/* Top-left of the map in every view (Planning, HUD, Tablet, visor): back to the homepage, and the panel when hidden. */}
+          {/* Top-left of the map in every view (Planning, HUD, visor): back to the homepage, and the panel when hidden. */}
           <div className="map-actions">
             <a className="map-home" href="#" title="Back to the homepage">
               <Icon name="home" /> Home
@@ -1142,6 +1179,18 @@ export default function App() {
                   <span>50 loose sand</span>
                   <span>800 rock</span>
                 </small>
+              </div>
+            )}
+            {/* Minutes back to the start: its own ramp, from plan.json shelter_map, so it is not read as thermal inertia. */}
+            {layerState.shelter_time?.on && data.plan?.shelter_map?.stops?.length > 0 && (
+              <div className="ramp">
+                <span>{data.plan.shelter_map.label}</span>
+                <i style={{ background: `linear-gradient(to right, ${data.plan.shelter_map.stops.map((s) => `rgba(${s.rgba.slice(0, 3).join(', ')}, ${(s.rgba[3] ?? 255) / 255})`).join(', ')})` }} />
+                <small>
+                  <span>0 min</span>
+                  <span>{data.plan.shelter_map.colour_max_min}+ min</span>
+                </small>
+                {data.plan.shelter_map.contour_interval_min != null && <small>lines every {data.plan.shelter_map.contour_interval_min} min</small>}
               </div>
             )}
             {shown.route && (

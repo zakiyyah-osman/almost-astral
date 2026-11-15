@@ -60,6 +60,14 @@ export default function RoutePlanner({ startKind = 'landing', landing, landingRe
     </button>
   )
 
+  // No start yet: the landing site is the first thing to choose, so it gets the one big primary button.
+  const choosePrimary = (which) => (
+    <button type="button" className={`pick primary${picking === which ? ' active' : ''}`} aria-pressed={picking === which} onClick={() => setPicking(picking === which ? null : which)}>
+      <Icon name="target" size={16} />
+      {picking === which ? 'Click the map…' : 'Choose landing site'}
+    </button>
+  )
+
   const placeSelect = (which, label) => (
     <select value="" onChange={(e) => fromPlace(which, e.target.value)} aria-label={label}>
       <option value="">{label}…</option>
@@ -78,11 +86,12 @@ export default function RoutePlanner({ startKind = 'landing', landing, landingRe
           <div className="mrow">
             <span className={`pin landing-${landing?.status === 'marginal' ? 'marginal' : 'safe'}`}>L</span>
             <div className="mrow-main">
-              <b>Landing</b>
-              <small>{start ? fmtXY(start) : landingReady ? 'Click the map to choose a landing site' : 'Loading the landing map…'}</small>
+              <b>Landing site</b>
+              <small>{start ? fmtXY(start) : landingReady ? 'Click the map to choose where the crew lands' : 'Loading the landing map…'}</small>
             </div>
-            {landingReady && pickButton('landing', start ? 'Move' : 'On map')}
+            {landingReady && start && pickButton('landing', 'Move')}
           </div>
+          {landingReady && !start && choosePrimary('landing')}
           <LandingStatus landing={landing} />
         </>
       ) : (
@@ -90,11 +99,12 @@ export default function RoutePlanner({ startKind = 'landing', landing, landingRe
           <div className="mrow">
             <span className="pin m-start">S</span>
             <div className="mrow-main">
-              <b>Start</b>
-              <small>{start ? fmtXY(start) : 'Click the map to choose a start'}</small>
+              <b>Landing site</b>
+              <small>{start ? fmtXY(start) : 'Click the map to choose where the crew lands'}</small>
             </div>
-            {pickButton('start', start ? 'Move' : 'On map')}
+            {start && pickButton('start', 'Move')}
           </div>
+          {!start && choosePrimary('start')}
           {startNote}
         </>
       )}
