@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
 
-// A pop-up that stays until dismissed (OK or Esc): a moved landing (lib/landingCheck.js messages) or a
+// A notice that stays until dismissed (OK or Esc): a moved landing (lib/landingCheck.js messages) or a
 // route that cannot be found (lib/routeFailure.js). The same text stays in the sidebar afterwards.
+// It floats over the top of the map without blocking it: the next map click still picks a point.
 // notice: { title, messages: [{ reason, title, detail }], footer? }
 export default function RouteNotice({ notice, onClose }) {
   const ok = useRef(null)
   useEffect(() => {
-    ok.current?.focus()
     const onKey = (e) => {
       if (e.key !== 'Escape') return
       e.stopPropagation()
@@ -17,8 +17,8 @@ export default function RouteNotice({ notice, onClose }) {
   }, [onClose])
   if (!notice) return null
   return (
-    <div className="notice-backdrop" onClick={onClose}>
-      <div className="landing-notice" role="alertdialog" aria-modal="true" aria-labelledby="route-notice-title" aria-describedby="route-notice-body" onClick={(e) => e.stopPropagation()}>
+    <div className="notice-float">
+      <div className="landing-notice" role="alert" aria-labelledby="route-notice-title" aria-describedby="route-notice-body">
         <h2 id="route-notice-title">{notice.title}</h2>
         <div id="route-notice-body">
           <ul>

@@ -13,6 +13,7 @@ import ModeCompare from './components/ModeCompare.jsx'
 import Icon from './components/Icon.jsx'
 import Tag from './components/Tag.jsx'
 import MineralKey from './components/MineralKey.jsx'
+import RoutePhotos from './components/RoutePhotos.jsx'
 import RouteNotice from './components/RouteNotice.jsx'
 import { routeFailure, unreachableText } from './lib/routeFailure.js'
 import { MINERAL_CLASSES } from './lib/research.js'
@@ -95,6 +96,7 @@ export default function App() {
   const [openSource, setOpenSource] = useState({}) // layers whose source line is expanded
   const [mode, setMode] = useState('outing') // 'outing' (Team outing) | 'mission' (My trip): the same planner, one trip each
   const [trips, setTrips] = useState({ outing: EMPTY_TRIP, mission: EMPTY_TRIP })
+  const [demoOff, setDemoOff] = useState(false) // Clear route in Team outing also hides routing's demo route
   const [startNote, setStartNote] = useState(null) // Team outing: why the last start click was refused
   const trip = trips[mode]
   const setTrip = useCallback((fn) => setTrips((ts) => ({ ...ts, [mode]: typeof fn === 'function' ? fn(ts[mode]) : fn })), [mode])
@@ -225,7 +227,7 @@ export default function App() {
   const outing = mode === 'outing'
   // The shared route-planning workflow (lib/useRoutePlan.js), for the active mode's trip.
   const demo = useMemo(() => (data?.plan ? { plan: data.plan, routes: data.routes, waypoints: data.waypoints } : null), [data])
-  const rp = useRoutePlan({ cost: ready ? cost : null, params, trip, demo: outing ? demo : null, doseFor, legCache, escape: outing })
+  const rp = useRoutePlan({ cost: ready ? cost : null, params, trip, demo: outing && !demoOff ? demo : null, doseFor, legCache, escape: outing })
   const { isDemo, points, back, shelterCells } = rp
   const ingress = params?.ingress_min ?? 0
   const profInfo = PROFILES.find((p) => p.id === profile)
@@ -458,6 +460,7 @@ export default function App() {
       return
     }
     if (which === 'dest') setTrip((m) => ({ ...m, dest: { x: p.x, y: p.y, name: m.dest?.name || named || 'J0' } }))
+    setNotice(null) // the next point is picked: the landing notice has been seen (it stays in the sidebar)
     setPicking(null)
   }
   // Switch mode; each keeps its own trip. My mission asks for a landing first.
@@ -470,9 +473,23 @@ export default function App() {
   // Back to routing's demo route in Team outing.
   const resetOuting = () => {
     setTrips((ts) => ({ ...ts, outing: { ...EMPTY_TRIP, profile: ts.outing.profile } }))
+    setDemoOff(false)
     setStartNote(null)
     setPicking(null)
   }
+  // Clear route: no route anywhere (map, sidebar, HUD) for the active mode, the demo route included,
+  // until the user picks new points. The mode's start, side quests and destination are dropped.
+  const clearRoute = () => {
+    setTrips((ts) => ({ ...ts, [mode]: { ...EMPTY_TRIP, profile: ts[mode].profile } }))
+    if (outing) setDemoOff(true)
+    else setLandingInfo(null)
+    setStartNote(null)
+    setPicking(null)
+    setInspect(null)
+    setNotice(null)
+    setProbe(null)
+  }
+  const hasRoute = isDemo || !!trip.start || trip.quests.length > 0 || !!trip.dest
   const applyInspected = (which) => {
     if (!inspect) return
     setPicking(null)
@@ -707,6 +724,18 @@ export default function App() {
                   </button>
                 </div>
 
+                <div className="route-actions">
+                  <button type="button" className="ghost-btn" onClick={clearRoute} disabled={!hasRoute} title="Remove the route from the map, this panel and the HUD">
+                    <Icon name="close" size={13} /> Clear route
+                  </button>
+                  {outing && demoOff && !trip.start && (
+                    <button type="button" className="link inline" onClick={resetOuting}>
+                      Show routing&apos;s demo route
+                    </button>
+                  )}
+                </div>
+                {!hasRoute && <p className="muted">No route. {outing ? 'Pick a start on the map to plan an outing.' : 'Pick a landing site on the map to plan a mission.'}</p>}
+
                 {isDemo && (
                   <p className="muted">
                     Showing routing&apos;s demo route: {data.plan?.start?.name ?? 'the demo start'} to every team stop and back (plan.json, as exported).{' '}
@@ -862,9 +891,11 @@ export default function App() {
                 </section>
               )}
 
+              <RoutePhotos site={data.site} dest={trip.dest} route={ok ? shown.route : null} />
+
               {plan && ok && (
                 <div className="detail">
-                  <RouteCharts plan={plan} waypoints={shown.waypoints} route={shown.route} track={track} homeWord={shelterWord} limits={{ yellow: 10, red: params.slope_max_deg }} onProbe={setProbe} hazardNote={terrain.hazardSource} />
+                  <RouteCharts plan={plan} waypoints={shown.waypoints} route={shown.route} track={track} homeWord={shelterWord} limits={{ yellow: 10, red: params.slope_max_deg }} onProbe={setProbe} hazardNote={terrain.hazardSource} showProfile={false} />
                 </div>
               )}
             </>
