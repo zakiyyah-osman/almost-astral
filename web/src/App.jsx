@@ -28,6 +28,7 @@ import { escapeAvailable, zoneCodes } from './lib/escape.js'
 import { useRoutePlan } from './lib/useRoutePlan.js'
 import { unverifiedWarning, planExtras } from './lib/teamOuting.js'
 import { detourCosts, bestOrder, mineralTargets } from './lib/mission.js'
+import { photoId } from './lib/photos.js'
 import { cellOf } from './lib/terrain.js'
 import { xyToLatLon, fmtLat, fmtLon } from './lib/geo.js'
 
@@ -83,7 +84,8 @@ const store = (key, value) => {
   }
 }
 
-export default function App() {
+// focusPhoto: a ground photo id from #map?photo=<id> (main.jsx): the map opens on that photo.
+export default function App({ focusPhoto = null }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [layerState, setLayerState] = useState({})
@@ -120,6 +122,12 @@ export default function App() {
   const [mineralsShown, setMineralsShown] = useState([]) // minerals switched on in the Minerals card; none until picked
   const visor = visorOn && view === 'hud'
 
+  // Opened from a photo link (#map?photo=<id>): main.jsx has passed the id on as focusPhoto, so trim
+  // the hash back to #map. Then a reload or the Home button behave as for a plain #map.
+  useEffect(() => {
+    if (window.location.hash.startsWith('#map?')) window.history.replaceState(window.history.state, '', '#map')
+  }, [])
+
   useEffect(() => {
     loadData()
       .then((d) => {
@@ -127,7 +135,9 @@ export default function App() {
         const ids = d.layers.map((l) => l.id)
         const start = presetIds(PRESETS[0], ids) // open on the Safety view
         // Crater-wide layers and photo pins start from their own default; the site layers from the Safety preset.
-        setLayerState(Object.fromEntries(d.layers.map((l) => [l.id, { on: l.scope ? !!l.default : start.includes(l.id), opacity: l.opacity ?? 1 }])))
+        // Opened on a photo (#map?photo=<id>): the photo pins are on, so its pin shows.
+        const showPhoto = !!focusPhoto && (d.photos ?? []).some((p) => photoId(p) === focusPhoto)
+        setLayerState(Object.fromEntries(d.layers.map((l) => [l.id, { on: (showPhoto && l.scope === 'photos') || (l.scope ? !!l.default : start.includes(l.id)), opacity: l.opacity ?? 1 }])))
         if (d.tables?.radiation) {
           fetch(`./${d.tables.radiation}`)
             .then((r) => (r.ok ? r.text() : ''))
@@ -1046,6 +1056,7 @@ export default function App() {
           )}
           <SiteMap
             data={data}
+            focusPhoto={focusPhoto}
             extraLayers={extraLayers}
             layerState={layerState}
             route={view === 'hud' ? hudData.route : shown.route}

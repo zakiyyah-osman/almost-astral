@@ -6,6 +6,7 @@ import { graticule } from '../lib/graticule.js'
 import { MARS_RADIUS_M, xyToLatLon, latLonToXY, lon180, siteBounds } from '../lib/geo.js'
 import { TREK_LAYERS, TREK_ATTRIBUTION, CRATER } from '../lib/marsTrek.js'
 import { squareBounds, classForPixel } from '../lib/research.js'
+import { photoId } from '../lib/photos.js'
 
 // Two ways to draw the site:
 // - Real site (layers.json has site.center_lat / center_lon_east): a Mars map in latitude and
@@ -87,18 +88,25 @@ function withSiteHole(src, bounds, site) {
 // sol, camera and credit.
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const cameraIcon = L.divIcon({ className: 'pin-icon', html: '<span class="photo-pin" aria-label="Ground photo"></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
+// The photo the map was opened on (#map?photo=<id>): the same pin, ringed.
+const cameraIconFocus = L.divIcon({ className: 'pin-icon', html: '<span class="photo-pin focus" aria-label="Ground photo, the one you picked"></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
+const PHOTO_VIEW_M = 200 // opened on a photo: show this many metres of ground around it each way
 
+// The pins are also kept by photo id (group.byId) so a photo link can find its pin.
 function photoPins(photos) {
   const group = L.layerGroup()
+  group.byId = new Map()
   for (const p of photos) {
     const html =
       `<figure class="photo-pop"><img src="${escapeHtml(p.url)}" alt="Perseverance ${escapeHtml(p.camera)} image, sol ${escapeHtml(p.sol)}" loading="lazy" />` +
       `<figcaption><b>Sol ${escapeHtml(p.sol)}</b> · ${escapeHtml(p.camera)}${p.date_utc ? ` · ${escapeHtml(String(p.date_utc).slice(0, 10))}` : ''}<br />` +
       `Taken where the rover stood, about 2 m up. <span class="credit">Credit: ${escapeHtml(p.credit)}</span><br />` +
       `<small>${escapeHtml(p.image_id)}</small></figcaption></figure>`
-    L.marker([p.lat, lon180(p.lon)], { icon: cameraIcon, keyboard: false, title: `Ground photo, sol ${p.sol}` })
+    const marker = L.marker([p.lat, lon180(p.lon)], { icon: cameraIcon, keyboard: false, title: `Ground photo, sol ${p.sol}` })
       .bindPopup(html, { maxWidth: 340, minWidth: 260, className: 'photo-popup' })
       .addTo(group)
+    const id = photoId(p)
+    if (id) group.byId.set(id, marker)
   }
   return group
 }
@@ -241,13 +249,16 @@ function button(position, html, onClick) {
 //  probe        { x, y }: a point to ring (from the profile chart)
 //  astronaut    null, or { x, y, storm, trail } while the HUD simulation runs
 //  layoutKey    changes whenever the page layout changes the map's size
-export default function SiteMap({ data, extraLayers = [], layerState, route, refRoute, altRoutes, waypoints, arrivals, missionPins, landingPin, targets, picking, onPick, onInspect, inspect, gridOn, onView, onHover, probe, selectedStop, onSelectStop, astronaut, layoutKey, sizeKey, mineralsShown = [] }) {
+//  focusPhoto   a ground photo id (lib/photos.js photoId): open on that photo, its pin ringed and its
+//               popup open. Unknown ids are ignored.
+export default function SiteMap({ data, focusPhoto = null, extraLayers = [], layerState, route, refRoute, altRoutes, waypoints, arrivals, missionPins, landingPin, targets, picking, onPick, onInspect, inspect, gridOn, onView, onHover, probe, selectedStop, onSelectStop, astronaut, layoutKey, sizeKey, mineralsShown = [] }) {
   const elRef = useRef(null)
   const refit = useRef(() => {})
   const resizeOnly = useRef(() => {})
   const mapRef = useRef(null)
   const geoRef = useRef(null)
-  const focus = useRef('site') // 'crater' or 'site': what a layout change refits to
+  const focus = useRef('site') // 'crater', 'site' or 'photo': what a layout change refits to
+  const photoView = useRef(null) // focus 'photo': { box, marker, opened } for the photo the map opened on
   const overlays = useRef({})
   const groups = useRef({})
   const astro = useRef({ marker: null, trail: null })
@@ -285,7 +296,20 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
     L.control.scale({ imperial: false }).addTo(map)
 
     const crater = geo.real ? craterBounds() : site
-    const fit = (target, animate) => map.fitBounds(target === 'site' ? site : crater, { animate, padding: target === 'site' ? [12, 12] : [0, 0] })
+    const fit = (target, animate) => {
+      const pv = photoView.current
+      if (target === 'photo' && pv) {
+        // Room above the pin for its popup (the photo), so opening it does not pan the map.
+        const top = Math.min(300, map.getSize().y * 0.45)
+        map.fitBounds(pv.box, { animate, paddingTopLeft: [16, top], paddingBottomRight: [16, 16] })
+        if (!pv.opened) {
+          pv.opened = true
+          pv.marker.openPopup()
+        }
+        return
+      }
+      map.fitBounds(target === 'crater' ? crater : site, { animate, padding: target === 'crater' ? [0, 0] : [12, 12] })
+    }
     const flyTo = (target) => {
       focus.current = target
       map.flyToBounds(target === 'site' ? site : crater, { duration: 1.6, padding: target === 'site' ? [12, 12] : [0, 0] })
@@ -410,6 +434,7 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       resize.disconnect()
       map.remove()
       mapRef.current = null
+      photoView.current = null
       overlays.current = {}
       groups.current = {}
       astro.current = { marker: null, trail: null }
@@ -435,6 +460,25 @@ export default function SiteMap({ data, extraLayers = [], layerState, route, ref
       if (!state.on && map.hasLayer(overlay)) overlay.remove()
     }
   }, [layerState, data, extraLayers])
+
+  // Opened on a photo (#map?photo=<id>): frame about PHOTO_VIEW_M of ground around it, ring its pin and
+  // open its popup. It becomes the refit target, so the first layout refit lands on it too; "Go to site"
+  // and "Back to crater" change the target as usual. Runs after the layer switches above.
+  useEffect(() => {
+    const map = mapRef.current
+    const layer = data.layers.find((l) => l.scope === 'photos')
+    const group = layer && overlays.current[layer.id]
+    const marker = focusPhoto ? group?.byId?.get(focusPhoto) : null
+    if (!map || !marker) return
+    if (!map.hasLayer(group)) group.addTo(map)
+    const ll = marker.getLatLng()
+    const dLat = PHOTO_VIEW_M / ((MARS_RADIUS_M * Math.PI) / 180)
+    const dLon = dLat / Math.cos((ll.lat * Math.PI) / 180)
+    marker.setIcon(cameraIconFocus).setZIndexOffset(1000)
+    photoView.current = { box: L.latLngBounds([ll.lat - dLat, ll.lng - dLon], [ll.lat + dLat, ll.lng + dLon]), marker, opened: false }
+    focus.current = 'photo'
+    refit.current()
+  }, [focusPhoto, data])
 
   // The minerals picked in the Minerals card: only those are coloured.
   useEffect(() => {

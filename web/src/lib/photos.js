@@ -30,6 +30,9 @@ export const NEAR_ENOUGH_M = 300 // closer than this, a photo may stand for "thi
 
 let current = []
 
+// A stable id for a photo, for links like #map?photo=<id>: NASA's image ID, else the file name.
+export const photoId = (p) => p?.image_id || p?.file || null
+
 // Photo records from a photos.geojson FeatureCollection (Point coordinates are [lon, lat]).
 export function photosFrom(fc) {
   return (fc?.features ?? [])
